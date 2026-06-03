@@ -498,35 +498,23 @@ export default function App() {
         marginBottom: 32,
         paddingTop: 16,
       }}>
-        {/* Logo — clicking it goes home when logged in */}
+        {/* Logo + wordmark */}
         {user ? (
-          <img
-            src={kourzoLogo}
-            alt="Kourzo"
-            onClick={goHome}
-            title="Go home"
-            style={{
-              height: 80,
-              width: 'auto',
-              cursor: 'pointer',
-              flexShrink: 0,
-              display: 'block',
-            }}
-          />
+          // Logged-in: icon + "Kourzo" wordmark, clickable to go home
+          <div onClick={goHome} title="Go home" style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', flexShrink: 0 }}>
+            <img src={kourzoLogo} alt="Kourzo icon" style={{ height: 40, width: 40, display: 'block' }} />
+            <span style={{ fontSize: 24, fontWeight: 700, letterSpacing: '-0.5px', lineHeight: 1 }}>
+              <span style={{ color: '#6C5CE7' }}>K</span><span style={{ color: '#1a1a1a' }}>ourzo</span>
+            </span>
+          </div>
         ) : (
-          // Logged-out: centered hero with logo + tagline
+          // Logged-out: centered icon + big wordmark + tagline
           <div style={{ textAlign: 'center', width: '100%' }}>
-            <img
-              src={kourzoLogo}
-              alt="Kourzo"
-              style={{
-                height: 140,
-                width: 'auto',
-                display: 'block',
-                margin: '0 auto',
-              }}
-            />
-            <p style={{ margin: '4px 0 0', color: '#666', fontSize: 16 }}>
+            <img src={kourzoLogo} alt="Kourzo icon" style={{ height: 72, width: 72, display: 'block', margin: '0 auto 12px' }} />
+            <div style={{ fontSize: 40, fontWeight: 700, letterSpacing: '-1px', marginBottom: 8 }}>
+              <span style={{ color: '#6C5CE7' }}>K</span><span style={{ color: '#1a1a1a' }}>ourzo</span>
+            </div>
+            <p style={{ margin: 0, color: '#666', fontSize: 16 }}>
               Meet Kourzo 👋 — your transfer course finder &amp; mapper
             </p>
           </div>
