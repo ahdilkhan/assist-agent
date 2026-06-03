@@ -101,6 +101,7 @@ export default function Tab2() {
   const [error, setError] = useState('')
   const [overlapData, setOverlapData] = useState(null)
   const [openBlocks, setOpenBlocks] = useState({})
+  const [completedCourses, setCompletedCourses] = useState(new Set())
 
   useEffect(() => {
     if (!selUniId || !ccId) { setMajors([]); setSelMajor(null); return }
@@ -129,12 +130,21 @@ export default function Tab2() {
     setPrograms(prev => prev.filter((_, j) => j !== i))
   }
 
+  function toggleCourse(ccKey) {
+    setCompletedCourses(prev => {
+      const next = new Set(prev)
+      next.has(ccKey) ? next.delete(ccKey) : next.add(ccKey)
+      return next
+    })
+  }
+
   async function generateOverlap() {
     if (!ccId || programs.length === 0) { setError('Select a CC and add at least one program.'); return }
     setError('')
     setLoading(true)
     setOverlapData(null)
     setOpenBlocks({})
+    setCompletedCourses(new Set())
     try {
       const programArts = await Promise.all(programs.map(async prog => {
         setLoadingMsg(`Fetching ${prog.uniName} — ${prog.majorLabel}...`)
@@ -190,23 +200,62 @@ export default function Tab2() {
     setOpenBlocks(prev => ({ ...prev, [key]: !prev[key] }))
   }
 
+  // Compute attainability summary based on checked courses
+  function computeAttainability(overlapData) {
+    if (!overlapData) return []
+    const allEntries = [...overlapData.all, ...overlapData.most, ...overlapData.single]
+
+    // Group entries by program
+    const programMap = {}
+    for (const prog of programs) {
+      const label = `${prog.uniName} → ${prog.majorLabel}`
+      programMap[label] = { label, total: 0, completed: 0 }
+    }
+
+    for (const entry of allEntries) {
+      const isDone = completedCourses.has(entry.ccKey)
+      for (const pe of entry.programEntries) {
+        if (programMap[pe.program]) {
+          programMap[pe.program].total += 1
+          if (isDone) programMap[pe.program].completed += 1
+        }
+      }
+    }
+
+    return Object.values(programMap).sort((a, b) => {
+      const aPct = a.total === 0 ? 0 : a.completed / a.total
+      const bPct = b.total === 0 ? 0 : b.completed / b.total
+      return bPct - aPct
+    })
+  }
+
   function renderReqCard(entry) {
     const key = entry.ccKey
     const isOpen = openBlocks[key]
+    const isDone = completedCourses.has(key)
     const hasAlts = entry.programEntries.some(pe => pe.options.length > 1)
     const label = entry.primaryCourses.map(c => `${c.prefix} ${c.number}`).join(' + ')
 
     return (
-      <div className="result-block" key={key}>
+      <div className="result-block" key={key} style={{ opacity: isDone ? 0.5 : 1, transition: 'opacity 0.2s' }}>
         <div className="result-header" onClick={() => toggleBlock(key)}>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontWeight: 500, fontSize: 14 }}>{label}</div>
-            <div style={{ fontSize: 12, color: '#888', marginTop: 2 }}>
-              {entry.primaryCourses.map(c => c.title).filter(Boolean).join(' + ')}
-              {entry.primaryCourses.some(c => c.units)
-                ? ` · ${entry.primaryCourses.reduce((sum, c) => sum + (c.units || 0), 0)} units`
-                : ''}
-              {hasAlts ? ' · has alternatives' : ''}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1 }}>
+            <input
+              type="checkbox"
+              checked={isDone}
+              onChange={e => { e.stopPropagation(); toggleCourse(key) }}
+              onClick={e => e.stopPropagation()}
+              style={{ width: 16, height: 16, cursor: 'pointer', flexShrink: 0, accentColor: '#1a1a1a' }}
+            />
+            <div>
+              <div style={{ fontWeight: 500, fontSize: 14, textDecoration: isDone ? 'line-through' : 'none', color: isDone ? '#aaa' : '#1a1a1a' }}>{label}</div>
+              <div style={{ fontSize: 12, color: '#888', marginTop: 2 }}>
+                {entry.primaryCourses.map(c => c.title).filter(Boolean).join(' + ')}
+                {entry.primaryCourses.some(c => c.units)
+                  ? ` · ${entry.primaryCourses.reduce((sum, c) => sum + (c.units || 0), 0)} units`
+                  : ''}
+                {hasAlts ? ' · has alternatives' : ''}
+              </div>
             </div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -274,6 +323,40 @@ export default function Tab2() {
           </div>
         </div>
         {entries.map(e => renderReqCard({ ...e, totalPrograms }))}
+      </div>
+    )
+  }
+
+  function renderAttainabilitySummary() {
+    if (!overlapData || completedCourses.size === 0) return null
+    const summary = computeAttainability(overlapData)
+    if (summary.length === 0) return null
+
+    const best = summary[0]
+
+    return (
+      <div className="card" style={{ marginTop: 8, background: '#f9f9f7', border: '1px solid #e8e8e4' }}>
+        <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 12 }}>📊 Your progress summary</div>
+        {summary.map((s, i) => {
+          const pct = s.total === 0 ? 0 : Math.round((s.completed / s.total) * 100)
+          const isTop = i === 0 && summary.length > 1
+          return (
+            <div key={i} style={{ marginBottom: i < summary.length - 1 ? 12 : 0 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                <div style={{ fontSize: 13, fontWeight: isTop ? 600 : 400, color: isTop ? '#1a1a1a' : '#555' }}>
+                  {isTop && '⭐ '}{s.label}
+                </div>
+                <div style={{ fontSize: 12, color: '#888' }}>{s.completed}/{s.total} done · {pct}%</div>
+              </div>
+              <div style={{ background: '#e0e0e0', borderRadius: 4, height: 6, overflow: 'hidden' }}>
+                <div style={{ background: pct === 100 ? '#4caf50' : '#1a1a1a', height: '100%', width: `${pct}%`, borderRadius: 4, transition: 'width 0.3s ease' }} />
+              </div>
+              {isTop && summary.length > 1 && (
+                <div style={{ fontSize: 11, color: '#888', marginTop: 4 }}>Most attainable based on courses completed</div>
+              )}
+            </div>
+          )
+        })}
       </div>
     )
   }
@@ -378,6 +461,10 @@ export default function Tab2() {
             <button className="btn-secondary" onClick={() => { setOverlapData(null); setOpenBlocks({}) }}>← Edit</button>
           </div>
 
+          <div className="key-note" style={{ marginBottom: 16 }}>
+            ☑️ Check off courses you've already completed to track your progress.
+          </div>
+
           {renderSection('🟢', `Required by all ${overlapData.totalPrograms} programs`, 'Highest priority — take these first', overlapData.all, overlapData.totalPrograms)}
           {renderSection('🟡', 'Required by multiple programs', 'High value — maximizes your coverage', overlapData.most, overlapData.totalPrograms)}
           {renderSection('🔵', 'Required by one program only', "Take if you're committed to that specific program", overlapData.single, overlapData.totalPrograms)}
@@ -385,6 +472,8 @@ export default function Tab2() {
           {overlapData.all.length === 0 && overlapData.most.length === 0 && overlapData.single.length === 0 && (
             <div className="key-note">No articulated courses found. Try different programs or check ASSIST.org directly.</div>
           )}
+
+          {renderAttainabilitySummary()}
         </>
       )}
     </div>
