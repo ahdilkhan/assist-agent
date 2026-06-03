@@ -284,6 +284,10 @@ export default function Tab2() {
 
       {!overlapData && (
         <>
+          <div style={{ fontSize: 13, color: '#666', marginBottom: 16 }}>
+            Add your target programs and we'll show you which courses at your CC satisfy the most requirements across all of them.
+          </div>
+
           <div className="card">
             <div className="section-label" style={{ marginBottom: 10 }}>Step 1 — Your community college</div>
             <div className="field" style={{ marginBottom: 0 }}>
@@ -357,7 +361,7 @@ export default function Tab2() {
               </p>
               {loading
                 ? <div className="status"><div className="spinner" />{loadingMsg}</div>
-                : <button className="btn-primary" onClick={generateOverlap}>Generate transfer overlap →</button>
+                : <button className="btn-primary" onClick={generateOverlap}>Find my courses →</button>
               }
             </div>
           )}
@@ -368,7 +372,7 @@ export default function Tab2() {
         <>
           <div className="top-row">
             <div className="top-row-info">
-              <h2>Transfer overlap — {ccName}</h2>
+              <h2>Your course plan — {ccName}</h2>
               <p>{programs.map(p => `${p.uniName} → ${p.majorLabel}`).join(' · ')}</p>
             </div>
             <button className="btn-secondary" onClick={() => { setOverlapData(null); setOpenBlocks({}) }}>← Edit</button>
