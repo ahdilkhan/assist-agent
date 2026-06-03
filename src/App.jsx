@@ -1,5 +1,5 @@
 import { supabase } from "./lib/supabase"
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import './App.css'
 import Tab2 from './Tab2'
 
@@ -338,34 +338,34 @@ export default function App() {
   const [savedCCs, setSavedCCs] = useState(new Set())
   const [showSaved, setShowSaved] = useState(false)
   const [user, setUser] = useState(null)
+  const [dropdownOpen, setDropdownOpen] = useState(false)
+  const dropdownRef = useRef(null)
 
   useEffect(() => {
-  // 1. Get current user on page load
-  supabase.auth.getUser().then(({ data }) => {
-    setUser(data.user)
-  })
-
-  // 2. Listen for login/logout changes
-  const { data: listener } = supabase.auth.onAuthStateChange(
-    (_event, session) => {
+    supabase.auth.getUser().then(({ data }) => { setUser(data.user) })
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null)
+    })
+    return () => { listener.subscription.unsubscribe() }
+  }, [])
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    function handleClickOutside(e) {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
+        setDropdownOpen(false)
+      }
     }
-  )
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
 
-  // 3. Cleanup listener
-  return () => {
-    listener.subscription.unsubscribe()
+  async function signInWithGoogle() {
+    await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: { redirectTo: window.location.origin },
+    })
   }
-}, [])
-
- async function signInWithGoogle() {
-  await supabase.auth.signInWithOAuth({
-    provider: "google",
-    options: {
-      redirectTo: window.location.origin,
-    },
-  })
-}
 
   function toggleBlock(key) { setOpenBlocks(prev => ({ ...prev, [key]: !prev[key] })) }
   function toggleRegion(region) {
@@ -415,11 +415,6 @@ export default function App() {
     } catch (e) { setError(`Error: ${e.message}`) }
     finally { setLoading(false); setLoadingMsg(''); setLoadingProgress(0) }
   }
-
-
-
-
-  
 
   function getCourseCountLabel(eq) {
     const min = Math.min(...eq.options.map(o => o.courses.length))
@@ -473,226 +468,193 @@ export default function App() {
     ))
   }
 
+  // Generate avatar initials from email
+  function getInitials(email) {
+    if (!email) return '?'
+    return email[0].toUpperCase()
+  }
+
   return (
     <div className="app">
-      <div className="header">
-  <h1>Transfer course finder</h1>
+      {/* Top navbar */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
+        <div>
+          <h2 style={{ margin: 0 }}>Transfer course finder</h2>
+          <p style={{ margin: '4px 0 0', color: '#666', fontSize: 13 }}>
+            Find equivalent CC courses for your UC/CSU transfer path
+          </p>
+        </div>
 
-  <p>
-    Find equivalent community college courses and compare transfer requirements
-    across multiple UC and CSU campuses.
-  </p>
+        {user && (
+          <div ref={dropdownRef} style={{ position: 'relative' }}>
+            <button
+              onClick={() => setDropdownOpen(o => !o)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 8,
+                background: 'none', border: '1px solid #ddd', borderRadius: 999,
+                padding: '6px 12px 6px 6px', cursor: 'pointer', fontSize: 13,
+              }}
+            >
+              <div style={{
+                width: 30, height: 30, borderRadius: '50%',
+                background: '#1a1a1a', color: '#fff',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontWeight: 600, fontSize: 14, flexShrink: 0,
+              }}>
+                {getInitials(user.email)}
+              </div>
+              <span style={{ maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#333' }}>
+                {user.email}
+              </span>
+              <span style={{ fontSize: 10, color: '#888' }}>▼</span>
+            </button>
 
-  {user && (
-    <div style={{ fontSize: 12, marginTop: 8, color: "#555" }}>
-      Logged in as: {user.email}
-    </div>
-  )}
-
-  
-</div>
-
-      <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
-        {[['tab1','🎯 Find CC equivalents for a university course'],['tab2','🗺️ Plan overlap across multiple programs'],].map(([id, label]) => (
-          <div key={id} className={`pref-chip${activeTab === id ? ' selected' : ''}`} style={{ padding: '8px 16px', fontSize: 13 }} onClick={() => setActiveTab(id)}>{label}</div>
-        ))}
-      </div>
-      
-      
-      {!user ? (
-  <div className="card">
-    <h3>Please sign in to use the app</h3>
-    <button onClick={signInWithGoogle}>
-      Sign in with Google
-    </button>
-  </div>
-) : (
-  <>
-  <button
-  onClick={async () => {
-    await supabase.auth.signOut()
-  }}
->
-  Log out
-</button>
-    {activeTab === 'tab2' && <Tab2 />}
-
-    {activeTab === 'tab1' && (
-        <>
-          <div className="step-bar">
-            <div className={`step-pill ${step === 1 ? 'active' : step > 1 ? 'done' : ''}`}>1 · Search</div>
-            <div className={`step-pill ${step === 2 ? 'active' : step > 2 ? 'done' : ''}`}>2 · Equivalents</div>
-            <div className={`step-pill ${step === 3 ? 'active' : ''}`}>3 · Schedule</div>
+            {dropdownOpen && (
+              <div style={{
+                position: 'absolute', right: 0, top: 'calc(100% + 8px)',
+                background: '#fff', border: '1px solid #e0e0e0', borderRadius: 10,
+                boxShadow: '0 4px 16px rgba(0,0,0,0.1)', minWidth: 200, zIndex: 100,
+                overflow: 'hidden',
+              }}>
+                <div style={{ padding: '12px 16px', borderBottom: '1px solid #f0f0f0' }}>
+                  <div style={{ fontSize: 12, color: '#888', marginBottom: 2 }}>Signed in as</div>
+                  <div style={{ fontSize: 13, fontWeight: 500, color: '#333', wordBreak: 'break-all' }}>{user.email}</div>
+                </div>
+                <button
+                  onClick={async () => { await supabase.auth.signOut(); setDropdownOpen(false) }}
+                  style={{
+                    width: '100%', padding: '12px 16px', textAlign: 'left',
+                    background: 'none', border: 'none', cursor: 'pointer',
+                    fontSize: 13, color: '#d32f2f', fontWeight: 500,
+                  }}
+                >
+                  Sign out
+                </button>
+              </div>
+            )}
           </div>
-          {error && <div className="error-box">{error}</div>}
-          {step === 1 && (
-            <div className="card">
-              <div className="field">
-                <label> University (UC or CSU)</label>
-                <select value={uniId} onChange={e => { setUniId(e.target.value); setUniName(e.target.selectedOptions[0]?.text || '') }}>
-                  <option value="">Select a university...</option>
-                  {KNOWN_UNIVERSITIES.map(g => (
-                    <optgroup key={g.group} label={g.group}>
-                      {g.options.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-                    </optgroup>
-                  ))}
-                </select>
-              </div>
-              <div className="field-row">
-                <div className="field"><label>Course prefix</label><input type="text" placeholder="e.g. COMPSCI" value={prefix} onChange={e => setPrefix(e.target.value.toUpperCase())} /></div>
-                <div className="field"><label>Course number</label><input type="text" placeholder="e.g. 61A" value={courseNum} onChange={e => setCourseNum(e.target.value.toUpperCase())} /></div>
-              </div>
-              {loading ? (
-                <div>
-                  <div className="status"><div className="spinner" />{loadingMsg}</div>
-                  <div style={{ background: '#eee', borderRadius: 4, height: 6, marginTop: 8, overflow: 'hidden' }}>
-                    <div style={{ background: '#1a1a1a', height: '100%', width: `${loadingProgress}%`, transition: 'width 0.3s ease', borderRadius: 4 }} />
-                  </div>
-                </div>
-              ) : <button className="btn-primary" onClick={handleSearch}>Find equivalent courses →</button>}
-            </div>
-          )}
-          {step === 2 && (
+        )}
+      </div>
+
+      {!user ? (
+        <div className="card">
+          <h3>Please sign in to use the app</h3>
+          <button onClick={signInWithGoogle}>Sign in with Google</button>
+        </div>
+      ) : (
+        <>
+          <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
+            {[['tab1', '🎯 Find CC equivalents for a university course'], ['tab2', '🗺️ Plan overlap across multiple programs']].map(([id, label]) => (
+              <div key={id} className={`pref-chip${activeTab === id ? ' selected' : ''}`} style={{ padding: '8px 16px', fontSize: 13 }} onClick={() => setActiveTab(id)}>{label}</div>
+            ))}
+          </div>
+
+          {activeTab === 'tab2' && <Tab2 />}
+
+          {activeTab === 'tab1' && (
             <>
-              <div className="top-row">
-                <div className="top-row-info">
-                  <h2>{prefix} {courseNum} → {uniName}</h2>
-                  <p>{showSaved ? `${savedEquivalents.length} saved college${savedEquivalents.length !== 1 ? 's' : ''}` : `${filteredEquivalents.length} of ${equivalents.length} colleges shown${selectedRegions.length > 0 ? ` · ${selectedRegions.join(', ')}` : ''}`}</p>
-                </div>
-                <button className="btn-secondary" onClick={() => { setStep(1); setEquivalents([]) }}>← New search</button>
+              <div className="step-bar">
+                <div className={`step-pill ${step === 1 ? 'active' : step > 1 ? 'done' : ''}`}>1 · Search</div>
+                <div className={`step-pill ${step === 2 ? 'active' : step > 2 ? 'done' : ''}`}>2 · Equivalents</div>
+                <div className={`step-pill ${step === 3 ? 'active' : ''}`}>3 · Schedule</div>
               </div>
-              <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
-                <div className={`pref-chip${!showSaved ? ' selected' : ''}`} style={{ padding: '6px 12px', fontSize: 12 }} onClick={() => setShowSaved(false)}>All colleges ({equivalents.length})</div>
-                <div className={`pref-chip${showSaved ? ' selected' : ''}`} style={{ padding: '6px 12px', fontSize: 12 }} onClick={() => setShowSaved(true)}>💙 Saved ({savedCCs.size})</div>
-              </div>
-              {!showSaved && (
-                <div style={{ marginBottom: 12 }}>
-                  <div className="section-label" style={{ marginBottom: 8 }}>Filter by region</div>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                    <div className={`pref-chip${selectedRegions.length === 0 ? ' selected' : ''}`} style={{ padding: '6px 12px', fontSize: 12 }} onClick={() => setSelectedRegions([])}>All regions</div>
-                    {Object.keys(REGIONS).map(region => {
-                      const count = equivalents.filter(eq => ccMatchesRegion(eq.ccName, region)).length
-                      if (count === 0) return null
-                      return <div key={region} className={`pref-chip${selectedRegions.includes(region) ? ' selected' : ''}`} style={{ padding: '6px 12px', fontSize: 12 }} onClick={() => toggleRegion(region)}>{region} ({count})</div>
-                    })}
+              {error && <div className="error-box">{error}</div>}
+              {step === 1 && (
+                <div className="card">
+                  <div className="field">
+                    <label>University (UC or CSU)</label>
+                    <select value={uniId} onChange={e => { setUniId(e.target.value); setUniName(e.target.selectedOptions[0]?.text || '') }}>
+                      <option value="">Select a university...</option>
+                      {KNOWN_UNIVERSITIES.map(g => (
+                        <optgroup key={g.group} label={g.group}>
+                          {g.options.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                        </optgroup>
+                      ))}
+                    </select>
                   </div>
+                  <div className="field-row">
+                    <div className="field"><label>Course prefix</label><input type="text" placeholder="e.g. COMPSCI" value={prefix} onChange={e => setPrefix(e.target.value.toUpperCase())} /></div>
+                    <div className="field"><label>Course number</label><input type="text" placeholder="e.g. 61A" value={courseNum} onChange={e => setCourseNum(e.target.value.toUpperCase())} /></div>
+                  </div>
+                  {loading ? (
+                    <div>
+                      <div className="status"><div className="spinner" />{loadingMsg}</div>
+                      <div style={{ background: '#eee', borderRadius: 4, height: 6, marginTop: 8, overflow: 'hidden' }}>
+                        <div style={{ background: '#1a1a1a', height: '100%', width: `${loadingProgress}%`, transition: 'width 0.3s ease', borderRadius: 4 }} />
+                      </div>
+                    </div>
+                  ) : <button className="btn-primary" onClick={handleSearch}>Find equivalent courses →</button>}
                 </div>
               )}
-              {showSaved && savedEquivalents.length === 0 && <div className="key-note">No saved colleges yet. Click 💙 on any college to save it.</div>}
-              {showSaved ? renderCCList(savedEquivalents) : renderCCList(filteredEquivalents)}
-            </>
-          )}
-          {step === 3 && selectedCC && (
-            <>
-              <div className="top-row">
-                <div className="top-row-info"><h2>{selectedCC.ccName}</h2><p>Equivalent for {prefix} {courseNum} at {uniName}</p></div>
-                <button className="btn-secondary" onClick={() => setStep(2)}>← Back</button>
-              </div>
-              {selectedCC.options.map((opt, i) => (
-                <div key={i}>
-                  {i > 0 && <div style={{ textAlign: 'center', fontSize: 12, color: '#888', padding: '8px 0', fontWeight: 600 }}>— OR —</div>}
-                  <div className="avail-card">
-                    {opt.courses.length > 1 && <div style={{ fontSize: 11, fontWeight: 600, color: '#888', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>Take all of these together</div>}
-                    {opt.groupNote && <div style={{ fontSize: 12, color: '#f57f17', marginBottom: 8 }}>⚠️ {opt.groupNote}</div>}
-                    {opt.courses.map((c, j) => (
-                      <div key={j} style={{ marginBottom: j < opt.courses.length - 1 ? 10 : 12 }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                          <h4>{c.prefix} {c.number} — {c.title}</h4>
-                          <span className="badge badge-green">Articulated</span>
-                        </div>
-                        {c.units && <div style={{ fontSize: 12, color: '#888', marginTop: 2 }}>{c.units} units</div>}
-                        {c.note && <div style={{ fontSize: 12, color: '#f57f17', marginTop: 4 }}>⚠️ {c.note}</div>}
+              {step === 2 && (
+                <>
+                  <div className="top-row">
+                    <div className="top-row-info">
+                      <h2>{prefix} {courseNum} → {uniName}</h2>
+                      <p>{showSaved ? `${savedEquivalents.length} saved college${savedEquivalents.length !== 1 ? 's' : ''}` : `${filteredEquivalents.length} of ${equivalents.length} colleges shown${selectedRegions.length > 0 ? ` · ${selectedRegions.join(', ')}` : ''}`}</p>
+                    </div>
+                    <button className="btn-secondary" onClick={() => { setStep(1); setEquivalents([]) }}>← New search</button>
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+                    <div className={`pref-chip${!showSaved ? ' selected' : ''}`} style={{ padding: '6px 12px', fontSize: 12 }} onClick={() => setShowSaved(false)}>All colleges ({equivalents.length})</div>
+                    <div className={`pref-chip${showSaved ? ' selected' : ''}`} style={{ padding: '6px 12px', fontSize: 12 }} onClick={() => setShowSaved(true)}>💙 Saved ({savedCCs.size})</div>
+                  </div>
+                  {!showSaved && (
+                    <div style={{ marginBottom: 12 }}>
+                      <div className="section-label" style={{ marginBottom: 8 }}>Filter by region</div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                        <div className={`pref-chip${selectedRegions.length === 0 ? ' selected' : ''}`} style={{ padding: '6px 12px', fontSize: 12 }} onClick={() => setSelectedRegions([])}>All regions</div>
+                        {Object.keys(REGIONS).map(region => {
+                          const count = equivalents.filter(eq => ccMatchesRegion(eq.ccName, region)).length
+                          if (count === 0) return null
+                          return <div key={region} className={`pref-chip${selectedRegions.includes(region) ? ' selected' : ''}`} style={{ padding: '6px 12px', fontSize: 12 }} onClick={() => toggleRegion(region)}>{region} ({count})</div>
+                        })}
                       </div>
-                    ))}
-                    <div style={{ background: '#f5f4f0', borderRadius: 8, padding: '10px 12px', marginBottom: 12 }}>
-                      <div style={{ fontSize: 12, fontWeight: 600, color: '#555', marginBottom: 6 }}>💡 When you get to the schedule:</div>
-                      {opt.courses.length === 1
-                        ? <div style={{ fontSize: 13 }}>Search for <span style={{ fontFamily: 'monospace', fontWeight: 600 }}>{opt.courses[0].prefix} {opt.courses[0].number}</span></div>
-                        : <ol style={{ paddingLeft: 18, margin: 0 }}>{opt.courses.map((c, k) => <li key={k} style={{ fontSize: 13, marginBottom: 4 }}>Search for <span style={{ fontFamily: 'monospace', fontWeight: 600 }}>{c.prefix} {c.number}</span><span style={{ color: '#888', fontSize: 12 }}> — {c.title}</span></li>)}</ol>
-                      }
                     </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                      <a className="avail-link" href={getScheduleUrl(selectedCC.ccName)} target="_blank" rel="noreferrer" style={{ fontWeight: 500, fontSize: 14 }}>🔍 Search schedule at {selectedCC.ccName} ↗</a>
-                      <a className="avail-link" href="https://www.cccapply.org/" target="_blank" rel="noreferrer" style={{ color: '#888' }}>📋 Apply / Enroll via CCCApply ↗</a>
-                      <a className="avail-link" href={`https://assist.org/transfer/results?year=${YEAR_ID}&institution=${selectedCC.ccId}&agreement=${uniId}&agreementType=to&view=agreement&viewBy=major`} target="_blank" rel="noreferrer" style={{ color: '#888' }}>📄 View full agreement on ASSIST.org ↗</a>
+                  )}
+                  {showSaved && savedEquivalents.length === 0 && <div className="key-note">No saved colleges yet. Click 💙 on any college to save it.</div>}
+                  {showSaved ? renderCCList(savedEquivalents) : renderCCList(filteredEquivalents)}
+                </>
+              )}
+              {step === 3 && selectedCC && (
+                <>
+                  <div className="top-row">
+                    <div className="top-row-info"><h2>{selectedCC.ccName}</h2><p>Equivalent for {prefix} {courseNum} at {uniName}</p></div>
+                    <button className="btn-secondary" onClick={() => setStep(2)}>← Back</button>
+                  </div>
+                  {selectedCC.options.map((opt, i) => (
+                    <div key={i}>
+                      {i > 0 && <div style={{ textAlign: 'center', fontSize: 12, color: '#888', padding: '8px 0', fontWeight: 600 }}>— OR —</div>}
+                      <div className="avail-card">
+                        {opt.courses.length > 1 && <div style={{ fontSize: 11, fontWeight: 600, color: '#888', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>Take all of these together</div>}
+                        {opt.groupNote && <div style={{ fontSize: 12, color: '#f57f17', marginBottom: 8 }}>⚠️ {opt.groupNote}</div>}
+                        {opt.courses.map((c, j) => (
+                          <div key={j} style={{ marginBottom: j < opt.courses.length - 1 ? 10 : 12 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                              <h4>{c.prefix} {c.number} — {c.title}</h4>
+                              <span className="badge badge-green">Articulated</span>
+                            </div>
+                            {c.units && <div style={{ fontSize: 12, color: '#888', marginTop: 2 }}>{c.units} units</div>}
+                            {c.note && <div style={{ fontSize: 12, color: '#f57f17', marginTop: 4 }}>⚠️ {c.note}</div>}
+                          </div>
+                        ))}
+                        <div style={{ background: '#f5f4f0', borderRadius: 8, padding: '10px 12px', marginBottom: 12 }}>
+                          <div style={{ fontSize: 12, fontWeight: 600, color: '#555', marginBottom: 6 }}>💡 When you get to the schedule:</div>
+                          {opt.courses.length === 1
+                            ? <div style={{ fontSize: 13 }}>Search for <span style={{ fontFamily: 'monospace', fontWeight: 600 }}>{opt.courses[0].prefix} {opt.courses[0].number}</span></div>
+                            : <ol style={{ paddingLeft: 18, margin: 0 }}>{opt.courses.map((c, k) => <li key={k} style={{ fontSize: 13, marginBottom: 4 }}>Search for <span style={{ fontFamily: 'monospace', fontWeight: 600 }}>{c.prefix} {c.number}</span><span style={{ color: '#888', fontSize: 12 }}> — {c.title}</span></li>)}</ol>
+                          }
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                          <a className="avail-link" href={getScheduleUrl(selectedCC.ccName)} target="_blank" rel="noreferrer" style={{ fontWeight: 500, fontSize: 14 }}>🔍 Search schedule at {selectedCC.ccName} ↗</a>
+                          <a className="avail-link" href="https://www.cccapply.org/" target="_blank" rel="noreferrer" style={{ color: '#888' }}>📋 Apply / Enroll via CCCApply ↗</a>
+                          <a className="avail-link" href={`https://assist.org/transfer/results?year=${YEAR_ID}&institution=${selectedCC.ccId}&agreement=${uniId}&agreementType=to&view=agreement&viewBy=major`} target="_blank" rel="noreferrer" style={{ color: '#888' }}>📄 View full agreement on ASSIST.org ↗</a>
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                </div>
-              ))}
-            </>
-          )}
-        </>
-      )}
-       </>
-)}
-
-      {activeTab === 'tab3' && (
-        <>
-          {t3Error && <div className="error-box">{t3Error}</div>}
-          {t3Courses.length === 0 && !t3Loading && (
-            <div className="card">
-              <div style={{ marginBottom: 14, fontSize: 13, color: '#666', lineHeight: 1.6 }}>
-                See every course at your CC that counts toward <strong>Cal-GETC</strong>, <strong>IGETC</strong>, or <strong>CSU GE-Breadth</strong> certification, organized by area. Completing a full pattern satisfies lower-division GE at UC or CSU before you transfer.
-              </div>
-              <div className="field">
-                <label>My community college</label>
-                <select value={t3CcId} onChange={e => { setT3CcId(e.target.value); setT3CcName(e.target.selectedOptions[0]?.text || '') }}>
-                  <option value="">Select your CC...</option>
-                  {KNOWN_CCS.map(cc => <option key={cc.id} value={cc.id}>{cc.name}</option>)}
-                </select>
-              </div>
-              <div className="field">
-                <label>Certification type</label>
-                <select value={t3ListType} onChange={e => setT3ListType(e.target.value)}>
-                  <option value="CALGETC">Cal-GETC — for UC and CSU (newest)</option>
-                  <option value="IGETC">IGETC — for UC and CSU</option>
-                  <option value="CSUGE">CSU GE-Breadth</option>
-                </select>
-              </div>
-              <button className="btn-primary" onClick={handleT3Search} disabled={!t3CcId || t3Loading}>See GE courses →</button>
-            </div>
-          )}
-          {t3Loading && <div className="status"><div className="spinner" />Loading courses...</div>}
-          {t3Courses.length > 0 && (
-            <>
-              <div className="top-row">
-                <div className="top-row-info">
-                  <h2>{t3ListType === 'CALGETC' ? 'Cal-GETC' : t3ListType === 'IGETC' ? 'IGETC' : 'CSU GE-Breadth'}</h2>
-                  <p>{t3CcName} · {t3Filtered.length} of {t3Courses.length} courses shown</p>
-                </div>
-                <button className="btn-secondary" onClick={() => { setT3Courses([]); setT3Error(''); setT3Search(''); setT3AreaFilter('ALL') }}>← New search</button>
-              </div>
-              <div style={{ marginBottom: 12 }}>
-                <div className="section-label" style={{ marginBottom: 8 }}>Filter by area</div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                  <div className={`pref-chip${t3AreaFilter === 'ALL' ? ' selected' : ''}`} style={{ padding: '6px 12px', fontSize: 12 }} onClick={() => setT3AreaFilter('ALL')}>All areas ({t3Courses.length})</div>
-                  {t3AllAreas.map(([code, desc]) => {
-                    const count = t3Courses.filter(c => c.transferAreas?.some(ta => ta.code === code)).length
-                    return <div key={code} className={`pref-chip${t3AreaFilter === code ? ' selected' : ''}`} style={{ padding: '6px 12px', fontSize: 12 }} onClick={() => setT3AreaFilter(code)}>{code} — {desc} ({count})</div>
-                  })}
-                </div>
-              </div>
-              <div className="field" style={{ marginBottom: 12 }}>
-                <input type="text" placeholder="🔍 Filter by course number, title, or prefix..." value={t3Search} onChange={e => setT3Search(e.target.value)} />
-              </div>
-              {t3Filtered.length === 0 && <div className="key-note">No courses match your filter.</div>}
-              {t3Filtered.map((course, i) => (
-                <div className="result-block" key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', cursor: 'default' }}>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontWeight: 500, fontSize: 14 }}>{course.identifier} — {course.courseTitle}</div>
-                    <div style={{ fontSize: 12, color: '#888', marginTop: 2 }}>{course.minUnits === course.maxUnits ? `${course.minUnits} units` : `${course.minUnits}–${course.maxUnits} units`}</div>
-                  </div>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, justifyContent: 'flex-end', maxWidth: 220, flexShrink: 0 }}>
-                    {course.transferAreas?.map((ta, j) => (
-                      <span key={j} className="badge badge-green" style={{ fontSize: 11, cursor: 'pointer' }} onClick={() => setT3AreaFilter(ta.code)}>Area {ta.code}</span>
-                    ))}
-                  </div>
-                </div>
-              ))}
-              <div style={{ marginTop: 16, padding: '12px 16px', background: '#f5f4f0', borderRadius: 10, fontSize: 13, color: '#666' }}>
-                💡 Completing all required areas earns the full {t3ListType === 'CALGETC' ? 'Cal-GETC' : t3ListType === 'IGETC' ? 'IGETC' : 'CSU GE-Breadth'} certification. Talk to a counselor to confirm your plan covers all required areas.{' '}
-                <a className="avail-link" href="https://assist.org" target="_blank" rel="noreferrer">More info at ASSIST.org ↗</a>
-              </div>
+                  ))}
+                </>
+              )}
             </>
           )}
         </>
