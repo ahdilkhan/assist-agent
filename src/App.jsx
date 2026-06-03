@@ -2,6 +2,7 @@ import { supabase } from "./lib/supabase"
 import { useState, useEffect, useRef } from 'react'
 import './App.css'
 import Tab2 from './Tab2'
+import kourzoLogo from './kourzo_logo.svg'
 
 const ASSIST_BASE = import.meta.env.VITE_ASSIST_BASE
 const YEAR_ID = 75
@@ -367,6 +368,19 @@ export default function App() {
     })
   }
 
+  // Reset everything back to the home/search state
+  function goHome() {
+    setStep(1)
+    setActiveTab('tab1')
+    setEquivalents([])
+    setSelectedCC(null)
+    setSelectedRegions([])
+    setSavedCCs(new Set())
+    setShowSaved(false)
+    setOpenBlocks({})
+    setError('')
+  }
+
   function toggleBlock(key) { setOpenBlocks(prev => ({ ...prev, [key]: !prev[key] })) }
   function toggleRegion(region) {
     setSelectedRegions(prev => prev.includes(region) ? prev.filter(r => r !== region) : [...prev, region])
@@ -477,21 +491,61 @@ export default function App() {
   return (
     <div className="app">
       {/* Top navbar */}
-      <div style={{ 
-  display: 'flex', 
-  justifyContent: user ? 'space-between' : 'center', 
-  alignItems: 'center', 
-  marginBottom: 24,
-  textAlign: user ? 'left' : 'center'
-}}>
-  <div>
-    <h2 style={{ margin: 0, fontSize: user ? 20 : 36, fontWeight: 700 }}>
-      {user ? 'Kourzo' : 'Meet Kourzo 👋'}
-    </h2>
-    <p style={{ margin: '4px 0 0', color: '#666', fontSize: user ? 13 : 16 }}>
-      Your transfer course finder & mapper
-    </p>
-  </div>
+      <div style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 24,
+      }}>
+        {/* Logo — clicking it goes home when logged in */}
+        {user ? (
+          <div
+            onClick={goHome}
+            title="Go home"
+            style={{
+              cursor: 'pointer',
+              overflow: 'hidden',
+              width: 120,
+              height: 37,
+              flexShrink: 0,
+            }}
+          >
+            <img
+              src={kourzoLogo}
+              alt="Kourzo"
+              style={{
+                width: 360,
+                marginTop: -63,
+                marginLeft: -58,
+                display: 'block',
+              }}
+            />
+          </div>
+        ) : (
+          // Logged-out: centered hero with logo + tagline
+          <div style={{ textAlign: 'center', width: '100%' }}>
+            <div style={{
+              overflow: 'hidden',
+              width: 220,
+              height: 68,
+              margin: '0 auto 8px',
+            }}>
+              <img
+                src={kourzoLogo}
+                alt="Kourzo"
+                style={{
+                  width: 660,
+                  marginTop: -116,
+                  marginLeft: -106,
+                  display: 'block',
+                }}
+              />
+            </div>
+            <p style={{ margin: 0, color: '#666', fontSize: 16 }}>
+              Meet Kourzo 👋 — your transfer course finder &amp; mapper
+            </p>
+          </div>
+        )}
 
         {user && (
           <div ref={dropdownRef} style={{ position: 'relative' }}>
