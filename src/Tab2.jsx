@@ -23,11 +23,6 @@ async function getAgreement(key) {
   return assistGet(`/articulation/api/Agreements?Key=${encodeURIComponent(key)}`)
 }
 
-// ─── ASSIST OR/AND structure decoder ─────────────────────────────────────────
-// courseConjunction: "Or"  → each course inside is its own OR choice (pick one)
-// courseConjunction: "And" → all courses inside taken together
-// Multiple CourseGroups in items[] are OR alternatives between each other
-
 function extractCourse(c) {
   const prefix = (c.prefix || '').trim()
   const number = (c.courseNumber || c.number || '').trim()
@@ -61,7 +56,6 @@ function parseSendingOptions(topItems) {
   }
   return options
 }
-// ─────────────────────────────────────────────────────────────────────────────
 
 function parseAllForProgram(agreement, programLabel) {
   try {
@@ -154,7 +148,6 @@ export default function Tab2() {
 
       for (const { prog, arts } of programArts) {
         for (const art of arts) {
-          // Key by the cheapest (fewest-course) option for overlap grouping
           const cheapestOpt = art.options.reduce((a, b) => a.courses.length <= b.courses.length ? a : b)
           const ccKey = cheapestOpt.courses.map(c => `${c.prefix} ${c.number}`).sort().join('+')
 
@@ -200,10 +193,8 @@ export default function Tab2() {
   function renderReqCard(entry) {
     const key = entry.ccKey
     const isOpen = openBlocks[key]
-    // Collapsed label: show primary courses; note if OR alternatives exist
     const hasAlts = entry.programEntries.some(pe => pe.options.length > 1)
     const label = entry.primaryCourses.map(c => `${c.prefix} ${c.number}`).join(' + ')
-      + (hasAlts ? ' (or alternatives)' : '')
 
     return (
       <div className="result-block" key={key}>
@@ -215,6 +206,7 @@ export default function Tab2() {
               {entry.primaryCourses.some(c => c.units)
                 ? ` · ${entry.primaryCourses.reduce((sum, c) => sum + (c.units || 0), 0)} units`
                 : ''}
+              {hasAlts ? ' · has alternatives' : ''}
             </div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -253,10 +245,10 @@ export default function Tab2() {
                           {c.title && <span style={{ color: '#666', marginLeft: 6 }}>{c.title}</span>}
                           {c.units && <span style={{ color: '#999', marginLeft: 6 }}>{c.units}u</span>}
                           {c.note && (
-  <div style={{ fontSize: 11, color: '#f57f17', marginTop: 4 }}>
-    ⚠️ {c.note}
-  </div>
-)}
+                            <div style={{ fontSize: 11, color: '#f57f17', marginTop: 4 }}>
+                              ⚠️ {c.note}
+                            </div>
+                          )}
                         </div>
                       ))}
                     </div>
