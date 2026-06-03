@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { supabase } from "./lib/supabase"
+import { useState, useEffect } from 'react'
 import './App.css'
 import Tab2 from './Tab2'
 
@@ -336,8 +337,32 @@ export default function App() {
   const [selectedCC, setSelectedCC] = useState(null)
   const [savedCCs, setSavedCCs] = useState(new Set())
   const [showSaved, setShowSaved] = useState(false)
+  const [user, setUser] = useState(null)
 
- 
+  useEffect(() => {
+  // 1. Get current user on page load
+  supabase.auth.getUser().then(({ data }) => {
+    setUser(data.user)
+  })
+
+  // 2. Listen for login/logout changes
+  const { data: listener } = supabase.auth.onAuthStateChange(
+    (_event, session) => {
+      setUser(session?.user ?? null)
+    }
+  )
+
+  // 3. Cleanup listener
+  return () => {
+    listener.subscription.unsubscribe()
+  }
+}, [])
+
+ async function signInWithGoogle() {
+  await supabase.auth.signInWithOAuth({
+    provider: "google",
+  })
+}
 
   function toggleBlock(key) { setOpenBlocks(prev => ({ ...prev, [key]: !prev[key] })) }
   function toggleRegion(region) {
@@ -448,20 +473,48 @@ export default function App() {
   return (
     <div className="app">
       <div className="header">
-        <h1>Transfer course finder</h1>
-        <p> Find equivalent community college courses and compare transfer requirements
-    across multiple UC and CSU campuses.</p>
-      </div>
+  <h1>Transfer course finder</h1>
+
+  <p>
+    Find equivalent community college courses and compare transfer requirements
+    across multiple UC and CSU campuses.
+  </p>
+
+  {user && (
+    <div style={{ fontSize: 12, marginTop: 8, color: "#555" }}>
+      Logged in as: {user.email}
+    </div>
+  )}
+
+  
+</div>
 
       <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
         {[['tab1','🎯 Find CC equivalents for a university course'],['tab2','🗺️ Plan overlap across multiple programs'],].map(([id, label]) => (
           <div key={id} className={`pref-chip${activeTab === id ? ' selected' : ''}`} style={{ padding: '8px 16px', fontSize: 13 }} onClick={() => setActiveTab(id)}>{label}</div>
         ))}
       </div>
+      
+      
+      {!user ? (
+  <div className="card">
+    <h3>Please sign in to use the app</h3>
+    <button onClick={signInWithGoogle}>
+      Sign in with Google
+    </button>
+  </div>
+) : (
+  <>
+  <button
+  onClick={async () => {
+    await supabase.auth.signOut()
+  }}
+>
+  Log out
+</button>
+    {activeTab === 'tab2' && <Tab2 />}
 
-      {activeTab === 'tab2' && <Tab2 />}
-
-      {activeTab === 'tab1' && (
+    {activeTab === 'tab1' && (
         <>
           <div className="step-bar">
             <div className={`step-pill ${step === 1 ? 'active' : step > 1 ? 'done' : ''}`}>1 · Search</div>
@@ -567,6 +620,8 @@ export default function App() {
           )}
         </>
       )}
+       </>
+)}
 
       {activeTab === 'tab3' && (
         <>
