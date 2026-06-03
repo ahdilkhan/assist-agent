@@ -477,13 +477,21 @@ export default function App() {
   return (
     <div className="app">
       {/* Top navbar */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
-        <div>
-          <h2 style={{ margin: 0 }}>{user ? 'Kourzo' : 'Meet Kourzo 👋'}</h2>
-<p style={{ margin: '4px 0 0', color: '#666', fontSize: 13 }}>
-  Your transfer course finder & mapper
-</p>
-        </div>
+      <div style={{ 
+  display: 'flex', 
+  justifyContent: user ? 'space-between' : 'center', 
+  alignItems: 'center', 
+  marginBottom: 24,
+  textAlign: user ? 'left' : 'center'
+}}>
+  <div>
+    <h2 style={{ margin: 0, fontSize: user ? 20 : 36, fontWeight: 700 }}>
+      {user ? 'Kourzo' : 'Meet Kourzo 👋'}
+    </h2>
+    <p style={{ margin: '4px 0 0', color: '#666', fontSize: user ? 13 : 16 }}>
+      Your transfer course finder & mapper
+    </p>
+  </div>
 
         {user && (
           <div ref={dropdownRef} style={{ position: 'relative' }}>
