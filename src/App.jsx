@@ -433,7 +433,7 @@ export default function App() {
       <div className="result-block" key={i}>
         <div className="result-header" onClick={() => toggleBlock(eq.ccName)}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1 }}>
-            <span onClick={e => toggleSave(eq.ccName, e)} style={{ fontSize: 16, cursor: 'pointer', flexShrink: 0, opacity: savedCCs.has(eq.ccName) ? 1 : 0.3 }}>⭐</span>
+            <span onClick={e => toggleSave(eq.ccName, e)} style={{ fontSize: 16, cursor: 'pointer', flexShrink: 0, opacity: savedCCs.has(eq.ccName) ? 1 : 0.3 }}>💙</span>
             <div>
               <h3 style={{ margin: 0 }}>{eq.ccName}</h3>
               <div style={{ fontSize: 12, color: '#888', marginTop: 2 }}>
@@ -563,7 +563,7 @@ export default function App() {
               </div>
               <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
                 <div className={`pref-chip${!showSaved ? ' selected' : ''}`} style={{ padding: '6px 12px', fontSize: 12 }} onClick={() => setShowSaved(false)}>All colleges ({equivalents.length})</div>
-                <div className={`pref-chip${showSaved ? ' selected' : ''}`} style={{ padding: '6px 12px', fontSize: 12 }} onClick={() => setShowSaved(true)}>⭐ Saved ({savedCCs.size})</div>
+                <div className={`pref-chip${showSaved ? ' selected' : ''}`} style={{ padding: '6px 12px', fontSize: 12 }} onClick={() => setShowSaved(true)}>💙 Saved ({savedCCs.size})</div>
               </div>
               {!showSaved && (
                 <div style={{ marginBottom: 12 }}>
@@ -578,7 +578,7 @@ export default function App() {
                   </div>
                 </div>
               )}
-              {showSaved && savedEquivalents.length === 0 && <div className="key-note">No saved colleges yet. Click ⭐ on any college to save it.</div>}
+              {showSaved && savedEquivalents.length === 0 && <div className="key-note">No saved colleges yet. Click 💙 on any college to save it.</div>}
               {showSaved ? renderCCList(savedEquivalents) : renderCCList(filteredEquivalents)}
             </>
           )}
