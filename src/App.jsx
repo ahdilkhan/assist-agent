@@ -495,53 +495,38 @@ export default function App() {
         display: 'flex',
         justifyContent: 'space-between',
         alignItems: 'center',
-        marginBottom: 24,
+        marginBottom: 32,
+        paddingTop: 16,
       }}>
         {/* Logo — clicking it goes home when logged in */}
         {user ? (
-          <div
+          <img
+            src={kourzoLogo}
+            alt="Kourzo"
             onClick={goHome}
             title="Go home"
             style={{
+              height: 80,
+              width: 'auto',
               cursor: 'pointer',
-              overflow: 'hidden',
-              width: 120,
-              height: 37,
               flexShrink: 0,
+              display: 'block',
             }}
-          >
+          />
+        ) : (
+          // Logged-out: centered hero with logo + tagline
+          <div style={{ textAlign: 'center', width: '100%' }}>
             <img
               src={kourzoLogo}
               alt="Kourzo"
               style={{
-                width: 360,
-                marginTop: -63,
-                marginLeft: -58,
+                height: 140,
+                width: 'auto',
                 display: 'block',
+                margin: '0 auto',
               }}
             />
-          </div>
-        ) : (
-          // Logged-out: centered hero with logo + tagline
-          <div style={{ textAlign: 'center', width: '100%' }}>
-            <div style={{
-              overflow: 'hidden',
-              width: 220,
-              height: 68,
-              margin: '0 auto 8px',
-            }}>
-              <img
-                src={kourzoLogo}
-                alt="Kourzo"
-                style={{
-                  width: 660,
-                  marginTop: -116,
-                  marginLeft: -106,
-                  display: 'block',
-                }}
-              />
-            </div>
-            <p style={{ margin: 0, color: '#666', fontSize: 16 }}>
+            <p style={{ margin: '4px 0 0', color: '#666', fontSize: 16 }}>
               Meet Kourzo 👋 — your transfer course finder &amp; mapper
             </p>
           </div>
