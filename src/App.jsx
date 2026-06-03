@@ -479,10 +479,10 @@ export default function App() {
       {/* Top navbar */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
         <div>
-          <h2 style={{ margin: 0 }}>Transfer course finder</h2>
-          <p style={{ margin: '4px 0 0', color: '#666', fontSize: 13 }}>
-            Find equivalent CC courses for your UC/CSU transfer path
-          </p>
+          <h2 style={{ margin: 0 }}>{user ? 'Kourzo' : 'Meet Kourzo 👋'}</h2>
+<p style={{ margin: '4px 0 0', color: '#666', fontSize: 13 }}>
+  Your transfer course finder & mapper
+</p>
         </div>
 
         {user && (
