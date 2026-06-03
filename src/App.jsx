@@ -416,7 +416,10 @@ export default function App() {
             if (!key) return []
             const agreement = await getAgreement(key)
             return parseArticulations(agreement, prefix, courseNum)
-          } catch { return [] }
+          } catch (e) { 
+    console.warn(`Failed ccId ${ccId}:`, e.message)
+    return [] 
+  }
         }))
         batchResults.forEach(r => results.push(...r))
         checked += batch.length
