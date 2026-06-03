@@ -515,7 +515,7 @@ export default function App() {
               <span style={{ color: '#6C5CE7' }}>K</span><span style={{ color: '#1a1a1a' }}>ourzo</span>
             </div>
             <p style={{ margin: 0, color: '#666', fontSize: 16 }}>
-              Meet Kourzo 👋 — your transfer course finder &amp; mapper
+              Meet Kourzo 👋 — find &amp; plan your CC transfer courses, faster
             </p>
           </div>
         )}
