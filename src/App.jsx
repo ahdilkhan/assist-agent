@@ -319,7 +319,7 @@ export const KNOWN_CCS = [
   { id: 147, name: 'Woodland Community College' }, { id: 90, name: 'Yuba College' },
 ].sort((a, b) => a.name.localeCompare(b.name))
 
-const BATCH_SIZE = 30
+const BATCH_SIZE = 15
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('tab1')
