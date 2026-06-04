@@ -434,7 +434,7 @@ export default function Tab2() {
           {/* Side-by-side layout on desktop */}
           <div style={{
             display: isWide ? 'grid' : 'block',
-            gridTemplateColumns: isWide ? '1fr 280px' : undefined,
+            gridTemplateColumns: isWide ? '1fr 340px' : undefined,
             gap: isWide ? 20 : 0,
             alignItems: 'start',
           }}>
