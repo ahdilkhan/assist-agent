@@ -13,7 +13,6 @@ async function assistGet(path) {
 }
 
 async function getMajorsForUni(uniId, ccId) {
-  // Try prod.assistng.org with multiple year IDs
   try {
     for (const yearId of [YEAR_ID, 75, 74]) {
       try {
@@ -30,41 +29,8 @@ async function getMajorsForUni(uniId, ccId) {
       } catch {}
     }
   } catch {}
-
-  // Fall back to direct assist.org API call from browser
-  try {
-    for (const yearId of [77, 76, 75, 74]) {
-      try {
-        const categoriesRes = await fetch(
-  `https://assist.org/api/agreements/categories?receivingInstitutionId=${uniId}&sendingInstitutionId=${ccId}&academicYearId=${yearId}`,
-  { 
-    headers: { accept: 'application/json' },
-    credentials: 'include'
-  }
-)
-        if (!categoriesRes.ok) continue
-        const categories = await categoriesRes.json()
-        if (!categories || categories.length === 0) continue
-        const reports = []
-        for (const cat of categories) {
-          const agreementsRes = await fetch(
-  `https://assist.org/api/agreements?receivingInstitutionId=${uniId}&sendingInstitutionId=${ccId}&academicYearId=${yearId}&categoryCode=${cat.code}`,
-  { 
-    headers: { accept: 'application/json' },
-    credentials: 'include'
-  }
-)
-          const data = await agreementsRes.json()
-          if (data.reports) reports.push(...data.reports)
-        }
-        if (reports.length > 0) return reports.sort((a, b) => a.label.localeCompare(b.label))
-      } catch {}
-    }
-  } catch {}
-
   return []
 }
-
 async function getAgreement(key) {
   return assistGet(`/articulation/api/Agreements?Key=${encodeURIComponent(key)}`)
 }
