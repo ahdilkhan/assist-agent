@@ -20,6 +20,7 @@ async function getMajorsForUni(uniId, ccId) {
         { headers: { accept: 'application/json' } }
       )
       const data = await res.json()
+      console.log(`yearId ${yearId} ${categoryCode}:`, JSON.stringify(data).slice(0, 300))
       const reports = data.reports || []
       if (reports.length > 0) return reports
     }
