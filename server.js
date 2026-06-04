@@ -48,6 +48,21 @@ app.use("/articulation/api", async (req, res) => {
   }
 })
 
+app.use("/assist-org-api", async (req, res) => {
+  try {
+    const url = `https://assist.org/api${req.url}`
+    console.log("[ASSIST ORG API]", url)
+    const response = await axios.get(url, {
+      headers: { ...browserHeaders, accept: 'application/json' }
+    })
+    res.set("Cache-Control", "no-store")
+    res.json(response.data)
+  } catch (err) {
+    console.error("[ASSIST ORG API ERROR]", err.message)
+    res.status(err.response?.status || 500).json({ error: err.message })
+  }
+})
+
 /**
  * TRANSFERABLE COURSE LIST (your existing logic kept)
  */

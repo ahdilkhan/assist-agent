@@ -13,28 +13,35 @@ async function assistGet(path) {
 }
 
 async function getMajorsForUni(uniId, ccId) {
-  // Try old endpoint first (works for UCs)
-  const result = await assistGet(
-    `/articulation/api/Agreements/Published/for/${uniId}/to/${ccId}/in/${YEAR_ID}?types=Major&types=Department`
-  )
-  const reports = result.reports || result.allReports || []
-  const majors = reports.filter(r => r.type === 'Major')
-  if (majors.length > 0) return majors
-  const departments = reports.filter(r => r.type === 'Department')
-  if (departments.length > 0) return departments
+  // Try original endpoint first (works for UCs)
+  try {
+    const result = await assistGet(
+      `/articulation/api/Agreements/Published/for/${uniId}/to/${ccId}/in/${YEAR_ID}?types=Major`
+    )
+    const majors = (result.reports || result.allReports || []).filter(r => r.type === 'Major')
+    if (majors.length > 0) return majors
+  } catch {}
 
-  // Fall back to new endpoint (works for CSUs and independents)
-  for (const yearId of [YEAR_ID, 75]) {
-    for (const categoryCode of ['major', 'department']) {
-      const res = await fetch(
-        `${ASSIST_BASE}/assist-api/agreements?receivingInstitutionId=${uniId}&sendingInstitutionId=${ccId}&academicYearId=${yearId}&categoryCode=${categoryCode}`,
+  // Fall back to assist.org/api for CSUs and independents
+  try {
+    const ASSIST_ORG_BASE = import.meta.env.VITE_ASSIST_BASE.replace('/articulation/api', '')
+    const categoriesRes = await fetch(
+      `${ASSIST_ORG_BASE}/assist-org-api/agreements/categories?receivingInstitutionId=${uniId}&sendingInstitutionId=${ccId}&academicYearId=77`,
+      { headers: { accept: 'application/json' } }
+    )
+    const categories = await categoriesRes.json()
+    const reports = []
+    for (const cat of (categories || [])) {
+      const agreementsRes = await fetch(
+        `${ASSIST_ORG_BASE}/assist-org-api/agreements?receivingInstitutionId=${uniId}&sendingInstitutionId=${ccId}&academicYearId=77&categoryCode=${cat.code}`,
         { headers: { accept: 'application/json' } }
       )
-      const data = await res.json()
-      const reports = data.reports || []
-      if (reports.length > 0) return reports
+      const data = await agreementsRes.json()
+      if (data.reports) reports.push(...data.reports)
     }
-  }
+    return reports.sort((a, b) => a.label.localeCompare(b.label))
+  } catch {}
+
   return []
 }
 
