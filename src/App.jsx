@@ -5,7 +5,7 @@ import Tab2 from './Tab2'
 import kourzoLogo from './kourzo_logo.svg'
 
 const ASSIST_BASE = import.meta.env.VITE_ASSIST_BASE
-const YEAR_ID = 75
+const YEAR_ID = import.meta.env.VITE_ACADEMIC_YEAR_ID || 76
 
 const REGIONS = {
   'Bay Area': ['De Anza', 'Foothill', 'Diablo Valley', 'Laney', 'Merritt', 'College of Alameda', 'Chabot', 'Las Positas', 'Ohlone', 'Mission College', 'San Jose City', 'Evergreen Valley', 'Canada College', 'Skyline', 'College of San Mateo', 'College of Marin', 'City College of San Francisco', 'Contra Costa', 'Los Medanos', 'Gavilan', 'Cabrillo'],
