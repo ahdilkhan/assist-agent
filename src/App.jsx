@@ -205,6 +205,9 @@ function parseArticulations(agreement, targetPrefix, targetNumber) {
   try {
     const arts = typeof agreement.articulations === 'string'
       ? JSON.parse(agreement.articulations) : agreement.articulations || []
+    if (targetPrefix === 'BIOL' || targetPrefix === 'MATH') {
+  console.log('RAW ARTS SAMPLE:', JSON.stringify(arts[0], null, 2))
+}
     const sending = typeof agreement.sendingInstitution === 'string'
       ? JSON.parse(agreement.sendingInstitution) : agreement.sendingInstitution
     const ccName = sending?.names?.[0]?.name || sending?.code || 'Unknown CC'
