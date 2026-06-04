@@ -239,9 +239,10 @@ function parseArticulations(agreement, targetPrefix, targetNumber) {
       const art = item.articulation || item
  
       let receivingCourses = []
-      if (art.course) receivingCourses.push(art.course)
-      if (art.receivingCourse) receivingCourses.push(art.receivingCourse)
-      if (art.courses && Array.isArray(art.courses)) receivingCourses.push(...art.courses)
+if (art.course) receivingCourses.push(art.course)
+if (art.receivingCourse) receivingCourses.push(art.receivingCourse)
+if (art.courses && Array.isArray(art.courses)) receivingCourses.push(...art.courses)
+if (art.series?.courses && Array.isArray(art.series.courses)) receivingCourses.push(...art.series.courses)
  
       // ── UNKNOWN SHAPE GUARD: warn if no receiving field found at all ──────────
       if (receivingCourses.length === 0) {
