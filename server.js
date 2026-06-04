@@ -57,6 +57,7 @@ app.use("/assist-org-api", async (req, res) => {
   console.log("[SESSION FETCH ERROR]", err.message)
   return null
 })
+console.log("[COOKIES FULL]", sessionRes.headers['set-cookie'])
 
 if (!sessionRes) {
   return res.status(500).json({ error: "Could not fetch session" })
