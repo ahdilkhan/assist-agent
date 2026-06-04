@@ -36,9 +36,12 @@ async function getMajorsForUni(uniId, ccId) {
     for (const yearId of [77, 76, 75, 74]) {
       try {
         const categoriesRes = await fetch(
-          `https://assist.org/api/agreements/categories?receivingInstitutionId=${uniId}&sendingInstitutionId=${ccId}&academicYearId=${yearId}`,
-          { headers: { accept: 'application/json' } }
-        )
+  `https://assist.org/api/agreements/categories?receivingInstitutionId=${uniId}&sendingInstitutionId=${ccId}&academicYearId=${yearId}`,
+  { 
+    headers: { accept: 'application/json' },
+    credentials: 'include'
+  }
+)
         if (!categoriesRes.ok) continue
         const categories = await categoriesRes.json()
         if (!categories || categories.length === 0) continue
