@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { KNOWN_UNIVERSITIES, KNOWN_CCS } from './App'
 
 const ASSIST_BASE = import.meta.env.VITE_ASSIST_BASE
-const YEAR_ID = 75
+const YEAR_ID = import.meta.env.VITE_ACADEMIC_YEAR_ID || 76
 
 async function assistGet(path) {
   const res = await fetch(`${ASSIST_BASE}${path}`, { headers: { accept: 'application/json' } })
@@ -16,7 +16,8 @@ async function getMajorsForUni(uniId, ccId) {
   const result = await assistGet(
     `/articulation/api/Agreements/Published/for/${uniId}/to/${ccId}/in/${YEAR_ID}?types=Major`
   )
-  return result.reports?.filter(r => r.type === 'Major') || []
+  const reports = result.reports || result.allReports || []
+  return reports.filter(r => r.type === 'Major')
 }
 
 async function getAgreement(key) {
@@ -62,25 +63,39 @@ function parseAllForProgram(agreement, programLabel) {
     const arts = typeof agreement.articulations === 'string'
       ? JSON.parse(agreement.articulations) : agreement.articulations || []
     const results = []
+
     for (const item of arts) {
       const art = item.articulation || item
-      const receiving = art.course || art.receivingCourse
-      if (!receiving) continue
+
+      // Same 4-shape collection as Tab1
+      let receivingCourses = []
+      if (art.course) receivingCourses.push(art.course)
+      if (art.receivingCourse) receivingCourses.push(art.receivingCourse)
+      if (art.courses && Array.isArray(art.courses)) receivingCourses.push(...art.courses)
+      if (art.series?.courses && Array.isArray(art.series.courses)) {
+        receivingCourses.push(...art.series.courses)
+      }
+
+      if (receivingCourses.length === 0) continue
+
       const sendingArt = art.sendingArticulation
       if (!sendingArt || sendingArt.noArticulationReason) continue
+
       const options = parseSendingOptions(sendingArt.items || [])
-      if (options.length > 0) {
-        results.push({
-          program: programLabel,
-          uniRequirement: {
-            prefix: (receiving.prefix || '').trim(),
-            number: (receiving.courseNumber || receiving.number || '').trim(),
-            title: receiving.courseTitle || receiving.title || '',
-            units: receiving.maxUnits || receiving.minUnits || null
-          },
-          options
-        })
-      }
+      if (options.length === 0) continue
+
+      // Use first course as the primary requirement label
+      const primary = receivingCourses[0]
+      results.push({
+        program: programLabel,
+        uniRequirement: {
+          prefix: (primary.prefix || '').trim(),
+          number: (primary.courseNumber || primary.number || '').trim(),
+          title: primary.courseTitle || primary.title || '',
+          units: primary.maxUnits || primary.minUnits || null
+        },
+        options
+      })
     }
     return results
   } catch { return [] }
