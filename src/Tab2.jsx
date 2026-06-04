@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
+import { supabase } from './lib/supabase'
 import { KNOWN_UNIVERSITIES, KNOWN_CCS } from './App'
 
 const ASSIST_BASE = import.meta.env.VITE_ASSIST_BASE
@@ -74,6 +75,8 @@ function parseAllForProgram(agreement, programLabel) {
     const arts = typeof agreement.articulations === 'string'
       ? JSON.parse(agreement.articulations) : agreement.articulations || []
     const results = []
+    const noArticulationResults = []
+
     for (const item of arts) {
       const art = item.articulation || item
       let receivingCourses = []
@@ -82,24 +85,53 @@ function parseAllForProgram(agreement, programLabel) {
       if (art.courses && Array.isArray(art.courses)) receivingCourses.push(...art.courses)
       if (art.series?.courses && Array.isArray(art.series.courses)) receivingCourses.push(...art.series.courses)
       if (receivingCourses.length === 0) continue
+
+      const primary = receivingCourses[0]
+      const allCourseLabels = receivingCourses.map(rc =>
+        `${(rc.prefix || '').trim()} ${(rc.courseNumber || rc.number || '').trim()}`
+      )
+
       const sendingArt = art.sendingArticulation
-      if (!sendingArt || sendingArt.noArticulationReason) continue
+
+      // No articulation — track separately so we can show ⚠️ section
+      if (!sendingArt || sendingArt.noArticulationReason) {
+        noArticulationResults.push({
+          program: programLabel,
+          uniRequirement: {
+            prefix: (primary.prefix || '').trim(),
+            number: (primary.courseNumber || primary.number || '').trim(),
+            title: primary.courseTitle || primary.title || '',
+            units: primary.maxUnits || primary.minUnits || null,
+            allCourseLabels,
+          },
+          noArticulation: true,
+          reason: sendingArt?.noArticulationReason || null,
+        })
+        continue
+      }
+
       const options = parseSendingOptions(sendingArt.items || [])
       if (options.length === 0) continue
-      const primary = receivingCourses[0]
+
       results.push({
         program: programLabel,
         uniRequirement: {
           prefix: (primary.prefix || '').trim(),
           number: (primary.courseNumber || primary.number || '').trim(),
           title: primary.courseTitle || primary.title || '',
-          units: primary.maxUnits || primary.minUnits || null
+          units: primary.maxUnits || primary.minUnits || null,
+          allCourseLabels, // e.g. ['CHEM 8A', 'CHEM 8LA']
         },
-        options
+        options,
       })
     }
-    return results
-  } catch { return [] }
+    return { articulated: results, noArticulation: noArticulationResults }
+  } catch { return { articulated: [], noArticulation: [] } }
+}
+
+// Generate a stable save key from program keys
+function getPlanSaveKey(programs) {
+  return 'tab2_progress_' + programs.map(p => p.majorKey).sort().join('|')
 }
 
 export default function Tab2() {
@@ -118,6 +150,15 @@ export default function Tab2() {
   const [overlapData, setOverlapData] = useState(null)
   const [expandedRow, setExpandedRow] = useState(null)
   const [completedCourses, setCompletedCourses] = useState(new Set())
+  const [isWide, setIsWide] = useState(window.innerWidth > 768)
+  const saveTimeoutRef = useRef(null)
+
+  // Track window width for responsive layout
+  useEffect(() => {
+    const handler = () => setIsWide(window.innerWidth > 768)
+    window.addEventListener('resize', handler)
+    return () => window.removeEventListener('resize', handler)
+  }, [])
 
   useEffect(() => {
     if (!selUniId || !ccId) { setMajors([]); setSelMajor(null); return }
@@ -132,6 +173,34 @@ export default function Tab2() {
       .catch(() => setMajors([]))
       .finally(() => setMajorsLoading(false))
   }, [selUniId, ccId])
+
+  // Load saved progress when overlapData is set
+  useEffect(() => {
+    if (!overlapData || programs.length === 0) return
+    const key = getPlanSaveKey(programs)
+    supabase.from('tab2_progress').select('completed_courses').eq('plan_key', key).single()
+      .then(({ data }) => {
+        if (data?.completed_courses) {
+          setCompletedCourses(new Set(data.completed_courses))
+        }
+      })
+  }, [overlapData])
+
+  // Save progress to Supabase (debounced)
+  async function saveProgress(newCompleted, progs) {
+    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current)
+    saveTimeoutRef.current = setTimeout(async () => {
+      const key = getPlanSaveKey(progs)
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+      await supabase.from('tab2_progress').upsert({
+        plan_key: key,
+        user_id: user.id,
+        completed_courses: [...newCompleted],
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'plan_key,user_id' })
+    }, 1000)
+  }
 
   function addProgram() {
     if (!selUniId || !selMajor) return
@@ -148,6 +217,7 @@ export default function Tab2() {
     setCompletedCourses(prev => {
       const next = new Set(prev)
       next.has(ccKey) ? next.delete(ccKey) : next.add(ccKey)
+      saveProgress(next, programs)
       return next
     })
   }
@@ -160,14 +230,16 @@ export default function Tab2() {
       const programArts = await Promise.all(programs.map(async prog => {
         setLoadingMsg(`Fetching ${prog.uniName} — ${prog.majorLabel}...`)
         const agreement = await getAgreement(prog.majorKey)
-        const arts = parseAllForProgram(agreement, `${prog.uniName} → ${prog.majorLabel}`)
-        return { prog, arts }
+        const parsed = parseAllForProgram(agreement, `${prog.uniName} → ${prog.majorLabel}`)
+        return { prog, arts: parsed.articulated, noArts: parsed.noArticulation }
       }))
 
       const totalPrograms = programs.length
       const reqMap = {}
+      const noArtMap = {} // key: "uniName|prefix|number"
 
-      for (const { prog, arts } of programArts) {
+      for (const { prog, arts, noArts } of programArts) {
+        // Articulated courses
         for (const art of arts) {
           const cheapestOpt = art.options.reduce((a, b) => a.courses.length <= b.courses.length ? a : b)
           const ccKey = cheapestOpt.courses.map(c => `${c.prefix} ${c.number}`).sort().join('+')
@@ -180,8 +252,20 @@ export default function Tab2() {
               _entryKey: entryKey,
               program: `${prog.uniName} → ${prog.majorLabel}`,
               uniReq: art.uniRequirement,
-              options: art.options
+              options: art.options,
             })
+          }
+        }
+
+        // No articulation courses
+        for (const na of noArts) {
+          const naKey = `${prog.uniName}|${na.uniRequirement.prefix}|${na.uniRequirement.number}`
+          if (!noArtMap[naKey]) {
+            noArtMap[naKey] = {
+              program: `${prog.uniName} → ${prog.majorLabel}`,
+              uniReq: na.uniRequirement,
+              reason: na.reason,
+            }
           }
         }
       }
@@ -191,7 +275,13 @@ export default function Tab2() {
         return { ...entry, coverage }
       })
       rows.sort((a, b) => b.coverage - a.coverage || a.ccKey.localeCompare(b.ccKey))
-      setOverlapData({ rows, totalPrograms, programLabels: programs.map(p => `${p.uniName} → ${p.majorLabel}`) })
+
+      setOverlapData({
+        rows,
+        totalPrograms,
+        programLabels: programs.map(p => `${p.uniName} → ${p.majorLabel}`),
+        noArticulation: Object.values(noArtMap),
+      })
     } catch (e) {
       setError(`Error: ${e.message}`)
     } finally {
@@ -200,7 +290,7 @@ export default function Tab2() {
   }
 
   function computeAttainability() {
-    if (!overlapData || completedCourses.size === 0) return []
+    if (!overlapData) return []
     const programMap = {}
     for (const label of overlapData.programLabels) {
       programMap[label] = { label, total: 0, completed: 0 }
@@ -221,14 +311,14 @@ export default function Tab2() {
     })
   }
 
-  // Shorten program label for column headers
   function shortLabel(label) {
-    // "UC Berkeley → Computer Science, B.A." -> "Berkeley CS"
     const parts = label.split(' → ')
     const uni = parts[0]?.replace('UC ', '').replace('CSU ', '').replace(' State', '').replace(' University', '')
     const major = parts[1]?.split(',')[0]?.split(' ').slice(0, 2).join(' ')
     return `${uni}\n${major || ''}`
   }
+
+  const summary = computeAttainability()
 
   return (
     <div>
@@ -285,12 +375,12 @@ export default function Tab2() {
                   </select>
                 </div>
                 <div className="field">
-                  <label>Major</label>
+                  <label>Major / Department</label>
                   {majorsLoading
                     ? <div className="status" style={{ padding: '9px 0' }}><div className="spinner" />Loading...</div>
                     : <select value={selMajor?.key || ''} onChange={e => setSelMajor(majors.find(m => m.key === e.target.value) || null)}
                         disabled={!selUniId || majors.length === 0}>
-                        <option value="">{!selUniId ? 'Select university first' : majors.length === 0 ? 'No majors found' : 'Select major...'}</option>
+                        <option value="">{!selUniId ? 'Select university first' : majors.length === 0 ? 'No agreement found' : 'Select major or department...'}</option>
                         {majors.map(m => <option key={m.key} value={m.key}>{m.label}</option>)}
                       </select>
                   }
@@ -328,177 +418,242 @@ export default function Tab2() {
             <button className="btn-secondary" onClick={() => { setOverlapData(null); setExpandedRow(null) }}>← Edit</button>
           </div>
 
-          <div className="key-note" style={{ marginBottom: 16 }}>
-            ☑️ Check off courses you've already completed to track your progress. Click any row for details.
+          {/* Legend */}
+          <div style={{
+            display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 12,
+            fontSize: 12, color: '#666', alignItems: 'center',
+            background: '#f9f9f7', borderRadius: 8, padding: '8px 12px',
+          }}>
+            <span style={{ fontWeight: 600, color: '#1a1a1a' }}>Key:</span>
+            <span><span style={{ color: '#6C5CE7', fontWeight: 700, fontSize: 14 }}>●</span> Required by this program</span>
+            <span><span style={{ color: '#ddd', fontSize: 14 }}>●</span> Not required</span>
+            <span>☑ = you've completed it</span>
+            <span style={{ color: '#888' }}>· Progress is saved automatically</span>
           </div>
 
-          {/* Grid table */}
-          <div style={{ overflowX: 'auto', marginBottom: 24 }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-              <thead>
-                <tr>
-                  <th style={{ width: 32, padding: '8px 6px', borderBottom: '2px solid #e0e0e0' }}></th>
-                  <th style={{ textAlign: 'left', padding: '8px 12px', borderBottom: '2px solid #e0e0e0', fontWeight: 600, color: '#1a1a1a' }}>
-                    Course at {ccName}
-                  </th>
-                  {overlapData.programLabels.map((label, i) => (
-                    <th key={i} style={{
-                      padding: '8px 10px', borderBottom: '2px solid #e0e0e0',
-                      fontWeight: 600, color: '#555', fontSize: 11,
-                      textAlign: 'center', whiteSpace: 'pre-line', minWidth: 80
-                    }}>
-                      {shortLabel(label)}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {overlapData.rows.map((row, idx) => {
-                  const isDone = completedCourses.has(row.ccKey)
-                  const isExpanded = expandedRow === row.ccKey
-                  const label = row.primaryCourses.map(c => `${c.prefix} ${c.number}`).join(' + ')
-                  const subtitle = row.primaryCourses.map(c => c.title).filter(Boolean).join(' + ')
-                  const units = row.primaryCourses.reduce((sum, c) => sum + (c.units || 0), 0)
-                  const hasAlts = row.programEntries.some(pe => pe.options.length > 1)
-                  const coverageAll = row.coverage === overlapData.totalPrograms
-                  const coverageMost = row.coverage > 1 && !coverageAll
+          {/* Side-by-side layout on desktop */}
+          <div style={{
+            display: isWide ? 'grid' : 'block',
+            gridTemplateColumns: isWide ? '1fr 280px' : undefined,
+            gap: isWide ? 20 : 0,
+            alignItems: 'start',
+          }}>
 
-                  return (
-                    <>
-                      <tr
-                        key={row.ccKey}
-                        onClick={() => setExpandedRow(isExpanded ? null : row.ccKey)}
-                        style={{
-                          background: isDone ? '#fafafa' : idx % 2 === 0 ? '#fff' : '#fafafa',
-                          cursor: 'pointer',
-                          opacity: isDone ? 0.5 : 1,
-                          transition: 'background 0.15s',
-                          borderBottom: isExpanded ? 'none' : '1px solid #f0f0f0',
-                        }}
-                      >
-                        <td style={{ padding: '10px 6px', textAlign: 'center' }} onClick={e => e.stopPropagation()}>
-                          <input
-                            type="checkbox"
-                            checked={isDone}
-                            onChange={() => toggleCourse(row.ccKey)}
-                            style={{ width: 15, height: 15, cursor: 'pointer', accentColor: '#1a1a1a' }}
-                          />
-                        </td>
-                        <td style={{ padding: '10px 12px' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                            <div>
-                              <div style={{
-                                fontWeight: 600, fontSize: 13,
-                                textDecoration: isDone ? 'line-through' : 'none',
-                                color: isDone ? '#aaa' : '#1a1a1a'
-                              }}>
-                                {label}
-                                {coverageAll && <span style={{ marginLeft: 6, fontSize: 10, background: '#e8f5e9', color: '#2e7d32', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>ALL</span>}
-                                {coverageMost && <span style={{ marginLeft: 6, fontSize: 10, background: '#fff8e1', color: '#f57f17', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>MULTIPLE</span>}
-                              </div>
-                              {subtitle && <div style={{ fontSize: 11, color: '#888', marginTop: 1 }}>
-                                {subtitle}{units ? ` · ${units} units` : ''}{hasAlts ? ' · has alternatives' : ''}
-                              </div>}
-                            </div>
-                          </div>
-                        </td>
-                        {overlapData.programLabels.map((label, pi) => {
-                          const entry = row.programEntries.find(pe => pe.program === label)
-                          return (
-                            <td key={pi} style={{ padding: '10px', textAlign: 'center', borderLeft: '1px solid #f0f0f0' }}>
-                              {entry ? (
-                                <span style={{ fontSize: 16 }}>✅</span>
-                              ) : (
-                                <span style={{ fontSize: 14, color: '#ddd' }}>—</span>
-                              )}
+            {/* LEFT: Grid table */}
+            <div>
+              <div style={{ overflowX: 'auto', marginBottom: 24 }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                  <thead>
+                    <tr>
+                      <th style={{ width: 32, padding: '8px 6px', borderBottom: '2px solid #e0e0e0' }}></th>
+                      <th style={{ textAlign: 'left', padding: '8px 12px', borderBottom: '2px solid #e0e0e0', fontWeight: 600, color: '#1a1a1a' }}>
+                        Course at {ccName}
+                      </th>
+                      {overlapData.programLabels.map((label, i) => (
+                        <th key={i} style={{
+                          padding: '8px 10px', borderBottom: '2px solid #e0e0e0',
+                          fontWeight: 600, color: '#555', fontSize: 11,
+                          textAlign: 'center', whiteSpace: 'pre-line', minWidth: 80
+                        }}>
+                          {shortLabel(label)}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {overlapData.rows.map((row, idx) => {
+                      const isDone = completedCourses.has(row.ccKey)
+                      const isExpanded = expandedRow === row.ccKey
+                      const label = row.primaryCourses.map(c => `${c.prefix} ${c.number}`).join(' + ')
+                      const subtitle = row.primaryCourses.map(c => c.title).filter(Boolean).join(' + ')
+                      const units = row.primaryCourses.reduce((sum, c) => sum + (c.units || 0), 0)
+                      const hasAlts = row.programEntries.some(pe => pe.options.length > 1)
+                      const coverageAll = row.coverage === overlapData.totalPrograms
+                      const coverageMost = row.coverage > 1 && !coverageAll
+
+                      return (
+                        <>
+                          <tr
+                            key={row.ccKey}
+                            onClick={() => setExpandedRow(isExpanded ? null : row.ccKey)}
+                            style={{
+                              background: isDone ? '#fafafa' : idx % 2 === 0 ? '#fff' : '#fafafa',
+                              cursor: 'pointer',
+                              opacity: isDone ? 0.5 : 1,
+                              transition: 'background 0.15s',
+                              borderBottom: isExpanded ? 'none' : '1px solid #f0f0f0',
+                            }}
+                          >
+                            <td style={{ padding: '10px 6px', textAlign: 'center' }} onClick={e => e.stopPropagation()}>
+                              <input
+                                type="checkbox"
+                                checked={isDone}
+                                onChange={() => toggleCourse(row.ccKey)}
+                                style={{ width: 15, height: 15, cursor: 'pointer', accentColor: '#1a1a1a' }}
+                              />
                             </td>
-                          )
-                        })}
-                      </tr>
-
-                      {/* Expanded detail row */}
-                      {isExpanded && (
-                        <tr key={`${row.ccKey}-detail`} style={{ borderBottom: '1px solid #f0f0f0' }}>
-                          <td></td>
-                          <td colSpan={overlapData.programLabels.length + 1} style={{ padding: '0 12px 16px' }}>
-                            <div style={{ background: '#f9f9f7', borderRadius: 8, padding: 14, marginTop: 4 }}>
-                              {row.programEntries.map((pe, i) => (
-                                <div key={i} style={{
-                                  marginBottom: i < row.programEntries.length - 1 ? 14 : 0,
-                                  paddingBottom: i < row.programEntries.length - 1 ? 14 : 0,
-                                  borderBottom: i < row.programEntries.length - 1 ? '1px solid #eee' : 'none'
+                            <td style={{ padding: '10px 12px' }}>
+                              <div>
+                                <div style={{
+                                  fontWeight: 600, fontSize: 13,
+                                  textDecoration: isDone ? 'line-through' : 'none',
+                                  color: isDone ? '#aaa' : '#1a1a1a'
                                 }}>
-                                  <div style={{ fontSize: 12, fontWeight: 600, color: '#555', marginBottom: 4 }}>{pe.program}</div>
-                                  <div style={{ fontSize: 12, color: '#888', marginBottom: 8 }}>
-                                    Satisfies: <span style={{ fontWeight: 500, color: '#1a1a1a' }}>
-                                      {pe.uniReq.prefix} {pe.uniReq.number} — {pe.uniReq.title}
-                                    </span>
-                                    {pe.uniReq.units ? ` (${pe.uniReq.units} units)` : ''}
-                                  </div>
-                                  {pe.options.map((opt, j) => (
-                                    <div key={j}>
-                                      {j > 0 && <div style={{ textAlign: 'center', fontSize: 11, color: '#aaa', padding: '4px 0', fontWeight: 600 }}>— OR —</div>}
-                                      {opt.courses.length > 1 && <div style={{ fontSize: 11, color: '#888', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>Take all together</div>}
-                                      {opt.groupNote && <div style={{ fontSize: 11, color: '#f57f17', marginBottom: 4 }}>⚠️ {opt.groupNote}</div>}
-                                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                                        {opt.courses.map((c, k) => (
-                                          <div key={k} style={{ background: '#efefed', borderRadius: 6, padding: '4px 10px', fontSize: 12 }}>
-                                            <span style={{ fontFamily: 'monospace', fontWeight: 600 }}>{c.prefix} {c.number}</span>
-                                            {c.title && <span style={{ color: '#666', marginLeft: 6 }}>{c.title}</span>}
-                                            {c.units && <span style={{ color: '#999', marginLeft: 6 }}>{c.units}u</span>}
-                                            {c.note && <div style={{ fontSize: 11, color: '#f57f17', marginTop: 4 }}>⚠️ {c.note}</div>}
-                                          </div>
-                                        ))}
+                                  {label}
+                                  {coverageAll && <span style={{ marginLeft: 6, fontSize: 10, background: '#ede9ff', color: '#6C5CE7', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>ALL PROGRAMS</span>}
+                                  {coverageMost && <span style={{ marginLeft: 6, fontSize: 10, background: '#fff8e1', color: '#f57f17', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>MULTIPLE</span>}
+                                </div>
+                                {subtitle && <div style={{ fontSize: 11, color: '#888', marginTop: 1 }}>
+                                  {subtitle}{units ? ` · ${units} units` : ''}{hasAlts ? ' · has alternatives' : ''}
+                                </div>}
+                              </div>
+                            </td>
+                            {overlapData.programLabels.map((progLabel, pi) => {
+                              const entry = row.programEntries.find(pe => pe.program === progLabel)
+                              return (
+                                <td key={pi} style={{ padding: '10px', textAlign: 'center', borderLeft: '1px solid #f0f0f0' }}>
+                                  {entry
+                                    ? <span style={{ color: '#6C5CE7', fontSize: 18, lineHeight: 1 }}>●</span>
+                                    : <span style={{ color: '#e0e0e0', fontSize: 18, lineHeight: 1 }}>●</span>
+                                  }
+                                </td>
+                              )
+                            })}
+                          </tr>
+
+                          {/* Expanded detail row */}
+                          {isExpanded && (
+                            <tr key={`${row.ccKey}-detail`} style={{ borderBottom: '1px solid #f0f0f0' }}>
+                              <td></td>
+                              <td colSpan={overlapData.programLabels.length + 1} style={{ padding: '0 12px 16px' }}>
+                                <div style={{ background: '#f9f9f7', borderRadius: 8, padding: 14, marginTop: 4 }}>
+                                  {row.programEntries.map((pe, i) => (
+                                    <div key={i} style={{
+                                      marginBottom: i < row.programEntries.length - 1 ? 14 : 0,
+                                      paddingBottom: i < row.programEntries.length - 1 ? 14 : 0,
+                                      borderBottom: i < row.programEntries.length - 1 ? '1px solid #eee' : 'none'
+                                    }}>
+                                      <div style={{ fontSize: 12, fontWeight: 600, color: '#555', marginBottom: 4 }}>{pe.program}</div>
+                                      <div style={{ fontSize: 12, color: '#888', marginBottom: 4 }}>
+                                        Satisfies: <span style={{ fontWeight: 500, color: '#1a1a1a' }}>
+                                          {pe.uniReq.prefix} {pe.uniReq.number} — {pe.uniReq.title}
+                                        </span>
+                                        {pe.uniReq.units ? ` (${pe.uniReq.units} units)` : ''}
                                       </div>
+                                      {/* Also satisfies */}
+                                      {pe.uniReq.allCourseLabels?.length > 1 && (
+                                        <div style={{ fontSize: 12, color: '#6C5CE7', marginBottom: 8 }}>
+                                          ✅ Also satisfies: {pe.uniReq.allCourseLabels.slice(1).join(', ')}
+                                        </div>
+                                      )}
+                                      {pe.options.map((opt, j) => (
+                                        <div key={j}>
+                                          {j > 0 && <div style={{ textAlign: 'center', fontSize: 11, color: '#aaa', padding: '4px 0', fontWeight: 600 }}>— OR —</div>}
+                                          {opt.courses.length > 1 && <div style={{ fontSize: 11, color: '#888', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>Take all together</div>}
+                                          {opt.groupNote && <div style={{ fontSize: 11, color: '#f57f17', marginBottom: 4 }}>⚠️ {opt.groupNote}</div>}
+                                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                                            {opt.courses.map((c, k) => (
+                                              <div key={k} style={{ background: '#efefed', borderRadius: 6, padding: '4px 10px', fontSize: 12 }}>
+                                                <span style={{ fontFamily: 'monospace', fontWeight: 600 }}>{c.prefix} {c.number}</span>
+                                                {c.title && <span style={{ color: '#666', marginLeft: 6 }}>{c.title}</span>}
+                                                {c.units && <span style={{ color: '#999', marginLeft: 6 }}>{c.units}u</span>}
+                                                {c.note && <div style={{ fontSize: 11, color: '#f57f17', marginTop: 4 }}>⚠️ {c.note}</div>}
+                                              </div>
+                                            ))}
+                                          </div>
+                                        </div>
+                                      ))}
                                     </div>
                                   ))}
                                 </div>
-                              ))}
-                            </div>
-                          </td>
-                        </tr>
-                      )}
-                    </>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-
-          {overlapData.rows.length === 0 && (
-            <div className="key-note">No articulated courses found. Try different programs or check ASSIST.org directly.</div>
-          )}
-
-          {/* Progress summary */}
-          {completedCourses.size > 0 && (() => {
-            const summary = computeAttainability()
-            if (summary.length === 0) return null
-            return (
-              <div className="card" style={{ marginTop: 8, background: '#f9f9f7', border: '1px solid #e8e8e4' }}>
-                <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 12 }}>📊 Your progress summary</div>
-                {summary.map((s, i) => {
-                  const pct = s.total === 0 ? 0 : Math.round((s.completed / s.total) * 100)
-                  const isTop = i === 0 && summary.length > 1
-                  return (
-                    <div key={i} style={{ marginBottom: i < summary.length - 1 ? 12 : 0 }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                        <div style={{ fontSize: 13, fontWeight: isTop ? 600 : 400, color: isTop ? '#1a1a1a' : '#555' }}>
-                          {isTop && summary.length > 1 && '⭐ '}{s.label}
-                        </div>
-                        <div style={{ fontSize: 12, color: '#888' }}>{s.completed}/{s.total} done · {pct}%</div>
-                      </div>
-                      <div style={{ background: '#e0e0e0', borderRadius: 4, height: 6, overflow: 'hidden' }}>
-                        <div style={{ background: pct === 100 ? '#4caf50' : '#1a1a1a', height: '100%', width: `${pct}%`, borderRadius: 4, transition: 'width 0.3s ease' }} />
-                      </div>
-                      {isTop && summary.length > 1 && (
-                        <div style={{ fontSize: 11, color: '#888', marginTop: 4 }}>Most attainable based on courses completed</div>
-                      )}
-                    </div>
-                  )
-                })}
+                              </td>
+                            </tr>
+                          )}
+                        </>
+                      )
+                    })}
+                  </tbody>
+                </table>
               </div>
-            )
-          })()}
+
+              {overlapData.rows.length === 0 && (
+                <div className="key-note">No articulated courses found. Try different programs or check ASSIST.org directly.</div>
+              )}
+
+              {/* No articulation section */}
+              {overlapData.noArticulation?.length > 0 && (
+                <div style={{ marginBottom: 24 }}>
+                  <div style={{ fontWeight: 600, fontSize: 13, color: '#f57f17', marginBottom: 10 }}>
+                    ⚠️ Requirements with no CC equivalent at {ccName}
+                  </div>
+                  <div style={{ fontSize: 12, color: '#888', marginBottom: 12 }}>
+                    These university requirements don't have an articulated equivalent at {ccName}. You may need to take them at the university or find another CC with an agreement.
+                  </div>
+                  {overlapData.noArticulation.map((na, i) => (
+                    <div key={i} style={{
+                      background: '#fff8e1', border: '1px solid #ffe082', borderRadius: 8,
+                      padding: '10px 14px', marginBottom: 8,
+                      display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start'
+                    }}>
+                      <div>
+                        <div style={{ fontWeight: 600, fontSize: 13 }}>
+                          {na.uniReq.prefix} {na.uniReq.number} — {na.uniReq.title}
+                          {na.uniReq.units ? <span style={{ fontWeight: 400, color: '#888', fontSize: 12, marginLeft: 6 }}>{na.uniReq.units} units</span> : ''}
+                        </div>
+                        {na.uniReq.allCourseLabels?.length > 1 && (
+                          <div style={{ fontSize: 12, color: '#888', marginTop: 2 }}>
+                            Part of: {na.uniReq.allCourseLabels.join(' + ')}
+                          </div>
+                        )}
+                        <div style={{ fontSize: 12, color: '#888', marginTop: 2 }}>{na.program}</div>
+                        {na.reason && <div style={{ fontSize: 12, color: '#f57f17', marginTop: 4 }}>{na.reason}</div>}
+                      </div>
+                      <span style={{ fontSize: 11, background: '#fff3e0', color: '#f57f17', borderRadius: 4, padding: '2px 8px', fontWeight: 600, flexShrink: 0, marginLeft: 8 }}>No equivalent</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* RIGHT: Progress summary (sticky on desktop) */}
+            <div style={{ position: isWide ? 'sticky' : 'static', top: 20 }}>
+              <div className="card" style={{ background: '#f9f9f7', border: '1px solid #e8e8e4' }}>
+                <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 4 }}>📊 Progress</div>
+                <div style={{ fontSize: 11, color: '#888', marginBottom: 12 }}>
+                  Saved automatically · check off completed courses
+                </div>
+                {summary.length === 0 ? (
+                  <div style={{ fontSize: 12, color: '#aaa' }}>Check off courses to track progress</div>
+                ) : (
+                  summary.map((s, i) => {
+                    const pct = s.total === 0 ? 0 : Math.round((s.completed / s.total) * 100)
+                    const isTop = i === 0 && summary.length > 1
+                    return (
+                      <div key={i} style={{ marginBottom: i < summary.length - 1 ? 16 : 0 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                          <div style={{ fontSize: 12, fontWeight: isTop ? 600 : 400, color: isTop ? '#1a1a1a' : '#555', flex: 1, marginRight: 8 }}>
+                            {isTop && summary.length > 1 && <span style={{ color: '#6C5CE7' }}>⭐ </span>}{s.label}
+                          </div>
+                          <div style={{ fontSize: 11, color: '#888', flexShrink: 0 }}>{s.completed}/{s.total} · {pct}%</div>
+                        </div>
+                        <div style={{ background: '#e0e0e0', borderRadius: 4, height: 6, overflow: 'hidden' }}>
+                          <div style={{
+                            background: pct === 100 ? '#4caf50' : '#6C5CE7',
+                            height: '100%', width: `${pct}%`,
+                            borderRadius: 4, transition: 'width 0.3s ease'
+                          }} />
+                        </div>
+                        {isTop && summary.length > 1 && (
+                          <div style={{ fontSize: 10, color: '#888', marginTop: 3 }}>Most attainable so far</div>
+                        )}
+                      </div>
+                    )
+                  })
+                )}
+              </div>
+            </div>
+
+          </div>
         </>
       )}
     </div>
