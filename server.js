@@ -73,6 +73,24 @@ app.use("/transferablecourselist", async (req, res) => {
   }
 })
 
+app.use("/assist-api", async (req, res) => {
+  try {
+    const url = `${ASSIST_ORG}/api${req.url}`
+    console.log("[ASSIST ORG PROXY]", url)
+    const response = await axios.get(url, {
+      headers: {
+        ...browserHeaders,
+        accept: "application/json",
+      },
+    })
+    res.set("Cache-Control", "no-store")
+    res.json(response.data)
+  } catch (err) {
+    console.error("[ASSIST ORG ERROR]", err.message)
+    res.status(err.response?.status || 500).json({ error: err.message })
+  }
+})
+
 /**
  * HEALTH CHECK (optional but useful)
  */
