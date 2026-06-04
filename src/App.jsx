@@ -565,7 +565,7 @@ const deduped = Object.values(byCC)
   }
 
   return (
-    <div className="app">
+    <div className={`app${activeTab === 'tab2' ? ' wide' : ''}`}>
       {/* Top navbar */}
       <div style={{
         display: 'flex',
