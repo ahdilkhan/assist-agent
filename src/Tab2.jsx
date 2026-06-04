@@ -13,21 +13,25 @@ async function assistGet(path) {
 }
 
 async function getMajorsForUni(uniId, ccId) {
-  // Try prod.assistng.org first (works for most UCs, CSUs, and some independents)
+  // Try prod.assistng.org with multiple year IDs
   try {
-    const result = await assistGet(
-      `/articulation/api/Agreements/Published/for/${uniId}/to/${ccId}/in/${YEAR_ID}?types=Major&types=Department`
-    )
-    const reports = result.reports || result.allReports || []
-    const majors = reports.filter(r => r.type === 'Major')
-    if (majors.length > 0) return majors
-    const departments = reports.filter(r => r.type === 'Department')
-    if (departments.length > 0) return departments
-    const others = reports.filter(r => r.type !== 'Major' && r.type !== 'Department')
-    if (others.length > 0) return others
+    for (const yearId of [YEAR_ID, 75, 74]) {
+      try {
+        const result = await assistGet(
+          `/articulation/api/Agreements/Published/for/${uniId}/to/${ccId}/in/${yearId}?types=Major&types=Department`
+        )
+        const reports = result.reports || result.allReports || []
+        const majors = reports.filter(r => r.type === 'Major')
+        if (majors.length > 0) return majors
+        const departments = reports.filter(r => r.type === 'Department')
+        if (departments.length > 0) return departments
+        const others = reports.filter(r => r.type !== 'Major' && r.type !== 'Department' && r.type !== 'AllDepartments' && r.type !== 'SendingDepartment')
+        if (others.length > 0) return others
+      } catch {}
+    }
   } catch {}
 
-  // Fall back to assist.org/api for independents (tries multiple year IDs)
+  // Fall back to assist.org/api for independents
   try {
     const ASSIST_ORG_BASE = import.meta.env.VITE_ASSIST_BASE
     for (const yearId of [77, 76, 75, 74]) {
