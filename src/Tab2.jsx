@@ -17,6 +17,7 @@ async function getMajorsForUni(uniId, ccId) {
     const result = await assistGet(
       `/articulation/api/Agreements/Published/for/${uniId}/to/${ccId}/in/${yearId}?types=Major&types=Department`
     )
+    console.log(`yearId ${yearId}:`, JSON.stringify(result, null, 2))
     const reports = result.reports || result.allReports || []
     const majors = reports.filter(r => r.type === 'Major')
     if (majors.length > 0) return majors
