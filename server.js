@@ -50,10 +50,26 @@ app.use("/articulation/api", async (req, res) => {
 
 app.use("/assist-org-api", async (req, res) => {
   try {
+    // Step 1: Get session cookies and XSRF token
+    const sessionRes = await axios.get("https://assist.org", {
+      headers: { ...browserHeaders }
+    })
+    const cookies = sessionRes.headers['set-cookie']?.join('; ') || ''
+    const xsrfMatch = cookies.match(/XSRF-TOKEN=([^;]+)/)
+    const xsrfToken = xsrfMatch ? decodeURIComponent(xsrfMatch[1]) : ''
+
+    // Step 2: Make the actual request with session
     const url = `https://assist.org/api${req.url}`
     console.log("[ASSIST ORG API]", url)
     const response = await axios.get(url, {
-      headers: { ...browserHeaders, accept: 'application/json' }
+      headers: {
+        ...browserHeaders,
+        accept: 'application/json, text/plain, */*',
+        'content-type': 'application/json',
+        referer: 'https://assist.org/',
+        cookie: cookies,
+        'x-xsrf-token': xsrfToken,
+      }
     })
     res.set("Cache-Control", "no-store")
     res.json(response.data)
