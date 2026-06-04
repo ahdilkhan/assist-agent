@@ -13,6 +13,17 @@ async function assistGet(path) {
 }
 
 async function getMajorsForUni(uniId, ccId) {
+  // Try old endpoint first (works for UCs)
+  const result = await assistGet(
+    `/articulation/api/Agreements/Published/for/${uniId}/to/${ccId}/in/${YEAR_ID}?types=Major&types=Department`
+  )
+  const reports = result.reports || result.allReports || []
+  const majors = reports.filter(r => r.type === 'Major')
+  if (majors.length > 0) return majors
+  const departments = reports.filter(r => r.type === 'Department')
+  if (departments.length > 0) return departments
+
+  // Fall back to new endpoint (works for CSUs and independents)
   for (const yearId of [YEAR_ID, 75]) {
     for (const categoryCode of ['major', 'department']) {
       const res = await fetch(
@@ -20,7 +31,6 @@ async function getMajorsForUni(uniId, ccId) {
         { headers: { accept: 'application/json' } }
       )
       const data = await res.json()
-      console.log(`yearId ${yearId} ${categoryCode}:`, JSON.stringify(data).slice(0, 300))
       const reports = data.reports || []
       if (reports.length > 0) return reports
     }
