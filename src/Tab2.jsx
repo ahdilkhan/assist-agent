@@ -13,28 +13,42 @@ async function assistGet(path) {
 }
 
 async function getMajorsForUni(uniId, ccId) {
-  // Try old endpoint first (works for UCs)
-  const result = await assistGet(
-    `/articulation/api/Agreements/Published/for/${uniId}/to/${ccId}/in/${YEAR_ID}?types=Major&types=Department`
-  )
-  const reports = result.reports || result.allReports || []
-  const majors = reports.filter(r => r.type === 'Major')
-  if (majors.length > 0) return majors
-  const departments = reports.filter(r => r.type === 'Department')
-  if (departments.length > 0) return departments
-
-  // Fall back to new endpoint (works for CSUs and independents)
-  for (const yearId of [YEAR_ID, 75]) {
-    for (const categoryCode of ['major', 'department']) {
-      const res = await fetch(
-        `${ASSIST_BASE}/assist-api/agreements?receivingInstitutionId=${uniId}&sendingInstitutionId=${ccId}&academicYearId=${yearId}&categoryCode=${categoryCode}`,
-        { headers: { accept: 'application/json' } }
-      )
-      const data = await res.json()
-      const reports = data.reports || []
-      if (reports.length > 0) return reports
-    }
+  // Try standard direction
+  try {
+    const result = await assistGet(
+      `/articulation/api/Agreements/Published/for/${uniId}/to/${ccId}/in/${YEAR_ID}?types=Major`
+    )
+    const reports = result.allReports || result.reports || []
+    const majors = reports.filter(r => ['Major', 'AllMajors', 'Department'].includes(r.type))
+    if (majors.length > 0) return majors
+  } catch (e) {
+    console.warn(`Standard endpoint failed uni ${uniId} cc ${ccId}:`, e.message)
   }
+
+  // Try older year ID (some independents are only in year 75)
+  try {
+    const result = await assistGet(
+      `/articulation/api/Agreements/Published/for/${uniId}/to/${ccId}/in/75?types=Major`
+    )
+    const reports = result.allReports || result.reports || []
+    const majors = reports.filter(r => ['Major', 'AllMajors', 'Department'].includes(r.type))
+    if (majors.length > 0) return majors
+  } catch (e) {
+    console.warn(`Year 75 fallback failed:`, e.message)
+  }
+
+  // Try reversed direction (some independents stored differently)
+  try {
+    const result = await assistGet(
+      `/articulation/api/Agreements/Published/for/${ccId}/to/${uniId}/in/${YEAR_ID}?types=Major`
+    )
+    const reports = result.allReports || result.reports || []
+    const majors = reports.filter(r => ['Major', 'AllMajors', 'Department'].includes(r.type))
+    if (majors.length > 0) return majors
+  } catch (e) {
+    console.warn(`Reversed direction failed:`, e.message)
+  }
+
   return []
 }
 
