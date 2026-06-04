@@ -55,9 +55,10 @@ app.use("/assist-org-api", async (req, res) => {
       headers: { ...browserHeaders }
     })
     const cookies = sessionRes.headers['set-cookie']?.join('; ') || ''
-    const xsrfMatch = cookies.match(/XSRF-TOKEN=([^;]+)/)
-    const xsrfToken = xsrfMatch ? decodeURIComponent(xsrfMatch[1]) : ''
-    console.log("[XSRF TOKEN]", xsrfToken ? "got token" : "no token found")
+console.log("[COOKIES]", cookies ? cookies.substring(0, 100) : "no cookies")
+const xsrfMatch = cookies.match(/XSRF-TOKEN=([^;]+)/)
+const xsrfToken = xsrfMatch ? decodeURIComponent(xsrfMatch[1]) : ''
+console.log("[XSRF TOKEN]", xsrfToken ? "got token" : "no token found")
 
     // Step 2: Make the actual request with session
     const url = `https://assist.org/api${req.url}`
