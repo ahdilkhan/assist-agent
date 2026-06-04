@@ -532,14 +532,19 @@ const deduped = Object.values(byCC)
                 {opt.courses.length > 1 && <div style={{ fontSize: 11, color: '#888', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>Take all together</div>}
                 {opt.groupNote && <div style={{ fontSize: 12, color: '#f57f17', marginBottom: 6 }}>⚠️ {opt.groupNote}</div>}
                 {opt.courses.map((c, k) => (
-                  <div className="eq-row" key={k}>
-                    <div>
-                      <div style={{ fontWeight: 500 }}>{c.prefix} {c.number} — {c.title}</div>
-                      <div style={{ fontSize: 12, color: '#888' }}>{c.units ? `${c.units} units` : ''}</div>
-                      {c.note && <div style={{ fontSize: 12, color: '#f57f17', marginTop: 2 }}>⚠️ {c.note}</div>}
-                    </div>
-                    <span className="badge badge-green">Articulated</span>
-                  </div>
+                 <div className="eq-row" key={k}>
+  <div>
+    <div style={{ fontWeight: 500 }}>{c.prefix} {c.number} — {c.title}</div>
+    <div style={{ fontSize: 12, color: '#888' }}>{c.units ? `${c.units} units` : ''}</div>
+    {c.note && <div style={{ fontSize: 12, color: '#f57f17', marginTop: 2 }}>⚠️ {c.note}</div>}
+    {eq.receivingCourse.includes('+') && (
+      <div style={{ fontSize: 12, color: '#6C5CE7', marginTop: 2 }}>
+        ✅ Also satisfies: {eq.receivingCourse.split('+').slice(1).map(s => s.trim()).join(', ')}
+      </div>
+    )}
+  </div>
+  <span className="badge badge-green">Articulated</span>
+</div>
                 ))}
               </div>
             ))}
