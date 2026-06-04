@@ -48,9 +48,12 @@ async function getMajorsForUni(uniId, ccId) {
         const reports = []
         for (const cat of categories) {
           const agreementsRes = await fetch(
-            `https://assist.org/api/agreements?receivingInstitutionId=${uniId}&sendingInstitutionId=${ccId}&academicYearId=${yearId}&categoryCode=${cat.code}`,
-            { headers: { accept: 'application/json' } }
-          )
+  `https://assist.org/api/agreements?receivingInstitutionId=${uniId}&sendingInstitutionId=${ccId}&academicYearId=${yearId}&categoryCode=${cat.code}`,
+  { 
+    headers: { accept: 'application/json' },
+    credentials: 'include'
+  }
+)
           const data = await agreementsRes.json()
           if (data.reports) reports.push(...data.reports)
         }
