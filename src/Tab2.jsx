@@ -13,37 +13,37 @@ async function assistGet(path) {
 }
 
 async function getMajorsForUni(uniId, ccId) {
-  // Try standard direction
   try {
     const result = await assistGet(
       `/articulation/api/Agreements/Published/for/${uniId}/to/${ccId}/in/${YEAR_ID}?types=Major`
     )
     const reports = result.allReports || result.reports || []
-    const majors = reports.filter(r => ['Major', 'AllMajors', 'Department'].includes(r.type))
+    console.log(`uni ${uniId} cc ${ccId} reports:`, JSON.stringify(reports, null, 2))
+    const majors = reports.filter(r => ['Major', 'Department'].includes(r.type))
     if (majors.length > 0) return majors
   } catch (e) {
     console.warn(`Standard endpoint failed uni ${uniId} cc ${ccId}:`, e.message)
   }
 
-  // Try older year ID (some independents are only in year 75)
   try {
     const result = await assistGet(
       `/articulation/api/Agreements/Published/for/${uniId}/to/${ccId}/in/75?types=Major`
     )
     const reports = result.allReports || result.reports || []
-    const majors = reports.filter(r => ['Major', 'AllMajors', 'Department'].includes(r.type))
+    console.log(`year75 uni ${uniId} cc ${ccId} reports:`, JSON.stringify(reports, null, 2))
+    const majors = reports.filter(r => ['Major', 'Department'].includes(r.type))
     if (majors.length > 0) return majors
   } catch (e) {
     console.warn(`Year 75 fallback failed:`, e.message)
   }
 
-  // Try reversed direction (some independents stored differently)
   try {
     const result = await assistGet(
       `/articulation/api/Agreements/Published/for/${ccId}/to/${uniId}/in/${YEAR_ID}?types=Major`
     )
     const reports = result.allReports || result.reports || []
-    const majors = reports.filter(r => ['Major', 'AllMajors', 'Department'].includes(r.type))
+    console.log(`reversed uni ${uniId} cc ${ccId} reports:`, JSON.stringify(reports, null, 2))
+    const majors = reports.filter(r => ['Major', 'Department'].includes(r.type))
     if (majors.length > 0) return majors
   } catch (e) {
     console.warn(`Reversed direction failed:`, e.message)
