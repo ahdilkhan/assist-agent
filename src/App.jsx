@@ -242,7 +242,15 @@ function parseArticulations(agreement, targetPrefix, targetNumber) {
 if (art.course) receivingCourses.push(art.course)
 if (art.receivingCourse) receivingCourses.push(art.receivingCourse)
 if (art.courses && Array.isArray(art.courses)) receivingCourses.push(...art.courses)
-if (art.series?.courses && Array.isArray(art.series.courses)) receivingCourses.push(...art.series.courses)
+if (art.series?.courses && Array.isArray(art.series.courses)) {
+  // Only match this series if our target is the first/lead course
+  const first = art.series.courses[0]
+  const firstPrefix = (first?.prefix || '').trim().toUpperCase()
+  const firstNum = (first?.courseNumber || first?.number || '').trim().toUpperCase()
+  if (firstPrefix === targetPrefix.toUpperCase() && firstNum === targetNumber.toUpperCase()) {
+    receivingCourses.push(...art.series.courses)
+  }
+}
  
       // ── UNKNOWN SHAPE GUARD: warn if no receiving field found at all ──────────
       if (receivingCourses.length === 0) {
