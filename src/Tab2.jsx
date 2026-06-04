@@ -126,14 +126,14 @@ export default function Tab2() {
 
   useEffect(() => {
     if (!selUniId || !ccId) { setMajors([]); setSelMajor(null); return }
-    if (majorCache[selUniId]) { setMajors(majorCache[selUniId]); setSelMajor(null); return }
+    if (majorCache[`${selUniId}-${ccId}`]) { setMajors(majorCache[`${selUniId}-${ccId}`]); setSelMajor(null); return }
     setMajors([])
     setSelMajor(null)
     setMajorsLoading(true)
     getMajorsForUni(selUniId, ccId)
       .then(list => {
         const sorted = list.sort((a, b) => a.label.localeCompare(b.label))
-        majorCache[selUniId] = sorted
+        majorCache[`${selUniId}-${ccId}`] = sorted
         setMajors(sorted)
       })
       .catch(() => setMajors([]))
