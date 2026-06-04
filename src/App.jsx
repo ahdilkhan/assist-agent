@@ -214,20 +214,27 @@ function parseArticulations(agreement, targetPrefix, targetNumber) {
     const ccId = sending?.id
     const matches = []
     for (const item of arts) {
-      const art = item.articulation || item
-      const receiving = art.course || art.receivingCourse
-      if (!receiving) continue
-      const rPrefix = (receiving.prefix || '').trim().toUpperCase()
-      const rNum = (receiving.courseNumber || receiving.number || '').trim().toUpperCase()
-      if (rPrefix === targetPrefix.toUpperCase() && rNum === targetNumber.toUpperCase()) {
-        const sendingArt = art.sendingArticulation
-        if (sendingArt?.noArticulationReason) continue
-        const options = parseSendingOptions(sendingArt?.items || [])
-        if (options.length > 0) {
-          matches.push({ ccName, ccId, receivingCourse: `${rPrefix} ${rNum}`, receivingTitle: receiving.courseTitle || '', options })
-        }
-      }
+  const art = item.articulation || item
+  const receiving = art.course || art.receivingCourse
+
+  // ADD THIS BEFORE THE CONTINUE
+  if (!receiving) {
+    console.log('NO RECEIVING FOUND, art keys:', Object.keys(art))
+    console.log('FULL ART:', JSON.stringify(art, null, 2))
+    continue
+  }
+
+  const rPrefix = (receiving.prefix || '').trim().toUpperCase()
+  const rNum = (receiving.courseNumber || receiving.number || '').trim().toUpperCase()
+  if (rPrefix === targetPrefix.toUpperCase() && rNum === targetNumber.toUpperCase()) {
+    const sendingArt = art.sendingArticulation
+    if (sendingArt?.noArticulationReason) continue
+    const options = parseSendingOptions(sendingArt?.items || [])
+    if (options.length > 0) {
+      matches.push({ ccName, ccId, receivingCourse: `${rPrefix} ${rNum}`, receivingTitle: receiving.courseTitle || '', options })
     }
+  }
+}
     return matches
   } catch (e) { console.warn('parse error:', e); return [] }
 }
