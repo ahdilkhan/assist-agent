@@ -211,24 +211,72 @@ function parseArticulations(agreement, targetPrefix, targetNumber) {
       ? JSON.parse(agreement.sendingInstitution) : agreement.sendingInstitution
     const ccName = sending?.names?.[0]?.name || sending?.code || 'Unknown CC'
     const ccId = sending?.id
+ 
+    // ── DEBUG: log every top-level articulation shape ──────────────────────────
+    // This shows us all the keys present at the articulation level so we can
+    // spot any field names we haven't accounted for.
+    const shapes = new Set()
+    for (const item of arts) {
+      const art = item.articulation || item
+      const shape = Object.keys(art).sort().join(', ')
+      if (!shapes.has(shape)) {
+        shapes.add(shape)
+        console.log(`[ASSIST shape] ${ccName} →`, shape)
+        console.log(`[ASSIST sample]`, JSON.stringify(art, null, 2).slice(0, 800))
+      }
+ 
+      // ── DEBUG: for any row that mentions our target, dump it completely ──────
+      const rawStr = JSON.stringify(art)
+      if (rawStr.toUpperCase().includes(targetPrefix.toUpperCase()) &&
+          rawStr.toUpperCase().includes(targetNumber.toUpperCase())) {
+        console.log(`[ASSIST MATCH candidate] ${ccName}:`, JSON.stringify(art, null, 2))
+      }
+    }
+    // ── END DEBUG ──────────────────────────────────────────────────────────────
+ 
     const matches = []
     for (const item of arts) {
       const art = item.articulation || item
-      const receiving = art.course || art.receivingCourse
-      if (!receiving) continue
-      const rPrefix = (receiving.prefix || '').trim().toUpperCase()
-      const rNum = (receiving.courseNumber || receiving.number || '').trim().toUpperCase()
-      if (rPrefix === targetPrefix.toUpperCase() && rNum === targetNumber.toUpperCase()) {
-        const sendingArt = art.sendingArticulation
-        if (sendingArt?.noArticulationReason) continue
-        const options = parseSendingOptions(sendingArt?.items || [])
-        if (options.length > 0) {
-          matches.push({ ccName, ccId, receivingCourse: `${rPrefix} ${rNum}`, receivingTitle: receiving.courseTitle || '', options })
+ 
+      let receivingCourses = []
+      if (art.course) receivingCourses.push(art.course)
+      if (art.receivingCourse) receivingCourses.push(art.receivingCourse)
+      if (art.courses && Array.isArray(art.courses)) receivingCourses.push(...art.courses)
+ 
+      // ── UNKNOWN SHAPE GUARD: warn if no receiving field found at all ──────────
+      if (receivingCourses.length === 0) {
+        const keys = Object.keys(art)
+        if (!['type', 'noArticulationReason', 'sendingArticulation'].every(k => keys.includes(k))) {
+          console.warn(`[ASSIST unknown shape] No receiving field found in:`, JSON.stringify(art, null, 2).slice(0, 400))
         }
+        continue
       }
+ 
+      const isMatch = receivingCourses.some(rc => {
+        const rPrefix = (rc.prefix || '').trim().toUpperCase()
+        const rNum = (rc.courseNumber || rc.number || '').trim().toUpperCase()
+        return rPrefix === targetPrefix.toUpperCase() && rNum === targetNumber.toUpperCase()
+      })
+      if (!isMatch) continue
+ 
+      const sendingArt = art.sendingArticulation
+      if (sendingArt?.noArticulationReason) continue
+ 
+      const options = parseSendingOptions(sendingArt?.items || [])
+      if (options.length === 0) continue
+ 
+      const receivingLabel = receivingCourses
+        .map(rc => `${(rc.prefix||'').trim()} ${(rc.courseNumber||rc.number||'').trim()}`)
+        .join(' + ')
+ 
+      matches.push({ ccName, ccId, receivingCourse: receivingLabel, receivingTitle: receivingCourses[0]?.courseTitle || '', options })
     }
+ 
     return matches
-  } catch (e) { console.warn('parse error:', e); return [] }
+  } catch (e) {
+    console.warn('parse error:', e)
+    return []
+  }
 }
 
 export const KNOWN_UNIVERSITIES = [
