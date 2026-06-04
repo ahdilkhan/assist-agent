@@ -13,36 +13,28 @@ async function assistGet(path) {
 }
 
 async function getMajorsForUni(uniId, ccId) {
-  // This works for UCs and CSUs
-  try {
-    const result = await assistGet(
-      `/articulation/api/Agreements/Published/for/${uniId}/to/${ccId}/in/${YEAR_ID}?types=Major`
-    )
-    const reports = result.allReports || result.reports || []
-    const majors = reports.filter(r => r.type === 'Major')
-    if (majors.length > 0) return majors
-  } catch (e) {}
+  // Try old endpoint first (works for UCs)
+  const result = await assistGet(
+    `/articulation/api/Agreements/Published/for/${uniId}/to/${ccId}/in/${YEAR_ID}?types=Major&types=Department`
+  )
+  const reports = result.reports || result.allReports || []
+  const majors = reports.filter(r => r.type === 'Major')
+  if (majors.length > 0) return majors
+  const departments = reports.filter(r => r.type === 'Department')
+  if (departments.length > 0) return departments
 
-  // Try without type filter — gets everything, we filter client side
-  try {
-    const result = await assistGet(
-      `/articulation/api/Agreements/Published/for/${uniId}/to/${ccId}/in/${YEAR_ID}`
-    )
-    const reports = result.allReports || result.reports || []
-    const filtered = reports.filter(r => ['Major', 'Department', 'GE'].includes(r.type))
-    if (filtered.length > 0) return filtered
-  } catch (e) {}
-
-  // Try reversed direction without type filter
-  try {
-    const result = await assistGet(
-      `/articulation/api/Agreements/Published/for/${ccId}/to/${uniId}/in/${YEAR_ID}`
-    )
-    const reports = result.allReports || result.reports || []
-    const filtered = reports.filter(r => ['Major', 'Department', 'GE'].includes(r.type))
-    if (filtered.length > 0) return filtered
-  } catch (e) {}
-
+  // Fall back to new endpoint (works for CSUs and independents)
+  for (const yearId of [YEAR_ID, 75]) {
+    for (const categoryCode of ['major', 'department']) {
+      const res = await fetch(
+        `${ASSIST_BASE}/assist-api/agreements?receivingInstitutionId=${uniId}&sendingInstitutionId=${ccId}&academicYearId=${yearId}&categoryCode=${categoryCode}`,
+        { headers: { accept: 'application/json' } }
+      )
+      const data = await res.json()
+      const reports = data.reports || []
+      if (reports.length > 0) return reports
+    }
+  }
   return []
 }
 
