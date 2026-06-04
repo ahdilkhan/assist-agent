@@ -31,13 +31,12 @@ async function getMajorsForUni(uniId, ccId) {
     }
   } catch {}
 
-  // Fall back to assist.org/api for independents
+  // Fall back to direct assist.org API call from browser
   try {
-    const ASSIST_ORG_BASE = import.meta.env.VITE_ASSIST_BASE
     for (const yearId of [77, 76, 75, 74]) {
       try {
         const categoriesRes = await fetch(
-          `${ASSIST_ORG_BASE}/assist-org-api/agreements/categories?receivingInstitutionId=${uniId}&sendingInstitutionId=${ccId}&academicYearId=${yearId}`,
+          `https://assist.org/api/agreements/categories?receivingInstitutionId=${uniId}&sendingInstitutionId=${ccId}&academicYearId=${yearId}`,
           { headers: { accept: 'application/json' } }
         )
         if (!categoriesRes.ok) continue
@@ -46,7 +45,7 @@ async function getMajorsForUni(uniId, ccId) {
         const reports = []
         for (const cat of categories) {
           const agreementsRes = await fetch(
-            `${ASSIST_ORG_BASE}/assist-org-api/agreements?receivingInstitutionId=${uniId}&sendingInstitutionId=${ccId}&academicYearId=${yearId}&categoryCode=${cat.code}`,
+            `https://assist.org/api/agreements?receivingInstitutionId=${uniId}&sendingInstitutionId=${ccId}&academicYearId=${yearId}&categoryCode=${cat.code}`,
             { headers: { accept: 'application/json' } }
           )
           const data = await agreementsRes.json()

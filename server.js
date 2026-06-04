@@ -64,7 +64,7 @@ if (!sessionRes) {
 }
     const cookies = sessionRes.headers['set-cookie']?.join('; ') || ''
 console.log("[COOKIES]", cookies ? cookies.substring(0, 100) : "no cookies")
-const xsrfMatch = cookies.match(/X-XSRF-TOKEN=([^;]+)/)
+const xsrfMatch = cookies.match(/XSRF-TOKEN=([^;]+)/)
 const xsrfToken = xsrfMatch ? decodeURIComponent(xsrfMatch[1]) : ''
 console.log("[XSRF TOKEN]", xsrfToken ? "got token" : "no token found")
 
