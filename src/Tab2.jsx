@@ -13,40 +13,23 @@ async function assistGet(path) {
 }
 
 async function getMajorsForUni(uniId, ccId) {
-  try {
-    const result = await assistGet(
-      `/articulation/api/Agreements/Published/for/${uniId}/to/${ccId}/in/${YEAR_ID}?types=Major`
-    )
-    const reports = result.allReports || result.reports || []
-    console.log(`uni ${uniId} cc ${ccId} reports:`, JSON.stringify(reports, null, 2))
-    const majors = reports.filter(r => ['Major', 'Department'].includes(r.type))
-    if (majors.length > 0) return majors
-  } catch (e) {
-    console.warn(`Standard endpoint failed uni ${uniId} cc ${ccId}:`, e.message)
-  }
+  const directions = [
+    `/articulation/api/Agreements/Published/for/${uniId}/to/${ccId}/in/${YEAR_ID}`,
+    `/articulation/api/Agreements/Published/for/${uniId}/to/${ccId}/in/75`,
+    `/articulation/api/Agreements/Published/for/${ccId}/to/${uniId}/in/${YEAR_ID}`,
+    `/articulation/api/Agreements/Published/for/${ccId}/to/${uniId}/in/75`,
+  ]
+  const types = ['Major', 'Department', 'GE']
 
-  try {
-    const result = await assistGet(
-      `/articulation/api/Agreements/Published/for/${uniId}/to/${ccId}/in/75?types=Major`
-    )
-    const reports = result.allReports || result.reports || []
-    console.log(`year75 uni ${uniId} cc ${ccId} reports:`, JSON.stringify(reports, null, 2))
-    const majors = reports.filter(r => ['Major', 'Department'].includes(r.type))
-    if (majors.length > 0) return majors
-  } catch (e) {
-    console.warn(`Year 75 fallback failed:`, e.message)
-  }
-
-  try {
-    const result = await assistGet(
-      `/articulation/api/Agreements/Published/for/${ccId}/to/${uniId}/in/${YEAR_ID}?types=Major`
-    )
-    const reports = result.allReports || result.reports || []
-    console.log(`reversed uni ${uniId} cc ${ccId} reports:`, JSON.stringify(reports, null, 2))
-    const majors = reports.filter(r => ['Major', 'Department'].includes(r.type))
-    if (majors.length > 0) return majors
-  } catch (e) {
-    console.warn(`Reversed direction failed:`, e.message)
+  for (const base of directions) {
+    for (const type of types) {
+      try {
+        const result = await assistGet(`${base}?types=${type}`)
+        const reports = result.allReports || result.reports || []
+        const filtered = reports.filter(r => r.type === type)
+        if (filtered.length > 0) return filtered
+      } catch (e) {}
+    }
   }
 
   return []
