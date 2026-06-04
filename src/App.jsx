@@ -485,8 +485,17 @@ export default function App() {
         setLoadingProgress(Math.round((checked / total) * 100))
         setLoadingMsg(`Searching... ${checked}/${total} colleges checked`)
       }
-      const seen = new Set()
-      const deduped = results.filter(r => { if (seen.has(r.ccName)) return false; seen.add(r.ccName); return true })
+     const byCC = {}
+for (const r of results) {
+  if (!byCC[r.ccName]) {
+    byCC[r.ccName] = r
+  } else {
+    const existing = byCC[r.ccName].receivingCourse.split('+').length
+    const incoming = r.receivingCourse.split('+').length
+    if (incoming < existing) byCC[r.ccName] = r
+  }
+}
+const deduped = Object.values(byCC)
       setEquivalents(deduped); setStep(2)
     } catch (e) { setError(`Error: ${e.message}`) }
     finally { setLoading(false); setLoadingMsg(''); setLoadingProgress(0) }
