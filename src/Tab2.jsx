@@ -321,7 +321,12 @@ export default function Tab2() {
   const summary = computeAttainability()
 
   return (
-    <div>
+    <div style={{
+      marginLeft: overlapData ? 'calc(-50vw + 360px)' : 0,
+      marginRight: overlapData ? 'calc(-50vw + 360px)' : 0,
+      paddingLeft: overlapData ? 'calc(50vw - 360px)' : 0,
+      paddingRight: overlapData ? 'calc(50vw - 360px)' : 0,
+    }}>
       {error && <div className="error-box">{error}</div>}
 
       {!overlapData && (
