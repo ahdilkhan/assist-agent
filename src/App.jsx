@@ -165,7 +165,9 @@ async function getAgreement(key) {
 
 async function getAllMajorsKey(uniId, ccId) {
   const result = await assistGet(`/articulation/api/Agreements/Published/for/${uniId}/to/${ccId}/in/${YEAR_ID}?types=Major`)
-  return result.allReports?.find(r => r.type === 'AllMajors')?.key || null
+  const key = result.allReports?.find(r => r.type === 'AllMajors')?.key || null
+  if (!key) console.log(`No AllMajors key for ccId ${ccId}`)
+  return key
 }
 
 function extractCourse(c) {
@@ -205,36 +207,26 @@ function parseArticulations(agreement, targetPrefix, targetNumber) {
   try {
     const arts = typeof agreement.articulations === 'string'
       ? JSON.parse(agreement.articulations) : agreement.articulations || []
-    if (targetPrefix === 'BIOL' || targetPrefix === 'MATH') {
-  console.log('RAW ARTS SAMPLE:', JSON.stringify(arts[0], null, 2))
-}
     const sending = typeof agreement.sendingInstitution === 'string'
       ? JSON.parse(agreement.sendingInstitution) : agreement.sendingInstitution
     const ccName = sending?.names?.[0]?.name || sending?.code || 'Unknown CC'
     const ccId = sending?.id
     const matches = []
     for (const item of arts) {
-  const art = item.articulation || item
-  const receiving = art.course || art.receivingCourse
-
-  // ADD THIS BEFORE THE CONTINUE
-  if (!receiving) {
-    console.log('NO RECEIVING FOUND, art keys:', Object.keys(art))
-    console.log('FULL ART:', JSON.stringify(art, null, 2))
-    continue
-  }
-
-  const rPrefix = (receiving.prefix || '').trim().toUpperCase()
-  const rNum = (receiving.courseNumber || receiving.number || '').trim().toUpperCase()
-  if (rPrefix === targetPrefix.toUpperCase() && rNum === targetNumber.toUpperCase()) {
-    const sendingArt = art.sendingArticulation
-    if (sendingArt?.noArticulationReason) continue
-    const options = parseSendingOptions(sendingArt?.items || [])
-    if (options.length > 0) {
-      matches.push({ ccName, ccId, receivingCourse: `${rPrefix} ${rNum}`, receivingTitle: receiving.courseTitle || '', options })
+      const art = item.articulation || item
+      const receiving = art.course || art.receivingCourse
+      if (!receiving) continue
+      const rPrefix = (receiving.prefix || '').trim().toUpperCase()
+      const rNum = (receiving.courseNumber || receiving.number || '').trim().toUpperCase()
+      if (rPrefix === targetPrefix.toUpperCase() && rNum === targetNumber.toUpperCase()) {
+        const sendingArt = art.sendingArticulation
+        if (sendingArt?.noArticulationReason) continue
+        const options = parseSendingOptions(sendingArt?.items || [])
+        if (options.length > 0) {
+          matches.push({ ccName, ccId, receivingCourse: `${rPrefix} ${rNum}`, receivingTitle: receiving.courseTitle || '', options })
+        }
+      }
     }
-  }
-}
     return matches
   } catch (e) { console.warn('parse error:', e); return [] }
 }
