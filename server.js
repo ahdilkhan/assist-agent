@@ -52,8 +52,15 @@ app.use("/assist-org-api", async (req, res) => {
   try {
     // Step 1: Get session cookies and XSRF token
     const sessionRes = await axios.get("https://assist.org", {
-      headers: { ...browserHeaders }
-    })
+  headers: { ...browserHeaders }
+}).catch(err => {
+  console.log("[SESSION FETCH ERROR]", err.message)
+  return null
+})
+
+if (!sessionRes) {
+  return res.status(500).json({ error: "Could not fetch session" })
+}
     const cookies = sessionRes.headers['set-cookie']?.join('; ') || ''
 console.log("[COOKIES]", cookies ? cookies.substring(0, 100) : "no cookies")
 const xsrfMatch = cookies.match(/XSRF-TOKEN=([^;]+)/)
