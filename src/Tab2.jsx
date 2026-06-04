@@ -13,33 +13,44 @@ async function assistGet(path) {
 }
 
 async function getMajorsForUni(uniId, ccId) {
-  // Try original endpoint first (works for UCs)
+  // Try prod.assistng.org first (works for most UCs, CSUs, and some independents)
   try {
     const result = await assistGet(
-      `/articulation/api/Agreements/Published/for/${uniId}/to/${ccId}/in/${YEAR_ID}?types=Major`
+      `/articulation/api/Agreements/Published/for/${uniId}/to/${ccId}/in/${YEAR_ID}?types=Major&types=Department`
     )
-    const majors = (result.reports || result.allReports || []).filter(r => r.type === 'Major')
+    const reports = result.reports || result.allReports || []
+    const majors = reports.filter(r => r.type === 'Major')
     if (majors.length > 0) return majors
+    const departments = reports.filter(r => r.type === 'Department')
+    if (departments.length > 0) return departments
+    const others = reports.filter(r => r.type !== 'Major' && r.type !== 'Department')
+    if (others.length > 0) return others
   } catch {}
 
-  // Fall back to assist.org/api for CSUs and independents
+  // Fall back to assist.org/api for independents (tries multiple year IDs)
   try {
-    const ASSIST_ORG_BASE = import.meta.env.VITE_ASSIST_BASE.replace('/articulation/api', '')
-    const categoriesRes = await fetch(
-      `${ASSIST_ORG_BASE}/assist-org-api/agreements/categories?receivingInstitutionId=${uniId}&sendingInstitutionId=${ccId}&academicYearId=77`,
-      { headers: { accept: 'application/json' } }
-    )
-    const categories = await categoriesRes.json()
-    const reports = []
-    for (const cat of (categories || [])) {
-      const agreementsRes = await fetch(
-        `${ASSIST_ORG_BASE}/assist-org-api/agreements?receivingInstitutionId=${uniId}&sendingInstitutionId=${ccId}&academicYearId=77&categoryCode=${cat.code}`,
-        { headers: { accept: 'application/json' } }
-      )
-      const data = await agreementsRes.json()
-      if (data.reports) reports.push(...data.reports)
+    const ASSIST_ORG_BASE = import.meta.env.VITE_ASSIST_BASE
+    for (const yearId of [77, 76, 75, 74]) {
+      try {
+        const categoriesRes = await fetch(
+          `${ASSIST_ORG_BASE}/assist-org-api/agreements/categories?receivingInstitutionId=${uniId}&sendingInstitutionId=${ccId}&academicYearId=${yearId}`,
+          { headers: { accept: 'application/json' } }
+        )
+        if (!categoriesRes.ok) continue
+        const categories = await categoriesRes.json()
+        if (!categories || categories.length === 0) continue
+        const reports = []
+        for (const cat of categories) {
+          const agreementsRes = await fetch(
+            `${ASSIST_ORG_BASE}/assist-org-api/agreements?receivingInstitutionId=${uniId}&sendingInstitutionId=${ccId}&academicYearId=${yearId}&categoryCode=${cat.code}`,
+            { headers: { accept: 'application/json' } }
+          )
+          const data = await agreementsRes.json()
+          if (data.reports) reports.push(...data.reports)
+        }
+        if (reports.length > 0) return reports.sort((a, b) => a.label.localeCompare(b.label))
+      } catch {}
     }
-    return reports.sort((a, b) => a.label.localeCompare(b.label))
   } catch {}
 
   return []
