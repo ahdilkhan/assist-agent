@@ -13,24 +13,35 @@ async function assistGet(path) {
 }
 
 async function getMajorsForUni(uniId, ccId) {
-  const directions = [
-    `/articulation/api/Agreements/Published/for/${uniId}/to/${ccId}/in/${YEAR_ID}`,
-    `/articulation/api/Agreements/Published/for/${uniId}/to/${ccId}/in/75`,
-    `/articulation/api/Agreements/Published/for/${ccId}/to/${uniId}/in/${YEAR_ID}`,
-    `/articulation/api/Agreements/Published/for/${ccId}/to/${uniId}/in/75`,
-  ]
-  const types = ['Major', 'Department', 'GE']
+  // This works for UCs and CSUs
+  try {
+    const result = await assistGet(
+      `/articulation/api/Agreements/Published/for/${uniId}/to/${ccId}/in/${YEAR_ID}?types=Major`
+    )
+    const reports = result.allReports || result.reports || []
+    const majors = reports.filter(r => r.type === 'Major')
+    if (majors.length > 0) return majors
+  } catch (e) {}
 
-  for (const base of directions) {
-    for (const type of types) {
-      try {
-        const result = await assistGet(`${base}?types=${type}`)
-        const reports = result.allReports || result.reports || []
-        const filtered = reports.filter(r => r.type === type)
-        if (filtered.length > 0) return filtered
-      } catch (e) {}
-    }
-  }
+  // Try without type filter — gets everything, we filter client side
+  try {
+    const result = await assistGet(
+      `/articulation/api/Agreements/Published/for/${uniId}/to/${ccId}/in/${YEAR_ID}`
+    )
+    const reports = result.allReports || result.reports || []
+    const filtered = reports.filter(r => ['Major', 'Department', 'GE'].includes(r.type))
+    if (filtered.length > 0) return filtered
+  } catch (e) {}
+
+  // Try reversed direction without type filter
+  try {
+    const result = await assistGet(
+      `/articulation/api/Agreements/Published/for/${ccId}/to/${uniId}/in/${YEAR_ID}`
+    )
+    const reports = result.allReports || result.reports || []
+    const filtered = reports.filter(r => ['Major', 'Department', 'GE'].includes(r.type))
+    if (filtered.length > 0) return filtered
+  } catch (e) {}
 
   return []
 }
