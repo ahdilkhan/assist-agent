@@ -13,12 +13,17 @@ async function assistGet(path) {
 }
 
 async function getMajorsForUni(uniId, ccId) {
-  const result = await assistGet(
-    `/articulation/api/Agreements/Published/for/${uniId}/to/${ccId}/in/${YEAR_ID}?types=Major`
-  )
-  console.log('getMajorsForUni result:', JSON.stringify(result, null, 2))
-  const reports = result.reports || result.allReports || []
-  return reports.filter(r => r.type === 'Major')
+  for (const yearId of [YEAR_ID, 75]) {
+    const result = await assistGet(
+      `/articulation/api/Agreements/Published/for/${uniId}/to/${ccId}/in/${yearId}?types=Major&types=Department`
+    )
+    const reports = result.reports || result.allReports || []
+    const majors = reports.filter(r => r.type === 'Major')
+    if (majors.length > 0) return majors
+    const departments = reports.filter(r => r.type === 'Department')
+    if (departments.length > 0) return departments
+  }
+  return []
 }
 
 async function getAgreement(key) {
