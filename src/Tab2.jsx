@@ -14,15 +14,13 @@ async function assistGet(path) {
 
 async function getMajorsForUni(uniId, ccId) {
   for (const yearId of [YEAR_ID, 75]) {
-    const result = await assistGet(
-      `/articulation/api/Agreements/Published/for/${uniId}/to/${ccId}/in/${yearId}?types=Major&types=Department`
+    const res = await fetch(
+      `${ASSIST_BASE}/assist-api/agreements?receivingInstitutionId=${uniId}&sendingInstitutionId=${ccId}&academicYearId=${yearId}&categoryCode=major`,
+      { headers: { accept: 'application/json' } }
     )
-    console.log(`yearId ${yearId}:`, JSON.stringify(result, null, 2))
-    const reports = result.reports || result.allReports || []
-    const majors = reports.filter(r => r.type === 'Major')
-    if (majors.length > 0) return majors
-    const departments = reports.filter(r => r.type === 'Department')
-    if (departments.length > 0) return departments
+    const data = await res.json()
+    const reports = data.reports || []
+    if (reports.length > 0) return reports
   }
   return []
 }
