@@ -660,7 +660,9 @@ const deduped = Object.values(byCC)
             ))}
           </div>
 
-          {activeTab === 'tab2' && <Tab2 />}
+          <div style={{ display: activeTab === 'tab2' ? 'block' : 'none' }}>
+  <Tab2 />
+</div>
 
           {activeTab === 'tab1' && (
             <>
