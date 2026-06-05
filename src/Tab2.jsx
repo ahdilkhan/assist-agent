@@ -70,16 +70,75 @@ function parseSendingOptions(topItems) {
   return options
 }
 
+function buildCellMap(templateAssets) {
+  const cellMap = new Map()
+  let assets
+  try {
+    assets = typeof templateAssets === 'string' ? JSON.parse(templateAssets) : templateAssets || []
+  } catch { return cellMap }
+
+  const reqTitles = assets
+    .filter(a => a.type === 'RequirementTitle')
+    .sort((a, b) => a.position - b.position)
+
+  const reqGroups = assets.filter(a => a.type === 'RequirementGroup')
+
+  for (const group of reqGroups) {
+    const groupTitle = reqTitles
+      .filter(t => t.position < group.position)
+      .sort((a, b) => b.position - a.position)[0]?.content || 'MAJOR REQUIREMENTS'
+
+    const sections = group.sections || []
+    const sectionHeader = sections.find(s => s.type === 'SectionHeader')
+    const sectionLabel = sectionHeader?.content || ''
+    const dataSections = sections.filter(s => s.type === 'Section')
+
+    for (const section of dataSections) {
+      const nFollowing = section.advisements?.find(a => a.type === 'NFollowing')
+      const nRequired = nFollowing ? nFollowing.amount : null
+      const sectionGroupId = `${group.groupId}_${section.position}`
+
+      for (const row of section.rows || []) {
+        for (const cell of row.cells || []) {
+          if (cell.id) {
+            cellMap.set(cell.id, {
+              sectionLabel,
+              groupTitle,
+              nRequired,
+              groupId: sectionGroupId,
+              sectionPosition: section.position,
+              groupPosition: group.position,
+            })
+          }
+        }
+      }
+    }
+  }
+  return cellMap
+}
+
 function parseAllForProgram(agreement, programLabel) {
   try {
     const arts = typeof agreement.articulations === 'string'
       ? JSON.parse(agreement.articulations) : agreement.articulations || []
-      console.log('[RAW AGREEMENT]', JSON.stringify(agreement, null, 2).slice(0, 3000))
+
+    const cellMap = buildCellMap(agreement.templateAssets)
     const results = []
     const noArticulationResults = []
 
     for (const item of arts) {
       const art = item.articulation || item
+      const templateCellId = item.templateCellId
+
+      const cellContext = cellMap.get(templateCellId) || {
+        sectionLabel: '',
+        groupTitle: 'MAJOR REQUIREMENTS',
+        nRequired: null,
+        groupId: templateCellId || Math.random().toString(),
+        sectionPosition: 0,
+        groupPosition: 0,
+      }
+
       let receivingCourses = []
       if (art.course) receivingCourses.push(art.course)
       if (art.receivingCourse) receivingCourses.push(art.receivingCourse)
@@ -94,7 +153,6 @@ function parseAllForProgram(agreement, programLabel) {
 
       const sendingArt = art.sendingArticulation
 
-      // No articulation — track separately so we can show ⚠️ section
       if (!sendingArt || sendingArt.noArticulationReason) {
         noArticulationResults.push({
           program: programLabel,
@@ -107,6 +165,7 @@ function parseAllForProgram(agreement, programLabel) {
           },
           noArticulation: true,
           reason: sendingArt?.noArticulationReason || null,
+          ...cellContext,
         })
         continue
       }
@@ -121,16 +180,20 @@ function parseAllForProgram(agreement, programLabel) {
           number: (primary.courseNumber || primary.number || '').trim(),
           title: primary.courseTitle || primary.title || '',
           units: primary.maxUnits || primary.minUnits || null,
-          allCourseLabels, // e.g. ['CHEM 8A', 'CHEM 8LA']
+          allCourseLabels,
         },
         options,
+        ...cellContext,
       })
     }
+
     return { articulated: results, noArticulation: noArticulationResults }
-  } catch { return { articulated: [], noArticulation: [] } }
+  } catch (e) {
+    console.warn('parseAllForProgram error:', e)
+    return { articulated: [], noArticulation: [] }
+  }
 }
 
-// Generate a stable save key from program keys
 function getPlanSaveKey(programs) {
   return 'tab2_progress_' + programs.map(p => p.majorKey).sort().join('|')
 }
@@ -151,26 +214,27 @@ export default function Tab2() {
   const [overlapData, setOverlapData] = useState(null)
   const [expandedRow, setExpandedRow] = useState(null)
   const [completedCourses, setCompletedCourses] = useState(new Set())
+  const [includeRecommended, setIncludeRecommended] = useState(false)
   const [isWide, setIsWide] = useState(window.innerWidth > 768)
   const saveTimeoutRef = useRef(null)
 
-  // Track window width for responsive layout
   useEffect(() => {
     const handler = () => setIsWide(window.innerWidth > 768)
     window.addEventListener('resize', handler)
     return () => window.removeEventListener('resize', handler)
   }, [])
 
+  // Load saved plan on mount
   useEffect(() => {
-  supabase.auth.getUser().then(async ({ data: { user } }) => {
-    if (!user) return
-    const { data } = await supabase.from('tab2_plan').select('*').eq('user_id', user.id).maybeSingle()
-    if (!data) return
-    setCcId(data.cc_id || '')
-    setCcName(data.cc_name || '')
-    setPrograms(data.programs || [])
-  })
-}, [])
+    supabase.auth.getUser().then(async ({ data: { user } }) => {
+      if (!user) return
+      const { data } = await supabase.from('tab2_plan').select('*').eq('user_id', user.id).maybeSingle()
+      if (!data) return
+      setCcId(data.cc_id || '')
+      setCcName(data.cc_name || '')
+      setPrograms(data.programs || [])
+    })
+  }, [])
 
   useEffect(() => {
     if (!selUniId || !ccId) { setMajors([]); setSelMajor(null); return }
@@ -191,56 +255,52 @@ export default function Tab2() {
     if (!overlapData || programs.length === 0) return
     const key = getPlanSaveKey(programs)
     supabase.from('tab2_progress').select('completed_courses').eq('plan_key', key).maybeSingle()
-  .then(({ data }) => {
-    if (data?.completed_courses) {
-      setCompletedCourses(new Set(data.completed_courses))
-    }
-  })
+      .then(({ data }) => {
+        if (data?.completed_courses) setCompletedCourses(new Set(data.completed_courses))
+      })
   }, [overlapData])
 
-  // Save progress to Supabase (debounced)
   async function saveProgress(newCompleted, progs) {
-  if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current)
-  saveTimeoutRef.current = setTimeout(async () => {
-    const key = getPlanSaveKey(progs)
+    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current)
+    saveTimeoutRef.current = setTimeout(async () => {
+      const key = getPlanSaveKey(progs)
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+      await supabase.from('tab2_progress').upsert({
+        plan_key: key,
+        user_id: user.id,
+        completed_courses: [...newCompleted],
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'plan_key,user_id' })
+    }, 1000)
+  }
+
+  async function savePlan(newCcId, newCcName, newPrograms) {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
-    const { error } = await supabase.from('tab2_progress').upsert({
-      plan_key: key,
+    await supabase.from('tab2_plan').upsert({
       user_id: user.id,
-      completed_courses: [...newCompleted],
+      cc_id: newCcId,
+      cc_name: newCcName,
+      programs: newPrograms,
       updated_at: new Date().toISOString(),
-    }, { onConflict: 'plan_key,user_id' })
-    console.log('saveProgress result:', error ? 'ERROR: ' + error.message : 'saved ok', [...newCompleted])
-  }, 1000)
-}
-
-async function savePlan(newCcId, newCcName, newPrograms) {
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return
-  await supabase.from('tab2_plan').upsert({
-    user_id: user.id,
-    cc_id: newCcId,
-    cc_name: newCcName,
-    programs: newPrograms,
-    updated_at: new Date().toISOString(),
-  }, { onConflict: 'user_id' })
-}
+    }, { onConflict: 'user_id' })
+  }
 
   function addProgram() {
-  if (!selUniId || !selMajor) return
-  if (programs.find(p => p.uniId === selUniId && p.majorKey === selMajor.key)) return
-  const newPrograms = [...programs, { uniId: selUniId, uniName: selUniName, majorLabel: selMajor.label, majorKey: selMajor.key }]
-  setPrograms(newPrograms)
-  savePlan(ccId, ccName, newPrograms)
-  setSelMajor(null)
-}
+    if (!selUniId || !selMajor) return
+    if (programs.find(p => p.uniId === selUniId && p.majorKey === selMajor.key)) return
+    const newPrograms = [...programs, { uniId: selUniId, uniName: selUniName, majorLabel: selMajor.label, majorKey: selMajor.key }]
+    setPrograms(newPrograms)
+    savePlan(ccId, ccName, newPrograms)
+    setSelMajor(null)
+  }
 
   function removeProgram(i) {
-  const newPrograms = programs.filter((_, j) => j !== i)
-  setPrograms(newPrograms)
-  savePlan(ccId, ccName, newPrograms)
-}
+    const newPrograms = programs.filter((_, j) => j !== i)
+    setPrograms(newPrograms)
+    savePlan(ccId, ccName, newPrograms)
+  }
 
   function toggleCourse(ccKey) {
     setCompletedCourses(prev => {
@@ -265,10 +325,9 @@ async function savePlan(newCcId, newCcName, newPrograms) {
 
       const totalPrograms = programs.length
       const reqMap = {}
-      const noArtMap = {} // key: "uniName|prefix|number"
+      const noArtMap = {}
 
       for (const { prog, arts, noArts } of programArts) {
-        // Articulated courses
         for (const art of arts) {
           const cheapestOpt = art.options.reduce((a, b) => a.courses.length <= b.courses.length ? a : b)
           const ccKey = cheapestOpt.courses.map(c => `${c.prefix} ${c.number}`).sort().join('+')
@@ -282,11 +341,14 @@ async function savePlan(newCcId, newCcName, newPrograms) {
               program: `${prog.uniName} → ${prog.majorLabel}`,
               uniReq: art.uniRequirement,
               options: art.options,
+              groupTitle: art.groupTitle,
+              sectionLabel: art.sectionLabel,
+              nRequired: art.nRequired,
+              groupId: art.groupId,
             })
           }
         }
 
-        // No articulation courses
         for (const na of noArts) {
           const naKey = `${prog.uniName}|${na.uniRequirement.prefix}|${na.uniRequirement.number}`
           if (!noArtMap[naKey]) {
@@ -294,6 +356,8 @@ async function savePlan(newCcId, newCcName, newPrograms) {
               program: `${prog.uniName} → ${prog.majorLabel}`,
               uniReq: na.uniRequirement,
               reason: na.reason,
+              groupTitle: na.groupTitle,
+              sectionLabel: na.sectionLabel,
             }
           }
         }
@@ -318,21 +382,49 @@ async function savePlan(newCcId, newCcName, newPrograms) {
     }
   }
 
+  // Compute progress — respects nRequired groups
+  function isRecommendedSection(groupTitle) {
+    if (!groupTitle) return false
+    const lower = groupTitle.toLowerCase()
+    return lower.includes('recommended') || lower.includes('suggested') ||
+           lower.includes('advised') || lower.includes('optional') ||
+           lower.includes('preparation') || lower.includes('strongly')
+  }
+
   function computeAttainability() {
     if (!overlapData) return []
     const programMap = {}
     for (const label of overlapData.programLabels) {
       programMap[label] = { label, total: 0, completed: 0 }
     }
+
+    const programGroupMap = {}
+
     for (const row of overlapData.rows) {
       const isDone = completedCourses.has(row.ccKey)
       for (const pe of row.programEntries) {
-        if (programMap[pe.program]) {
-          programMap[pe.program].total += 1
-          if (isDone) programMap[pe.program].completed += 1
+        if (!programMap[pe.program]) continue
+        if (!includeRecommended && isRecommendedSection(pe.groupTitle)) continue
+        const pgKey = `${pe.program}|${pe.groupId}`
+        if (!programGroupMap[pgKey]) {
+          programGroupMap[pgKey] = { program: pe.program, nRequired: pe.nRequired, totalCourses: 0, completedCourses: 0 }
         }
+        programGroupMap[pgKey].totalCourses += 1
+        if (isDone) programGroupMap[pgKey].completedCourses += 1
       }
     }
+
+    for (const pg of Object.values(programGroupMap)) {
+      if (!programMap[pg.program]) continue
+      if (pg.nRequired !== null) {
+        programMap[pg.program].total += 1
+        if (pg.completedCourses >= pg.nRequired) programMap[pg.program].completed += 1
+      } else {
+        programMap[pg.program].total += pg.totalCourses
+        programMap[pg.program].completed += pg.completedCourses
+      }
+    }
+
     return Object.values(programMap).sort((a, b) => {
       const aPct = a.total === 0 ? 0 : a.completed / a.total
       const bPct = b.total === 0 ? 0 : b.completed / b.total
@@ -345,6 +437,19 @@ async function savePlan(newCcId, newCcName, newPrograms) {
     const uni = parts[0]?.replace('UC ', '').replace('CSU ', '').replace(' State', '').replace(' University', '')
     const major = parts[1]?.split(',')[0]?.split(' ').slice(0, 2).join(' ')
     return `${uni}\n${major || ''}`
+  }
+
+  // Get section badge info for a row
+  function getRowSectionInfo(row) {
+    // Look at all program entries to get section context
+    const pe = row.programEntries[0]
+    if (!pe) return null
+    return {
+      groupTitle: pe.groupTitle,
+      sectionLabel: pe.sectionLabel,
+      nRequired: pe.nRequired,
+      groupId: pe.groupId,
+    }
   }
 
   const summary = computeAttainability()
@@ -363,15 +468,15 @@ async function savePlan(newCcId, newCcName, newPrograms) {
             <div className="section-label" style={{ marginBottom: 10 }}>Step 1 — Your community college</div>
             <div className="field" style={{ marginBottom: 0 }}>
               <select value={ccId} onChange={e => {
-  const newCcId = e.target.value
-  const newCcName = e.target.selectedOptions[0]?.text || ''
-  setCcId(newCcId)
-  setCcName(newCcName)
-  setPrograms([])
-  setSelUniId('')
-  setMajors([])
-  savePlan(newCcId, newCcName, [])
-}}>
+                const newCcId = e.target.value
+                const newCcName = e.target.selectedOptions[0]?.text || ''
+                setCcId(newCcId)
+                setCcName(newCcName)
+                setPrograms([])
+                setSelUniId('')
+                setMajors([])
+                savePlan(newCcId, newCcName, [])
+              }}>
                 <option value="">Select your CC...</option>
                 {KNOWN_CCS.map(cc => <option key={cc.id} value={cc.id}>{cc.name}</option>)}
               </select>
@@ -460,21 +565,21 @@ async function savePlan(newCcId, newCcName, newPrograms) {
           }}>
             <span style={{ fontWeight: 600, color: '#1a1a1a' }}>Key:</span>
             <span><span style={{ color: '#6C5CE7', fontWeight: 700, fontSize: 14 }}>●</span> Required by this program</span>
-            <span><span style={{ color: '#ddd', fontSize: 14 }}>●</span> Not required</span>
-            <span>☑ = you've completed it</span>
+            <span><span style={{ color: '#e0e0e0', fontSize: 14 }}>●</span> Not required</span>
+            <span>☑ = completed</span>
+            <span style={{ background: '#fff3e0', color: '#f57f17', borderRadius: 4, padding: '1px 6px', fontSize: 11, fontWeight: 600 }}>Pick N</span>
+            <span style={{ color: '#f57f17' }}>= complete any N from this group</span>
+            <span style={{ color: '#888' }}>· Progress saved automatically</span>
           </div>
 
-          {/* Side-by-side layout on desktop */}
           <div style={{
             display: isWide ? 'grid' : 'block',
             gridTemplateColumns: isWide ? '1fr 400px' : undefined,
             gap: isWide ? 20 : 0,
             alignItems: 'start',
           }}>
-
             {/* LEFT: Grid table */}
             <div>
-              <div style={{ fontSize: 11, color: '#aaa', marginBottom: 8 }}>Tap any row for details</div>
               <div style={{ overflowX: 'auto', marginBottom: 24 }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                   <thead>
@@ -495,18 +600,64 @@ async function savePlan(newCcId, newCcName, newPrograms) {
                     </tr>
                   </thead>
                   <tbody>
-                    {overlapData.rows.map((row, idx) => {
-                      const isDone = completedCourses.has(row.ccKey)
-                      const isExpanded = expandedRow === row.ccKey
-                      const label = row.primaryCourses.map(c => `${c.prefix} ${c.number}`).join(' + ')
-                      const subtitle = row.primaryCourses.map(c => c.title).filter(Boolean).join(' + ')
-                      const units = row.primaryCourses.reduce((sum, c) => sum + (c.units || 0), 0)
-                      const hasAlts = row.programEntries.some(pe => pe.options.length > 1)
-                      const coverageAll = row.coverage === overlapData.totalPrograms
-                      const coverageMost = row.coverage > 1 && !coverageAll
+                    {(() => {
+                      const rows = []
+                      let lastSectionKey = null
 
-                      return (
-                        <>
+                      for (let idx = 0; idx < overlapData.rows.length; idx++) {
+                        const row = overlapData.rows[idx]
+                        const isDone = completedCourses.has(row.ccKey)
+                        const isExpanded = expandedRow === row.ccKey
+                        const label = row.primaryCourses.map(c => `${c.prefix} ${c.number}`).join(' + ')
+                        const subtitle = row.primaryCourses.map(c => c.title).filter(Boolean).join(' + ')
+                        const units = row.primaryCourses.reduce((sum, c) => sum + (c.units || 0), 0)
+                        const hasAlts = row.programEntries.some(pe => pe.options.length > 1)
+                        const coverageAll = row.coverage === overlapData.totalPrograms
+                        const coverageMost = row.coverage > 1 && !coverageAll
+
+                        // Section header row
+                        const sectionInfo = getRowSectionInfo(row)
+                        const sectionKey = sectionInfo ? `${sectionInfo.groupTitle}|${sectionInfo.sectionLabel}|${sectionInfo.groupId}` : null
+
+                        if (sectionKey && sectionKey !== lastSectionKey) {
+                          lastSectionKey = sectionKey
+                          const isPickN = sectionInfo.nRequired !== null
+
+                          rows.push(
+                            <tr key={`section-${sectionKey}`}>
+                              <td colSpan={overlapData.programLabels.length + 2} style={{ padding: '16px 12px 6px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                                  {sectionInfo.groupTitle && (
+                                    <span style={{
+                                      fontSize: 10, fontWeight: 700, color: '#888',
+                                      textTransform: 'uppercase', letterSpacing: '0.08em'
+                                    }}>
+                                      {sectionInfo.groupTitle}
+                                    </span>
+                                  )}
+                                  {sectionInfo.sectionLabel && (
+                                    <span style={{
+                                      fontSize: 11, fontWeight: 600, color: '#1a1a1a',
+                                    }}>
+                                      {sectionInfo.sectionLabel}
+                                    </span>
+                                  )}
+                                  {isPickN && (
+                                    <span style={{
+                                      background: '#fff3e0', color: '#f57f17',
+                                      borderRadius: 4, padding: '2px 8px',
+                                      fontSize: 11, fontWeight: 600,
+                                    }}>
+                                      Pick any {sectionInfo.nRequired}
+                                    </span>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          )
+                        }
+
+                        rows.push(
                           <tr
                             key={row.ccKey}
                             onClick={() => setExpandedRow(isExpanded ? null : row.ccKey)}
@@ -554,9 +705,10 @@ async function savePlan(newCcId, newCcName, newPrograms) {
                               )
                             })}
                           </tr>
+                        )
 
-                          {/* Expanded detail row */}
-                          {isExpanded && (
+                        if (isExpanded) {
+                          rows.push(
                             <tr key={`${row.ccKey}-detail`} style={{ borderBottom: '1px solid #f0f0f0' }}>
                               <td></td>
                               <td colSpan={overlapData.programLabels.length + 1} style={{ padding: '0 12px 16px' }}>
@@ -574,7 +726,11 @@ async function savePlan(newCcId, newCcName, newPrograms) {
                                         </span>
                                         {pe.uniReq.units ? ` (${pe.uniReq.units} units)` : ''}
                                       </div>
-                                      {/* Also satisfies */}
+                                      {pe.nRequired !== null && (
+                                        <div style={{ fontSize: 12, color: '#f57f17', marginBottom: 6 }}>
+                                          ⚡ Part of a "Pick any {pe.nRequired}" group — completing this satisfies one slot
+                                        </div>
+                                      )}
                                       {pe.uniReq.allCourseLabels?.length > 1 && (
                                         <div style={{ fontSize: 12, color: '#6C5CE7', marginBottom: 8 }}>
                                           ✅ Also satisfies: {pe.uniReq.allCourseLabels.slice(1).join(', ')}
@@ -583,7 +739,7 @@ async function savePlan(newCcId, newCcName, newPrograms) {
                                       {pe.options.map((opt, j) => (
                                         <div key={j}>
                                           {j > 0 && <div style={{ textAlign: 'center', fontSize: 11, color: '#aaa', padding: '4px 0', fontWeight: 600 }}>— OR —</div>}
-                                          {opt.courses.length > 1 && <div style={{ fontSize: 11, color: '#aaa', marginBottom: 4 }}>take both:</div>}
+                                          {opt.courses.length > 1 && <div style={{ fontSize: 11, color: '#888', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>Take all together</div>}
                                           {opt.groupNote && <div style={{ fontSize: 11, color: '#f57f17', marginBottom: 4 }}>⚠️ {opt.groupNote}</div>}
                                           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                                             {opt.courses.map((c, k) => (
@@ -602,10 +758,11 @@ async function savePlan(newCcId, newCcName, newPrograms) {
                                 </div>
                               </td>
                             </tr>
-                          )}
-                        </>
-                      )
-                    })}
+                          )
+                        }
+                      }
+                      return rows
+                    })()}
                   </tbody>
                 </table>
               </div>
@@ -614,14 +771,13 @@ async function savePlan(newCcId, newCcName, newPrograms) {
                 <div className="key-note">No articulated courses found. Try different programs or check ASSIST.org directly.</div>
               )}
 
-              {/* No articulation section */}
               {overlapData.noArticulation?.length > 0 && (
                 <div style={{ marginBottom: 24 }}>
                   <div style={{ fontWeight: 600, fontSize: 13, color: '#f57f17', marginBottom: 10 }}>
                     ⚠️ Requirements with no CC equivalent at {ccName}
                   </div>
                   <div style={{ fontSize: 12, color: '#888', marginBottom: 12 }}>
-                    These university requirements don't have an articulated equivalent at {ccName}. You may need to take them at the university or find another CC with an agreement.
+                    These university requirements don't have an articulated equivalent at {ccName}. You may need to take them at the university or find another CC.
                   </div>
                   {overlapData.noArticulation.map((na, i) => (
                     <div key={i} style={{
@@ -630,6 +786,9 @@ async function savePlan(newCcId, newCcName, newPrograms) {
                       display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start'
                     }}>
                       <div>
+                        <div style={{ fontSize: 10, fontWeight: 700, color: '#888', textTransform: 'uppercase', marginBottom: 4 }}>
+                          {na.groupTitle}{na.sectionLabel ? ` · ${na.sectionLabel}` : ''}
+                        </div>
                         <div style={{ fontWeight: 600, fontSize: 13 }}>
                           {na.uniReq.prefix} {na.uniReq.number} — {na.uniReq.title}
                           {na.uniReq.units ? <span style={{ fontWeight: 400, color: '#888', fontSize: 12, marginLeft: 6 }}>{na.uniReq.units} units</span> : ''}
@@ -649,12 +808,26 @@ async function savePlan(newCcId, newCcName, newPrograms) {
               )}
             </div>
 
-            {/* RIGHT: Progress summary (sticky on desktop) */}
+            {/* RIGHT: Progress summary */}
             <div style={{ position: isWide ? 'sticky' : 'static', top: 20 }}>
               <div className="card" style={{ background: '#f9f9f7', border: '1px solid #e8e8e4' }}>
-                <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 4 }}>📈 Progress</div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                  <div style={{ fontWeight: 600, fontSize: 14 }}>📊 Progress</div>
+                  <button
+                    onClick={() => setIncludeRecommended(r => !r)}
+                    style={{
+                      fontSize: 11, padding: '3px 8px', borderRadius: 20, cursor: 'pointer', border: '1px solid',
+                      borderColor: includeRecommended ? '#6C5CE7' : '#ccc',
+                      background: includeRecommended ? '#ede9ff' : '#f5f5f5',
+                      color: includeRecommended ? '#6C5CE7' : '#888',
+                      fontWeight: 500, transition: 'all 0.15s',
+                    }}
+                  >
+                    {includeRecommended ? '✓ ' : ''}+ recommended
+                  </button>
+                </div>
                 <div style={{ fontSize: 11, color: '#888', marginBottom: 12 }}>
-                  Saved automatically · check off completed courses
+                  {includeRecommended ? 'Including recommended courses' : 'Required courses only'} · check off to track
                 </div>
                 {summary.length === 0 ? (
                   <div style={{ fontSize: 12, color: '#aaa' }}>Check off courses to track progress</div>
@@ -666,9 +839,9 @@ async function savePlan(newCcId, newCcName, newPrograms) {
                       <div key={i} style={{ marginBottom: i < summary.length - 1 ? 16 : 0 }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
                           <div style={{ fontSize: 12, fontWeight: isTop ? 600 : 400, color: isTop ? '#1a1a1a' : '#555', flex: 1, marginRight: 8 }}>
-                            {isTop && summary.length > 1 && completedCourses.size > 0 && <span style={{ color: '#6C5CE7' }}>★ </span>}{s.label}
+                            {isTop && summary.length > 1 && <span style={{ color: '#6C5CE7' }}>⭐ </span>}{s.label}
                           </div>
-                          <div style={{ fontSize: 11, color: '#888', flexShrink: 0 }}>{s.completed} / {s.total}</div>
+                          <div style={{ fontSize: 11, color: '#888', flexShrink: 0 }}>{s.completed}/{s.total} · {pct}%</div>
                         </div>
                         <div style={{ background: '#e0e0e0', borderRadius: 4, height: 6, overflow: 'hidden' }}>
                           <div style={{
@@ -677,13 +850,15 @@ async function savePlan(newCcId, newCcName, newPrograms) {
                             borderRadius: 4, transition: 'width 0.3s ease'
                           }} />
                         </div>
+                        {isTop && summary.length > 1 && (
+                          <div style={{ fontSize: 10, color: '#888', marginTop: 3 }}>Most attainable so far</div>
+                        )}
                       </div>
                     )
                   })
                 )}
               </div>
             </div>
-
           </div>
         </>
       )}
