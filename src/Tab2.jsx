@@ -216,6 +216,7 @@ export default function Tab2() {
   const [completedCourses, setCompletedCourses] = useState(new Set())
   const [includeRecommended, setIncludeRecommended] = useState(false)
   const [isWide, setIsWide] = useState(window.innerWidth > 768)
+  const [showBanner, setShowBanner] = useState(() => localStorage.getItem('tab2_banner_dismissed') !== '1')
   const saveTimeoutRef = useRef(null)
 
   useEffect(() => {
@@ -551,6 +552,41 @@ export default function Tab2() {
             <button className="btn-secondary" onClick={() => { setOverlapData(null); setExpandedRow(null) }}>← Edit</button>
           </div>
 
+          {showBanner && (
+            <div style={{
+              background: '#f0edff',
+              border: '1px solid #d4ccff',
+              borderRadius: 10,
+              padding: '14px 16px',
+              marginBottom: 20,
+              display: 'flex',
+              gap: 14,
+              alignItems: 'flex-start',
+            }}>
+              <div style={{ fontSize: 20, lineHeight: 1, flexShrink: 0 }}>👋</div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 600, fontSize: 13, color: '#1a1a1a', marginBottom: 6 }}>
+                  How to read your course plan
+                </div>
+                <div style={{ fontSize: 12, color: '#555', lineHeight: 1.6, display: 'flex', flexDirection: 'column', gap: 5 }}>
+                  <div><span style={{ color: '#6C5CE7', fontWeight: 700 }}>●</span> purple dot = this course counts toward that program's requirements</div>
+                  <div><span style={{ color: '#d4d4d4', fontWeight: 700 }}>●</span> grey dot = not required for that program</div>
+                  <div>
+                    <span style={{ display: 'inline-block', width: 12, height: 12, borderRadius: 3, background: '#ffe082', verticalAlign: 'middle', marginRight: 4 }} />
+                    amber cards = you only need to pick <strong>one</strong> course from the group, not all of them
+                  </div>
+                  <div>☑ check off a course once you've taken it — your progress saves automatically</div>
+                  <div style={{ color: '#888' }}>Tap any course row to see exactly which university requirement it satisfies.</div>
+                </div>
+              </div>
+              <button
+                onClick={() => { setShowBanner(false); localStorage.setItem('tab2_banner_dismissed', '1') }}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#aaa', fontSize: 18, lineHeight: 1, padding: 0, flexShrink: 0 }}
+                aria-label="Dismiss"
+              >×</button>
+            </div>
+          )}
+
           <div style={{
             display: isWide ? 'grid' : 'block',
             gridTemplateColumns: isWide ? '1fr 300px' : undefined,
@@ -584,7 +620,16 @@ export default function Tab2() {
                   groupIdToGroup[groupId].rows.push(row)
                 }
 
-                let lastSectionKey = null
+                // Sort groups: required sections first, recommended/optional last
+                // Within each bucket, preserve original ASSIST order
+                const isRecommendedGroup = (g) => isRecommendedSection(g.groupTitle) || isRecommendedSection(g.sectionLabel)
+                groups.sort((a, b) => {
+                  const aRec = isRecommendedGroup(a) ? 1 : 0
+                  const bRec = isRecommendedGroup(b) ? 1 : 0
+                  return aRec - bRec
+                })
+
+                let lastDisplayLabel = null
                 const rendered = []
 
                 for (const group of groups) {
@@ -593,23 +638,22 @@ export default function Tab2() {
                   // If it's pick-N but only 1 option exists at this CC, treat as effectively required
                   const isEffectivelyRequired = isPickN && totalAvailableAtCC <= 1
 
-                  // Section header — only render when section changes
-                  const sectionKey = `${group.groupTitle}|${group.sectionLabel}`
-                  if (sectionKey !== lastSectionKey) {
-                    lastSectionKey = sectionKey
+                  // Show the most specific label available. If sectionLabel exists use it,
+                  // otherwise fall back to groupTitle. Never stack both — they're usually redundant.
+                  const displayLabel = group.sectionLabel || group.groupTitle || 'REQUIREMENTS'
+
+                  if (displayLabel !== lastDisplayLabel) {
+                    lastDisplayLabel = displayLabel
                     rendered.push(
-                      <div key={`sec-${sectionKey}-${group.groupId}`} style={{
-                        marginTop: rendered.length === 0 ? 0 : 28,
+                      <div key={`sec-${displayLabel}-${group.groupId}`} style={{
+                        marginTop: rendered.length === 0 ? 0 : 32,
                         marginBottom: 10,
                         paddingBottom: 8,
                         borderBottom: '2px solid #e8e8e4',
                       }}>
                         <div style={{ fontSize: 11, fontWeight: 700, color: '#aaa', textTransform: 'uppercase', letterSpacing: '0.1em' }}>
-                          {group.groupTitle}
+                          {displayLabel}
                         </div>
-                        {group.sectionLabel && (
-                          <div style={{ fontSize: 12, color: '#888', marginTop: 2 }}>{group.sectionLabel}</div>
-                        )}
                       </div>
                     )
                   }
@@ -773,11 +817,6 @@ export default function Tab2() {
                             <div style={{ flex: 1, minWidth: 0 }}>
                               <div style={{ fontWeight: 600, fontSize: 13, textDecoration: isDone ? 'line-through' : 'none', color: isDone ? '#aaa' : '#1a1a1a', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                                 {label}
-                                {isEffectivelyRequired && (
-                                  <span style={{ fontSize: 10, background: '#f5f5f5', color: '#999', borderRadius: 4, padding: '2px 6px', fontWeight: 500 }}>
-                                    only option at {ccName}
-                                  </span>
-                                )}
                                 {coverageAll && <span style={{ fontSize: 10, background: '#ede9ff', color: '#6C5CE7', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>ALL PROGRAMS</span>}
                                 {coverageMost && <span style={{ fontSize: 10, background: '#fff3e0', color: '#f57f17', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>MULTIPLE</span>}
                               </div>
@@ -807,6 +846,11 @@ export default function Tab2() {
 
                           {isExpanded && (
                             <div style={{ borderTop: '1px solid #f0f0f0', background: '#fafafa', padding: '12px 14px 14px 38px' }}>
+                              {isEffectivelyRequired && (
+                                <div style={{ fontSize: 12, color: '#888', background: '#f0f0f0', borderRadius: 6, padding: '7px 10px', marginBottom: 12 }}>
+                                  ℹ️ The university offers multiple ways to satisfy this requirement, but this is the only one with an equivalent course at {ccName}.
+                                </div>
+                              )}
                               {row.programEntries.map((pe, i) => (
                                 <div key={i} style={{ marginBottom: i < row.programEntries.length - 1 ? 14 : 0, paddingBottom: i < row.programEntries.length - 1 ? 14 : 0, borderBottom: i < row.programEntries.length - 1 ? '1px solid #eee' : 'none' }}>
                                   <div style={{ fontSize: 12, fontWeight: 600, color: '#555', marginBottom: 4 }}>{pe.program}</div>
