@@ -161,6 +161,17 @@ export default function Tab2() {
   }, [])
 
   useEffect(() => {
+  supabase.auth.getUser().then(async ({ data: { user } }) => {
+    if (!user) return
+    const { data } = await supabase.from('tab2_plan').select('*').eq('user_id', user.id).maybeSingle()
+    if (!data) return
+    setCcId(data.cc_id || '')
+    setCcName(data.cc_name || '')
+    setPrograms(data.programs || [])
+  })
+}, [])
+
+  useEffect(() => {
     if (!selUniId || !ccId) { setMajors([]); setSelMajor(null); return }
     if (majorCache[`${selUniId}-${ccId}`]) { setMajors(majorCache[`${selUniId}-${ccId}`]); setSelMajor(null); return }
     setMajors([]); setSelMajor(null); setMajorsLoading(true)
@@ -203,16 +214,32 @@ export default function Tab2() {
   }, 1000)
 }
 
+async function savePlan(newCcId, newCcName, newPrograms) {
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return
+  await supabase.from('tab2_plan').upsert({
+    user_id: user.id,
+    cc_id: newCcId,
+    cc_name: newCcName,
+    programs: newPrograms,
+    updated_at: new Date().toISOString(),
+  }, { onConflict: 'user_id' })
+}
+
   function addProgram() {
-    if (!selUniId || !selMajor) return
-    if (programs.find(p => p.uniId === selUniId && p.majorKey === selMajor.key)) return
-    setPrograms(prev => [...prev, { uniId: selUniId, uniName: selUniName, majorLabel: selMajor.label, majorKey: selMajor.key }])
-    setSelMajor(null)
-  }
+  if (!selUniId || !selMajor) return
+  if (programs.find(p => p.uniId === selUniId && p.majorKey === selMajor.key)) return
+  const newPrograms = [...programs, { uniId: selUniId, uniName: selUniName, majorLabel: selMajor.label, majorKey: selMajor.key }]
+  setPrograms(newPrograms)
+  savePlan(ccId, ccName, newPrograms)
+  setSelMajor(null)
+}
 
   function removeProgram(i) {
-    setPrograms(prev => prev.filter((_, j) => j !== i))
-  }
+  const newPrograms = programs.filter((_, j) => j !== i)
+  setPrograms(newPrograms)
+  savePlan(ccId, ccName, newPrograms)
+}
 
   function toggleCourse(ccKey) {
     setCompletedCourses(prev => {
@@ -335,10 +362,15 @@ export default function Tab2() {
             <div className="section-label" style={{ marginBottom: 10 }}>Step 1 — Your community college</div>
             <div className="field" style={{ marginBottom: 0 }}>
               <select value={ccId} onChange={e => {
-                setCcId(e.target.value)
-                setCcName(e.target.selectedOptions[0]?.text || '')
-                setPrograms([]); setSelUniId(''); setMajors([])
-              }}>
+  const newCcId = e.target.value
+  const newCcName = e.target.selectedOptions[0]?.text || ''
+  setCcId(newCcId)
+  setCcName(newCcName)
+  setPrograms([])
+  setSelUniId('')
+  setMajors([])
+  savePlan(newCcId, newCcName, [])
+}}>
                 <option value="">Select your CC...</option>
                 {KNOWN_CCS.map(cc => <option key={cc.id} value={cc.id}>{cc.name}</option>)}
               </select>
