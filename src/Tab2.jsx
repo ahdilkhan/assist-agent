@@ -664,9 +664,9 @@ async function savePlan(newCcId, newCcName, newPrograms) {
                       <div key={i} style={{ marginBottom: i < summary.length - 1 ? 16 : 0 }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
                           <div style={{ fontSize: 12, fontWeight: isTop ? 600 : 400, color: isTop ? '#1a1a1a' : '#555', flex: 1, marginRight: 8 }}>
-                            {isTop && summary.length > 1 && <span style={{ color: '#6C5CE7' }}>★ </span>}{s.label}
+                            {isTop && summary.length > 1 && completedCourses.size > 0 && <span style={{ color: '#6C5CE7' }}>★ </span>}{s.label}
                           </div>
-                          <div style={{ fontSize: 11, color: '#888', flexShrink: 0 }}>{s.total - s.completed} remaining</div>
+                          <div style={{ fontSize: 11, color: '#888', flexShrink: 0 }}>{s.completed} / {s.total}</div>
                         </div>
                         <div style={{ background: '#e0e0e0', borderRadius: 4, height: 6, overflow: 'hidden' }}>
                           <div style={{
