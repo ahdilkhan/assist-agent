@@ -72,6 +72,9 @@ function parseSendingOptions(topItems) {
 
 function buildCellMap(templateAssets) {
   const cellMap = new Map()
+  // groupFallbackMap: keyed by raw ASSIST group.groupId → context of its first section
+  // Used when a templateCellId isn't in cellMap but we can infer the group from the item itself
+  const groupFallbackMap = new Map()
   let assets
   try {
     assets = typeof templateAssets === 'string' ? JSON.parse(templateAssets) : templateAssets || []
@@ -97,23 +100,27 @@ function buildCellMap(templateAssets) {
       const nFollowing = section.advisements?.find(a => a.type === 'NFollowing')
       const nRequired = nFollowing ? nFollowing.amount : null
       const sectionGroupId = `${group.groupId}_${section.position}`
+      const ctx = { sectionLabel, groupTitle, nRequired, groupId: sectionGroupId, sectionPosition: section.position, groupPosition: group.position }
+
+      // Store fallback by raw group.groupId so sibling items can find each other
+      // even when their templateCellId isn't a direct cell.id match
+      if (!groupFallbackMap.has(String(group.groupId))) {
+        groupFallbackMap.set(String(group.groupId), ctx)
+      }
 
       for (const row of section.rows || []) {
         for (const cell of row.cells || []) {
           if (cell.id) {
-            cellMap.set(cell.id, {
-              sectionLabel,
-              groupTitle,
-              nRequired,
-              groupId: sectionGroupId,
-              sectionPosition: section.position,
-              groupPosition: group.position,
-            })
+            cellMap.set(cell.id, ctx)
+            // Also index by string version in case of type mismatch
+            cellMap.set(String(cell.id), ctx)
           }
         }
       }
     }
   }
+  // Attach fallback map so parseAllForProgram can use it
+  cellMap._groupFallback = groupFallbackMap
   return cellMap
 }
 
@@ -133,14 +140,20 @@ function parseAllForProgram(agreement, programLabel) {
     for (const item of arts) {
       const art = item.articulation || item
       const templateCellId = item.templateCellId
-      const cellContext = cellMap.get(templateCellId) || {
-        sectionLabel: '',
-        groupTitle: 'MAJOR REQUIREMENTS',
-        nRequired: null,
-        groupId: templateCellId || Math.random().toString(),
-        sectionPosition: 0,
-        groupPosition: 0,
-      }
+      // Try direct cell ID lookup first, then try the raw group fallback,
+      // then use templateCellId as last resort (keeps the item isolated but safe)
+      const rawGroupId = item.requirementGroupId ?? item.requirementGroup?.id ?? item.groupId
+      const cellContext = cellMap.get(templateCellId)
+        || cellMap.get(String(templateCellId))
+        || (rawGroupId != null ? cellMap._groupFallback?.get(String(rawGroupId)) : null)
+        || {
+          sectionLabel: '',
+          groupTitle: 'MAJOR REQUIREMENTS',
+          nRequired: null,
+          groupId: templateCellId || Math.random().toString(),
+          sectionPosition: 0,
+          groupPosition: 0,
+        }
       const gid = cellContext.groupId
       if (!groupRegistry[gid]) {
         groupRegistry[gid] = { nRequired: cellContext.nRequired, articulated: [], unarticulated: [] }
