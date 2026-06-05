@@ -461,7 +461,6 @@ async function savePlan(newCcId, newCcName, newPrograms) {
             <span><span style={{ color: '#6C5CE7', fontWeight: 700, fontSize: 14 }}>●</span> Required by this program</span>
             <span><span style={{ color: '#ddd', fontSize: 14 }}>●</span> Not required</span>
             <span>☑ = you've completed it</span>
-            <span style={{ color: '#888' }}>· Progress is saved automatically</span>
           </div>
 
           {/* Side-by-side layout on desktop */}
@@ -651,7 +650,7 @@ async function savePlan(newCcId, newCcName, newPrograms) {
             {/* RIGHT: Progress summary (sticky on desktop) */}
             <div style={{ position: isWide ? 'sticky' : 'static', top: 20 }}>
               <div className="card" style={{ background: '#f9f9f7', border: '1px solid #e8e8e4' }}>
-                <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 4 }}>📊 Progress</div>
+                <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 4 }}>📈 Progress</div>
                 <div style={{ fontSize: 11, color: '#888', marginBottom: 12 }}>
                   Saved automatically · check off completed courses
                 </div>
@@ -665,9 +664,9 @@ async function savePlan(newCcId, newCcName, newPrograms) {
                       <div key={i} style={{ marginBottom: i < summary.length - 1 ? 16 : 0 }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
                           <div style={{ fontSize: 12, fontWeight: isTop ? 600 : 400, color: isTop ? '#1a1a1a' : '#555', flex: 1, marginRight: 8 }}>
-                            {isTop && summary.length > 1 && <span style={{ color: '#6C5CE7' }}>⭐ </span>}{s.label}
+                            {isTop && summary.length > 1 && <span style={{ color: '#6C5CE7' }}>★ </span>}{s.label}
                           </div>
-                          <div style={{ fontSize: 11, color: '#888', flexShrink: 0 }}>{s.completed}/{s.total} · {pct}%</div>
+                          <div style={{ fontSize: 11, color: '#888', flexShrink: 0 }}>{s.total - s.completed} remaining</div>
                         </div>
                         <div style={{ background: '#e0e0e0', borderRadius: 4, height: 6, overflow: 'hidden' }}>
                           <div style={{
@@ -676,9 +675,6 @@ async function savePlan(newCcId, newCcName, newPrograms) {
                             borderRadius: 4, transition: 'width 0.3s ease'
                           }} />
                         </div>
-                        {isTop && summary.length > 1 && (
-                          <div style={{ fontSize: 10, color: '#888', marginTop: 3 }}>Most attainable so far</div>
-                        )}
                       </div>
                     )
                   })
