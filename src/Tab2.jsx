@@ -473,6 +473,7 @@ async function savePlan(newCcId, newCcName, newPrograms) {
 
             {/* LEFT: Grid table */}
             <div>
+              <div style={{ fontSize: 11, color: '#aaa', marginBottom: 8 }}>Tap any row for details</div>
               <div style={{ overflowX: 'auto', marginBottom: 24 }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                   <thead>
@@ -581,7 +582,7 @@ async function savePlan(newCcId, newCcName, newPrograms) {
                                       {pe.options.map((opt, j) => (
                                         <div key={j}>
                                           {j > 0 && <div style={{ textAlign: 'center', fontSize: 11, color: '#aaa', padding: '4px 0', fontWeight: 600 }}>— OR —</div>}
-                                          {opt.courses.length > 1 && <div style={{ fontSize: 11, color: '#888', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>Take all together</div>}
+                                          {opt.courses.length > 1 && <div style={{ fontSize: 11, color: '#aaa', marginBottom: 4 }}>take both:</div>}
                                           {opt.groupNote && <div style={{ fontSize: 11, color: '#f57f17', marginBottom: 4 }}>⚠️ {opt.groupNote}</div>}
                                           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                                             {opt.courses.map((c, k) => (
