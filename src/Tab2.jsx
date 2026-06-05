@@ -178,12 +178,12 @@ export default function Tab2() {
   useEffect(() => {
     if (!overlapData || programs.length === 0) return
     const key = getPlanSaveKey(programs)
-    supabase.from('tab2_progress').select('completed_courses').eq('plan_key', key).single()
-      .then(({ data }) => {
-        if (data?.completed_courses) {
-          setCompletedCourses(new Set(data.completed_courses))
-        }
-      })
+    supabase.from('tab2_progress').select('completed_courses').eq('plan_key', key).maybeSingle()
+  .then(({ data }) => {
+    if (data?.completed_courses) {
+      setCompletedCourses(new Set(data.completed_courses))
+    }
+  })
   }, [overlapData])
 
   // Save progress to Supabase (debounced)
