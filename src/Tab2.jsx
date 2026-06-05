@@ -74,6 +74,7 @@ function parseAllForProgram(agreement, programLabel) {
   try {
     const arts = typeof agreement.articulations === 'string'
       ? JSON.parse(agreement.articulations) : agreement.articulations || []
+      console.log('[RAW ARTS]', JSON.stringify(arts.slice(0, 3), null, 2))
     const results = []
     const noArticulationResults = []
 
