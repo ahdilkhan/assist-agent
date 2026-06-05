@@ -365,9 +365,21 @@ export default function Tab2() {
 
       const rows = Object.values(reqMap).map(entry => {
         const coverage = new Set(entry.programEntries.map(e => e.program)).size
-        return { ...entry, coverage }
+        // Pull section context from first programEntry for sorting
+        const pe0 = entry.programEntries[0]
+        return {
+          ...entry,
+          coverage,
+          _groupPosition: pe0?.groupPosition ?? 999,
+          _sectionPosition: pe0?.sectionPosition ?? 999,
+        }
       })
-      rows.sort((a, b) => b.coverage - a.coverage || a.ccKey.localeCompare(b.ccKey))
+      // Sort: by section first (keeps Pick N groups together), then coverage desc within section
+      rows.sort((a, b) => {
+        if (a._groupPosition !== b._groupPosition) return a._groupPosition - b._groupPosition
+        if (a._sectionPosition !== b._sectionPosition) return a._sectionPosition - b._sectionPosition
+        return b.coverage - a.coverage || a.ccKey.localeCompare(b.ccKey)
+      })
 
       setOverlapData({
         rows,
@@ -567,9 +579,7 @@ export default function Tab2() {
             <span><span style={{ color: '#6C5CE7', fontWeight: 700, fontSize: 14 }}>●</span> Required by this program</span>
             <span><span style={{ color: '#e0e0e0', fontSize: 14 }}>●</span> Not required</span>
             <span>☑ = completed</span>
-            <span style={{ background: '#fff3e0', color: '#f57f17', borderRadius: 4, padding: '1px 6px', fontSize: 11, fontWeight: 600 }}>Pick N</span>
-            <span style={{ color: '#f57f17' }}>= complete any N from this group</span>
-            <span style={{ color: '#888' }}>· Progress saved automatically</span>
+            <span style={{ color: '#888' }}>· Sections marked "complete any N" mean you only need N courses from that group, not all of them</span>
           </div>
 
           <div style={{
@@ -622,36 +632,30 @@ export default function Tab2() {
                         if (sectionKey && sectionKey !== lastSectionKey) {
                           lastSectionKey = sectionKey
                           const isPickN = sectionInfo.nRequired !== null
+                          const sectionRowCount = overlapData.rows.filter(r =>
+                            r.programEntries[0]?.groupId === sectionInfo.groupId
+                          ).length
 
                           rows.push(
                             <tr key={`section-${sectionKey}`}>
-                              <td colSpan={overlapData.programLabels.length + 2} style={{ padding: '16px 12px 6px' }}>
+                              <td colSpan={overlapData.programLabels.length + 2} style={{ padding: '20px 12px 8px' }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                                  {sectionInfo.groupTitle && (
-                                    <span style={{
-                                      fontSize: 10, fontWeight: 700, color: '#888',
-                                      textTransform: 'uppercase', letterSpacing: '0.08em'
-                                    }}>
-                                      {sectionInfo.groupTitle}
-                                    </span>
-                                  )}
+                                  <span style={{ fontSize: 10, fontWeight: 700, color: '#999', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                                    {sectionInfo.groupTitle}
+                                  </span>
                                   {sectionInfo.sectionLabel && (
-                                    <span style={{
-                                      fontSize: 11, fontWeight: 600, color: '#1a1a1a',
-                                    }}>
-                                      {sectionInfo.sectionLabel}
-                                    </span>
-                                  )}
-                                  {isPickN && (
-                                    <span style={{
-                                      background: '#fff3e0', color: '#f57f17',
-                                      borderRadius: 4, padding: '2px 8px',
-                                      fontSize: 11, fontWeight: 600,
-                                    }}>
-                                      Pick any {sectionInfo.nRequired}
-                                    </span>
+                                    <span style={{ fontSize: 11, color: '#666' }}>· {sectionInfo.sectionLabel}</span>
                                   )}
                                 </div>
+                                {isPickN ? (
+                                  <div style={{ marginTop: 4, fontSize: 12, color: '#f57f17', fontWeight: 600 }}>
+                                    ↓ Complete any {sectionInfo.nRequired} of the {sectionRowCount} course options below
+                                  </div>
+                                ) : (
+                                  <div style={{ marginTop: 4, fontSize: 12, color: '#555' }}>
+                                    All courses below are required
+                                  </div>
+                                )}
                               </td>
                             </tr>
                           )
@@ -727,8 +731,8 @@ export default function Tab2() {
                                         {pe.uniReq.units ? ` (${pe.uniReq.units} units)` : ''}
                                       </div>
                                       {pe.nRequired !== null && (
-                                        <div style={{ fontSize: 12, color: '#f57f17', marginBottom: 6 }}>
-                                          ⚡ Part of a "Pick any {pe.nRequired}" group — completing this satisfies one slot
+                                        <div style={{ fontSize: 12, color: '#f57f17', marginBottom: 6, background: '#fff8f0', borderRadius: 6, padding: '6px 10px' }}>
+                                          ⚡ This is one option in a "complete any {pe.nRequired}" group — you only need to complete <strong>one</strong> of the options in that section, not all of them.
                                         </div>
                                       )}
                                       {pe.uniReq.allCourseLabels?.length > 1 && (
