@@ -224,7 +224,6 @@ export default function Tab2() {
     return () => window.removeEventListener('resize', handler)
   }, [])
 
-  // Load saved plan on mount
   useEffect(() => {
     supabase.auth.getUser().then(async ({ data: { user } }) => {
       if (!user) return
@@ -250,7 +249,6 @@ export default function Tab2() {
       .finally(() => setMajorsLoading(false))
   }, [selUniId, ccId])
 
-  // Load saved progress when overlapData is set
   useEffect(() => {
     if (!overlapData || programs.length === 0) return
     const key = getPlanSaveKey(programs)
@@ -365,7 +363,6 @@ export default function Tab2() {
 
       const rows = Object.values(reqMap).map(entry => {
         const coverage = new Set(entry.programEntries.map(e => e.program)).size
-        // Pull section context from first programEntry for sorting
         const pe0 = entry.programEntries[0]
         return {
           ...entry,
@@ -374,7 +371,6 @@ export default function Tab2() {
           _sectionPosition: pe0?.sectionPosition ?? 999,
         }
       })
-      // Sort: by section first (keeps Pick N groups together), then coverage desc within section
       rows.sort((a, b) => {
         if (a._groupPosition !== b._groupPosition) return a._groupPosition - b._groupPosition
         if (a._sectionPosition !== b._sectionPosition) return a._sectionPosition - b._sectionPosition
@@ -394,7 +390,6 @@ export default function Tab2() {
     }
   }
 
-  // Compute progress — respects nRequired groups
   function isRecommendedSection(groupTitle) {
     if (!groupTitle) return false
     const lower = groupTitle.toLowerCase()
@@ -449,19 +444,6 @@ export default function Tab2() {
     const uni = parts[0]?.replace('UC ', '').replace('CSU ', '').replace(' State', '').replace(' University', '')
     const major = parts[1]?.split(',')[0]?.split(' ').slice(0, 2).join(' ')
     return `${uni}\n${major || ''}`
-  }
-
-  // Get section badge info for a row
-  function getRowSectionInfo(row) {
-    // Look at all program entries to get section context
-    const pe = row.programEntries[0]
-    if (!pe) return null
-    return {
-      groupTitle: pe.groupTitle,
-      sectionLabel: pe.sectionLabel,
-      nRequired: pe.nRequired,
-      groupId: pe.groupId,
-    }
   }
 
   const summary = computeAttainability()
@@ -569,176 +551,164 @@ export default function Tab2() {
             <button className="btn-secondary" onClick={() => { setOverlapData(null); setExpandedRow(null) }}>← Edit</button>
           </div>
 
-          {/* Legend */}
-          <div style={{
-            display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 12,
-            fontSize: 12, color: '#666', alignItems: 'center',
-            background: '#f9f9f7', borderRadius: 8, padding: '8px 12px',
-          }}>
-            <span style={{ fontWeight: 600, color: '#1a1a1a' }}>Key:</span>
-            <span><span style={{ color: '#6C5CE7', fontWeight: 700, fontSize: 14 }}>●</span> Required by this program</span>
-            <span><span style={{ color: '#e0e0e0', fontSize: 14 }}>●</span> Not required</span>
-            <span>☑ = completed</span>
-            <span style={{ color: '#888' }}>· Sections marked "complete any N" mean you only need N courses from that group, not all of them</span>
-          </div>
-
           <div style={{
             display: isWide ? 'grid' : 'block',
-            gridTemplateColumns: isWide ? '1fr 400px' : undefined,
-            gap: isWide ? 20 : 0,
+            gridTemplateColumns: isWide ? '1fr 300px' : undefined,
+            gap: isWide ? 24 : 0,
             alignItems: 'start',
           }}>
-            {/* LEFT: Grid table */}
+
+            {/* LEFT: grouped course list */}
             <div>
-              <div style={{ overflowX: 'auto', marginBottom: 24 }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-                  <thead>
-                    <tr>
-                      <th style={{ width: 32, padding: '8px 6px', borderBottom: '2px solid #e0e0e0' }}></th>
-                      <th style={{ textAlign: 'left', padding: '8px 12px', borderBottom: '2px solid #e0e0e0', fontWeight: 600, color: '#1a1a1a' }}>
-                        Course at {ccName}
-                      </th>
-                      {overlapData.programLabels.map((label, i) => (
-                        <th key={i} style={{
-                          padding: '8px 10px', borderBottom: '2px solid #e0e0e0',
-                          fontWeight: 600, color: '#555', fontSize: 11,
-                          textAlign: 'center', whiteSpace: 'pre-line', minWidth: 80
+              {(() => {
+                // Pre-group rows by groupId to render pick-N groups as single visual units
+                const groups = []
+                const groupIdToGroup = {}
+
+                for (const row of overlapData.rows) {
+                  const pe0 = row.programEntries[0]
+                  const groupId = pe0?.groupId ?? `singleton_${row.ccKey}`
+                  const nRequired = pe0?.nRequired ?? null
+
+                  if (!groupIdToGroup[groupId]) {
+                    const g = {
+                      groupId,
+                      groupTitle: pe0?.groupTitle || 'MAJOR REQUIREMENTS',
+                      sectionLabel: pe0?.sectionLabel || '',
+                      nRequired,
+                      rows: [],
+                    }
+                    groupIdToGroup[groupId] = g
+                    groups.push(g)
+                  }
+                  groupIdToGroup[groupId].rows.push(row)
+                }
+
+                let lastSectionKey = null
+                const rendered = []
+
+                for (const group of groups) {
+                  const isPickN = group.nRequired !== null
+                  const totalAvailableAtCC = group.rows.length
+                  // If it's pick-N but only 1 option exists at this CC, treat as effectively required
+                  const isEffectivelyRequired = isPickN && totalAvailableAtCC <= 1
+
+                  // Section header — only render when section changes
+                  const sectionKey = `${group.groupTitle}|${group.sectionLabel}`
+                  if (sectionKey !== lastSectionKey) {
+                    lastSectionKey = sectionKey
+                    rendered.push(
+                      <div key={`sec-${sectionKey}-${group.groupId}`} style={{
+                        marginTop: rendered.length === 0 ? 0 : 28,
+                        marginBottom: 10,
+                        paddingBottom: 8,
+                        borderBottom: '2px solid #e8e8e4',
+                      }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: '#aaa', textTransform: 'uppercase', letterSpacing: '0.1em' }}>
+                          {group.groupTitle}
+                        </div>
+                        {group.sectionLabel && (
+                          <div style={{ fontSize: 12, color: '#888', marginTop: 2 }}>{group.sectionLabel}</div>
+                        )}
+                      </div>
+                    )
+                  }
+
+                  if (isPickN && !isEffectivelyRequired) {
+                    // Render as a grouped card with amber border — whole group = one choice
+                    rendered.push(
+                      <div key={`group-${group.groupId}`} style={{
+                        border: '1.5px solid #ffe082',
+                        borderRadius: 10,
+                        marginBottom: 12,
+                        overflow: 'hidden',
+                        background: '#fffdf5',
+                      }}>
+                        {/* Group header — clearly explains the choice */}
+                        <div style={{
+                          padding: '9px 14px',
+                          borderBottom: '1px solid #ffe082',
+                          background: '#fff8e1',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 8,
                         }}>
-                          {shortLabel(label)}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(() => {
-                      const rows = []
-                      let lastSectionKey = null
+                          <span style={{ fontSize: 14 }}>↓</span>
+                          <div>
+                            <span style={{ fontSize: 12, fontWeight: 700, color: '#b45309' }}>
+                              Choose any {group.nRequired} of these {totalAvailableAtCC} options
+                            </span>
+                            <span style={{ fontSize: 11, color: '#999', marginLeft: 8 }}>
+                              — you don't need all of them
+                            </span>
+                          </div>
+                        </div>
 
-                      for (let idx = 0; idx < overlapData.rows.length; idx++) {
-                        const row = overlapData.rows[idx]
-                        const isDone = completedCourses.has(row.ccKey)
-                        const isExpanded = expandedRow === row.ccKey
-                        const label = row.primaryCourses.map(c => `${c.prefix} ${c.number}`).join(' + ')
-                        const subtitle = row.primaryCourses.map(c => c.title).filter(Boolean).join(' + ')
-                        const units = row.primaryCourses.reduce((sum, c) => sum + (c.units || 0), 0)
-                        const hasAlts = row.programEntries.some(pe => pe.options.length > 1)
-                        const coverageAll = row.coverage === overlapData.totalPrograms
-                        const coverageMost = row.coverage > 1 && !coverageAll
+                        {group.rows.map((row, rowIdx) => {
+                          const isDone = completedCourses.has(row.ccKey)
+                          const isExpanded = expandedRow === row.ccKey
+                          const label = row.primaryCourses.map(c => `${c.prefix} ${c.number}`).join(' + ')
+                          const subtitle = row.primaryCourses.map(c => c.title).filter(Boolean).join(' + ')
+                          const units = row.primaryCourses.reduce((sum, c) => sum + (c.units || 0), 0)
+                          const coverageAll = row.coverage === overlapData.totalPrograms
+                          const coverageMost = row.coverage > 1 && !coverageAll
 
-                        // Section header row
-                        const sectionInfo = getRowSectionInfo(row)
-                        const sectionKey = sectionInfo ? `${sectionInfo.groupTitle}|${sectionInfo.sectionLabel}|${sectionInfo.groupId}` : null
-
-                        if (sectionKey && sectionKey !== lastSectionKey) {
-                          lastSectionKey = sectionKey
-                          const isPickN = sectionInfo.nRequired !== null
-                          const sectionRowCount = overlapData.rows.filter(r =>
-                            r.programEntries[0]?.groupId === sectionInfo.groupId
-                          ).length
-
-                          rows.push(
-                            <tr key={`section-${sectionKey}`}>
-                              <td colSpan={overlapData.programLabels.length + 2} style={{ padding: '20px 12px 8px' }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                                  <span style={{ fontSize: 10, fontWeight: 700, color: '#999', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-                                    {sectionInfo.groupTitle}
-                                  </span>
-                                  {sectionInfo.sectionLabel && (
-                                    <span style={{ fontSize: 11, color: '#666' }}>· {sectionInfo.sectionLabel}</span>
-                                  )}
+                          return (
+                            <div key={row.ccKey} style={{
+                              borderTop: rowIdx > 0 ? '1px dashed #f0e6c8' : 'none',
+                              background: isDone ? '#f7f4ec' : '#fffdf5',
+                              opacity: isDone ? 0.6 : 1,
+                            }}>
+                              {rowIdx > 0 && (
+                                <div style={{ textAlign: 'center', fontSize: 11, fontWeight: 700, color: '#ccc', padding: '4px 0', letterSpacing: '0.05em' }}>OR</div>
+                              )}
+                              <div
+                                onClick={() => setExpandedRow(isExpanded ? null : row.ccKey)}
+                                style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', cursor: 'pointer' }}
+                              >
+                                <div onClick={e => e.stopPropagation()}>
+                                  <input
+                                    type="checkbox"
+                                    checked={isDone}
+                                    onChange={() => toggleCourse(row.ccKey)}
+                                    style={{ width: 15, height: 15, cursor: 'pointer', accentColor: '#b45309' }}
+                                  />
                                 </div>
-                                {isPickN ? (
-                                  <div style={{ marginTop: 4, fontSize: 12, color: '#f57f17', fontWeight: 600 }}>
-                                    ↓ Complete any {sectionInfo.nRequired} of the {sectionRowCount} course options below
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                  <div style={{ fontWeight: 600, fontSize: 13, textDecoration: isDone ? 'line-through' : 'none', color: isDone ? '#aaa' : '#1a1a1a', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                                    {label}
+                                    {coverageAll && <span style={{ fontSize: 10, background: '#ede9ff', color: '#6C5CE7', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>ALL PROGRAMS</span>}
+                                    {coverageMost && <span style={{ fontSize: 10, background: '#fff3e0', color: '#f57f17', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>MULTIPLE</span>}
                                   </div>
-                                ) : (
-                                  <div style={{ marginTop: 4, fontSize: 12, color: '#555' }}>
-                                    All courses below are required
-                                  </div>
-                                )}
-                              </td>
-                            </tr>
-                          )
-                        }
-
-                        rows.push(
-                          <tr
-                            key={row.ccKey}
-                            onClick={() => setExpandedRow(isExpanded ? null : row.ccKey)}
-                            style={{
-                              background: isDone ? '#fafafa' : idx % 2 === 0 ? '#fff' : '#fafafa',
-                              cursor: 'pointer',
-                              opacity: isDone ? 0.5 : 1,
-                              transition: 'background 0.15s',
-                              borderBottom: isExpanded ? 'none' : '1px solid #f0f0f0',
-                            }}
-                          >
-                            <td style={{ padding: '10px 6px', textAlign: 'center' }} onClick={e => e.stopPropagation()}>
-                              <input
-                                type="checkbox"
-                                checked={isDone}
-                                onChange={() => toggleCourse(row.ccKey)}
-                                style={{ width: 15, height: 15, cursor: 'pointer', accentColor: '#1a1a1a' }}
-                              />
-                            </td>
-                            <td style={{ padding: '10px 12px' }}>
-                              <div>
-                                <div style={{
-                                  fontWeight: 600, fontSize: 13,
-                                  textDecoration: isDone ? 'line-through' : 'none',
-                                  color: isDone ? '#aaa' : '#1a1a1a'
-                                }}>
-                                  {label}
-                                  {coverageAll && <span style={{ marginLeft: 6, fontSize: 10, background: '#ede9ff', color: '#6C5CE7', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>ALL PROGRAMS</span>}
-                                  {coverageMost && <span style={{ marginLeft: 6, fontSize: 10, background: '#fff8e1', color: '#f57f17', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>MULTIPLE</span>}
+                                  {subtitle && <div style={{ fontSize: 11, color: '#999', marginTop: 1 }}>{subtitle}{units ? ` · ${units} units` : ''}</div>}
                                 </div>
-                                {subtitle && <div style={{ fontSize: 11, color: '#888', marginTop: 1 }}>
-                                  {subtitle}{units ? ` · ${units} units` : ''}{hasAlts ? ' · has alternatives' : ''}
-                                </div>}
+                                <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                                  {overlapData.programLabels.map((progLabel, pi) => {
+                                    const has = row.programEntries.some(pe => pe.program === progLabel)
+                                    return (
+                                      <div key={pi} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+                                        {overlapData.programLabels.length > 1 && (
+                                          <div style={{ fontSize: 9, color: '#bbb', textAlign: 'center', maxWidth: 48, lineHeight: 1.2 }}>{shortLabel(progLabel).split('\n')[0]}</div>
+                                        )}
+                                        <span style={{ color: has ? '#6C5CE7' : '#e0e0e0', fontSize: 16, lineHeight: 1 }}>●</span>
+                                      </div>
+                                    )
+                                  })}
+                                </div>
+                                <div style={{ fontSize: 11, color: '#ccc' }}>{isExpanded ? '▲' : '▼'}</div>
                               </div>
-                            </td>
-                            {overlapData.programLabels.map((progLabel, pi) => {
-                              const entry = row.programEntries.find(pe => pe.program === progLabel)
-                              return (
-                                <td key={pi} style={{ padding: '10px', textAlign: 'center', borderLeft: '1px solid #f0f0f0' }}>
-                                  {entry
-                                    ? <span style={{ color: '#6C5CE7', fontSize: 18, lineHeight: 1 }}>●</span>
-                                    : <span style={{ color: '#e0e0e0', fontSize: 18, lineHeight: 1 }}>●</span>
-                                  }
-                                </td>
-                              )
-                            })}
-                          </tr>
-                        )
 
-                        if (isExpanded) {
-                          rows.push(
-                            <tr key={`${row.ccKey}-detail`} style={{ borderBottom: '1px solid #f0f0f0' }}>
-                              <td></td>
-                              <td colSpan={overlapData.programLabels.length + 1} style={{ padding: '0 12px 16px' }}>
-                                <div style={{ background: '#f9f9f7', borderRadius: 8, padding: 14, marginTop: 4 }}>
+                              {isExpanded && (
+                                <div style={{ borderTop: '1px solid #f0e6c8', background: '#faf5e8', padding: '12px 14px 14px 38px' }}>
                                   {row.programEntries.map((pe, i) => (
-                                    <div key={i} style={{
-                                      marginBottom: i < row.programEntries.length - 1 ? 14 : 0,
-                                      paddingBottom: i < row.programEntries.length - 1 ? 14 : 0,
-                                      borderBottom: i < row.programEntries.length - 1 ? '1px solid #eee' : 'none'
-                                    }}>
+                                    <div key={i} style={{ marginBottom: i < row.programEntries.length - 1 ? 14 : 0, paddingBottom: i < row.programEntries.length - 1 ? 14 : 0, borderBottom: i < row.programEntries.length - 1 ? '1px solid #eee' : 'none' }}>
                                       <div style={{ fontSize: 12, fontWeight: 600, color: '#555', marginBottom: 4 }}>{pe.program}</div>
-                                      <div style={{ fontSize: 12, color: '#888', marginBottom: 4 }}>
-                                        Satisfies: <span style={{ fontWeight: 500, color: '#1a1a1a' }}>
-                                          {pe.uniReq.prefix} {pe.uniReq.number} — {pe.uniReq.title}
-                                        </span>
+                                      <div style={{ fontSize: 12, color: '#888', marginBottom: 8 }}>
+                                        Satisfies: <span style={{ fontWeight: 500, color: '#1a1a1a' }}>{pe.uniReq.prefix} {pe.uniReq.number} — {pe.uniReq.title}</span>
                                         {pe.uniReq.units ? ` (${pe.uniReq.units} units)` : ''}
                                       </div>
-                                      {pe.nRequired !== null && (
-                                        <div style={{ fontSize: 12, color: '#f57f17', marginBottom: 6, background: '#fff8f0', borderRadius: 6, padding: '6px 10px' }}>
-                                          ⚡ This is one option in a "complete any {pe.nRequired}" group — you only need to complete <strong>one</strong> of the options in that section, not all of them.
-                                        </div>
-                                      )}
                                       {pe.uniReq.allCourseLabels?.length > 1 && (
-                                        <div style={{ fontSize: 12, color: '#6C5CE7', marginBottom: 8 }}>
-                                          ✅ Also satisfies: {pe.uniReq.allCourseLabels.slice(1).join(', ')}
-                                        </div>
+                                        <div style={{ fontSize: 12, color: '#6C5CE7', marginBottom: 8 }}>✅ Also satisfies: {pe.uniReq.allCourseLabels.slice(1).join(', ')}</div>
                                       )}
                                       {pe.options.map((opt, j) => (
                                         <div key={j}>
@@ -760,28 +730,138 @@ export default function Tab2() {
                                     </div>
                                   ))}
                                 </div>
-                              </td>
-                            </tr>
+                              )}
+                            </div>
                           )
-                        }
-                      }
-                      return rows
-                    })()}
-                  </tbody>
-                </table>
-              </div>
+                        })}
+                      </div>
+                    )
+                  } else {
+                    // Normal required rows (or effectively-required pick-N with 1 option)
+                    group.rows.forEach((row) => {
+                      const isDone = completedCourses.has(row.ccKey)
+                      const isExpanded = expandedRow === row.ccKey
+                      const label = row.primaryCourses.map(c => `${c.prefix} ${c.number}`).join(' + ')
+                      const subtitle = row.primaryCourses.map(c => c.title).filter(Boolean).join(' + ')
+                      const units = row.primaryCourses.reduce((sum, c) => sum + (c.units || 0), 0)
+                      const hasAlts = row.programEntries.some(pe => pe.options.length > 1)
+                      const coverageAll = row.coverage === overlapData.totalPrograms
+                      const coverageMost = row.coverage > 1 && !coverageAll
+
+                      rendered.push(
+                        <div key={row.ccKey} style={{
+                          border: '1px solid #efefed',
+                          borderRadius: 8,
+                          marginBottom: 6,
+                          background: isDone ? '#fafafa' : '#fff',
+                          opacity: isDone ? 0.55 : 1,
+                          overflow: 'hidden',
+                        }}>
+                          <div
+                            onClick={() => setExpandedRow(isExpanded ? null : row.ccKey)}
+                            style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', cursor: 'pointer' }}
+                          >
+                            <div onClick={e => e.stopPropagation()}>
+                              <input
+                                type="checkbox"
+                                checked={isDone}
+                                onChange={() => toggleCourse(row.ccKey)}
+                                style={{ width: 15, height: 15, cursor: 'pointer', accentColor: '#1a1a1a' }}
+                              />
+                            </div>
+
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ fontWeight: 600, fontSize: 13, textDecoration: isDone ? 'line-through' : 'none', color: isDone ? '#aaa' : '#1a1a1a', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                                {label}
+                                {isEffectivelyRequired && (
+                                  <span style={{ fontSize: 10, background: '#f5f5f5', color: '#999', borderRadius: 4, padding: '2px 6px', fontWeight: 500 }}>
+                                    only option at {ccName}
+                                  </span>
+                                )}
+                                {coverageAll && <span style={{ fontSize: 10, background: '#ede9ff', color: '#6C5CE7', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>ALL PROGRAMS</span>}
+                                {coverageMost && <span style={{ fontSize: 10, background: '#fff3e0', color: '#f57f17', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>MULTIPLE</span>}
+                              </div>
+                              {subtitle && (
+                                <div style={{ fontSize: 11, color: '#999', marginTop: 1 }}>
+                                  {subtitle}{units ? ` · ${units} units` : ''}{hasAlts ? ' · has alternatives' : ''}
+                                </div>
+                              )}
+                            </div>
+
+                            <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                              {overlapData.programLabels.map((progLabel, pi) => {
+                                const has = row.programEntries.some(pe => pe.program === progLabel)
+                                return (
+                                  <div key={pi} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+                                    {overlapData.programLabels.length > 1 && (
+                                      <div style={{ fontSize: 9, color: '#bbb', textAlign: 'center', maxWidth: 48, lineHeight: 1.2 }}>{shortLabel(progLabel).split('\n')[0]}</div>
+                                    )}
+                                    <span style={{ color: has ? '#6C5CE7' : '#e0e0e0', fontSize: 16, lineHeight: 1 }}>●</span>
+                                  </div>
+                                )
+                              })}
+                            </div>
+
+                            <div style={{ fontSize: 11, color: '#ccc' }}>{isExpanded ? '▲' : '▼'}</div>
+                          </div>
+
+                          {isExpanded && (
+                            <div style={{ borderTop: '1px solid #f0f0f0', background: '#fafafa', padding: '12px 14px 14px 38px' }}>
+                              {row.programEntries.map((pe, i) => (
+                                <div key={i} style={{ marginBottom: i < row.programEntries.length - 1 ? 14 : 0, paddingBottom: i < row.programEntries.length - 1 ? 14 : 0, borderBottom: i < row.programEntries.length - 1 ? '1px solid #eee' : 'none' }}>
+                                  <div style={{ fontSize: 12, fontWeight: 600, color: '#555', marginBottom: 4 }}>{pe.program}</div>
+                                  <div style={{ fontSize: 12, color: '#888', marginBottom: 8 }}>
+                                    Satisfies: <span style={{ fontWeight: 500, color: '#1a1a1a' }}>{pe.uniReq.prefix} {pe.uniReq.number} — {pe.uniReq.title}</span>
+                                    {pe.uniReq.units ? ` (${pe.uniReq.units} units)` : ''}
+                                  </div>
+                                  {pe.uniReq.allCourseLabels?.length > 1 && (
+                                    <div style={{ fontSize: 12, color: '#6C5CE7', marginBottom: 8 }}>✅ Also satisfies: {pe.uniReq.allCourseLabels.slice(1).join(', ')}</div>
+                                  )}
+                                  {pe.options.map((opt, j) => (
+                                    <div key={j}>
+                                      {j > 0 && <div style={{ textAlign: 'center', fontSize: 11, color: '#aaa', padding: '4px 0', fontWeight: 600 }}>— OR —</div>}
+                                      {opt.courses.length > 1 && <div style={{ fontSize: 11, color: '#888', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>Take all together</div>}
+                                      {opt.groupNote && <div style={{ fontSize: 11, color: '#f57f17', marginBottom: 4 }}>⚠️ {opt.groupNote}</div>}
+                                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                                        {opt.courses.map((c, k) => (
+                                          <div key={k} style={{ background: '#efefed', borderRadius: 6, padding: '4px 10px', fontSize: 12 }}>
+                                            <span style={{ fontFamily: 'monospace', fontWeight: 600 }}>{c.prefix} {c.number}</span>
+                                            {c.title && <span style={{ color: '#666', marginLeft: 6 }}>{c.title}</span>}
+                                            {c.units && <span style={{ color: '#999', marginLeft: 6 }}>{c.units}u</span>}
+                                            {c.note && <div style={{ fontSize: 11, color: '#f57f17', marginTop: 4 }}>⚠️ {c.note}</div>}
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })
+                  }
+                }
+
+                return rendered
+              })()}
 
               {overlapData.rows.length === 0 && (
                 <div className="key-note">No articulated courses found. Try different programs or check ASSIST.org directly.</div>
               )}
 
+              {/* No articulation section */}
               {overlapData.noArticulation?.length > 0 && (
-                <div style={{ marginBottom: 24 }}>
-                  <div style={{ fontWeight: 600, fontSize: 13, color: '#f57f17', marginBottom: 10 }}>
-                    ⚠️ Requirements with no CC equivalent at {ccName}
+                <div style={{ marginTop: 32 }}>
+                  <div style={{
+                    fontSize: 11, fontWeight: 700, color: '#aaa', textTransform: 'uppercase',
+                    letterSpacing: '0.1em', paddingBottom: 8, borderBottom: '2px solid #e8e8e4', marginBottom: 12
+                  }}>
+                    No equivalent at {ccName}
                   </div>
-                  <div style={{ fontSize: 12, color: '#888', marginBottom: 12 }}>
-                    These university requirements don't have an articulated equivalent at {ccName}. You may need to take them at the university or find another CC.
+                  <div style={{ fontSize: 12, color: '#999', marginBottom: 12 }}>
+                    These are required by the university but have no articulated course at {ccName}. You may need to take them after transferring or at another CC.
                   </div>
                   {overlapData.noArticulation.map((na, i) => (
                     <div key={i} style={{
@@ -790,18 +870,13 @@ export default function Tab2() {
                       display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start'
                     }}>
                       <div>
-                        <div style={{ fontSize: 10, fontWeight: 700, color: '#888', textTransform: 'uppercase', marginBottom: 4 }}>
+                        <div style={{ fontSize: 10, fontWeight: 700, color: '#aaa', textTransform: 'uppercase', marginBottom: 4 }}>
                           {na.groupTitle}{na.sectionLabel ? ` · ${na.sectionLabel}` : ''}
                         </div>
                         <div style={{ fontWeight: 600, fontSize: 13 }}>
                           {na.uniReq.prefix} {na.uniReq.number} — {na.uniReq.title}
                           {na.uniReq.units ? <span style={{ fontWeight: 400, color: '#888', fontSize: 12, marginLeft: 6 }}>{na.uniReq.units} units</span> : ''}
                         </div>
-                        {na.uniReq.allCourseLabels?.length > 1 && (
-                          <div style={{ fontSize: 12, color: '#888', marginTop: 2 }}>
-                            Part of: {na.uniReq.allCourseLabels.join(' + ')}
-                          </div>
-                        )}
                         <div style={{ fontSize: 12, color: '#888', marginTop: 2 }}>{na.program}</div>
                         {na.reason && <div style={{ fontSize: 12, color: '#f57f17', marginTop: 4 }}>{na.reason}</div>}
                       </div>
@@ -812,7 +887,7 @@ export default function Tab2() {
               )}
             </div>
 
-            {/* RIGHT: Progress summary */}
+            {/* RIGHT: Progress + legend */}
             <div style={{ position: isWide ? 'sticky' : 'static', top: 20 }}>
               <div className="card" style={{ background: '#f9f9f7', border: '1px solid #e8e8e4' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
@@ -830,11 +905,35 @@ export default function Tab2() {
                     {includeRecommended ? '✓ ' : ''}+ recommended
                   </button>
                 </div>
-                <div style={{ fontSize: 11, color: '#888', marginBottom: 12 }}>
+                <div style={{ fontSize: 11, color: '#888', marginBottom: 14 }}>
                   {includeRecommended ? 'Including recommended courses' : 'Required courses only'} · check off to track
                 </div>
+
+                {/* Legend — moved here so it's always visible */}
+                <div style={{ borderTop: '1px solid #e8e8e4', paddingTop: 12, marginBottom: 14 }}>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: '#555', marginBottom: 8 }}>How to read this</div>
+                  <div style={{ fontSize: 11, color: '#777', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ color: '#6C5CE7', fontSize: 14 }}>●</span>
+                      <span>Required by that program</span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ color: '#e0e0e0', fontSize: 14 }}>●</span>
+                      <span>Not required</span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6, marginTop: 4 }}>
+                      <div style={{ width: 12, height: 12, borderRadius: 3, background: '#ffe082', flexShrink: 0, marginTop: 1 }} />
+                      <span>Yellow groups = choose any 1 (not all required)</span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span>☑</span>
+                      <span>Check off completed courses</span>
+                    </div>
+                  </div>
+                </div>
+
                 {summary.length === 0 ? (
-                  <div style={{ fontSize: 12, color: '#aaa' }}>Check off courses to track progress</div>
+                  <div style={{ fontSize: 12, color: '#aaa' }}>Check off courses to see your progress</div>
                 ) : (
                   summary.map((s, i) => {
                     const pct = s.total === 0 ? 0 : Math.round((s.completed / s.total) * 100)
