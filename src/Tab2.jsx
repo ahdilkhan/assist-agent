@@ -188,19 +188,20 @@ export default function Tab2() {
 
   // Save progress to Supabase (debounced)
   async function saveProgress(newCompleted, progs) {
-    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current)
-    saveTimeoutRef.current = setTimeout(async () => {
-      const key = getPlanSaveKey(progs)
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
-      await supabase.from('tab2_progress').upsert({
-        plan_key: key,
-        user_id: user.id,
-        completed_courses: [...newCompleted],
-        updated_at: new Date().toISOString(),
-      }, { onConflict: 'plan_key,user_id' })
-    }, 1000)
-  }
+  if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current)
+  saveTimeoutRef.current = setTimeout(async () => {
+    const key = getPlanSaveKey(progs)
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return
+    const { error } = await supabase.from('tab2_progress').upsert({
+      plan_key: key,
+      user_id: user.id,
+      completed_courses: [...newCompleted],
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'plan_key,user_id' })
+    console.log('saveProgress result:', error ? 'ERROR: ' + error.message : 'saved ok', [...newCompleted])
+  }, 1000)
+}
 
   function addProgram() {
     if (!selUniId || !selMajor) return
