@@ -663,7 +663,7 @@ export default function Tab2() {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                   <div><span style={{ color: '#6C5CE7', fontWeight: 700 }}>●</span> purple = that program requires this course &nbsp;·&nbsp; <span style={{ color: '#ccc', fontWeight: 700 }}>●</span> grey = not required</div>
                   <div><span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 2, background: '#ffe082', verticalAlign: 'middle', marginRight: 4 }}/>yellow-bordered card = choose <em>any one</em> from the group — you don't need all of them</div>
-                  <div>▼ tap any row to see which university requirement it satisfies</div>
+                  <div>▼ tap any row to see which university requirement it satisfies and additional info</div>
                   <div>☑ check it off once you've taken it — progress saves automatically</div>
                 </div>
               </div>
@@ -1023,10 +1023,10 @@ export default function Tab2() {
                           fontSize: 11, fontWeight: 700, color: '#aaa', textTransform: 'uppercase',
                           letterSpacing: '0.1em', paddingBottom: 8, borderBottom: '2px solid #e8e8e4', marginBottom: 8
                         }}>
-                          No equivalent at {ccName}
+                          Required — no course available at {ccName}
                         </div>
                         <div style={{ fontSize: 12, color: '#999', marginBottom: 12 }}>
-                          These are required by the university but have no articulated course at {ccName}. You may need to take them after transferring or at another CC.
+                          These university requirements have no equivalent course at {ccName}. You may need to complete them after transferring, or check if another CC offers an articulated equivalent.
                         </div>
                         {trulyMissing.map((na, i) => (
                           <div key={i} style={{
@@ -1058,10 +1058,10 @@ export default function Tab2() {
                           letterSpacing: '0.1em', paddingBottom: 8, borderBottom: '2px solid #e8e8e4',
                           marginBottom: 8, marginTop: trulyMissing.length > 0 ? 28 : 0
                         }}>
-                          University options with no {ccName} equivalent
+                          Already covered — alternative available at {ccName}
                         </div>
                         <div style={{ fontSize: 12, color: '#999', marginBottom: 12 }}>
-                          These university courses have no equivalent at {ccName}, but since they're part of a "choose one" group and another option <em>is</em> available at {ccName}, <strong>you don't need to worry about these</strong> — they're shown here for transparency only.
+                          These university courses have no direct equivalent at {ccName}, but they're part of a "choose any one" group — and another option in that group <em>is</em> available at {ccName}, so <strong>you're already covered</strong>. You could also look for an equivalent at another CC if you prefer this path.
                         </div>
                         {coveredElsewhere.map((na, i) => (
                           <div key={i} style={{
@@ -1079,9 +1079,20 @@ export default function Tab2() {
                                 {na.uniReq.units ? <span style={{ fontWeight: 400, color: '#999', fontSize: 12, marginLeft: 6 }}>{na.uniReq.units} units</span> : ''}
                               </div>
                               <div style={{ fontSize: 12, color: '#aaa', marginTop: 2 }}>{na.program}</div>
-                              <div style={{ fontSize: 12, color: '#4caf50', marginTop: 4, fontWeight: 500 }}>
-                                ✓ Another option in this group is available at {ccName} — you're covered
-                              </div>
+                              {(() => {
+                                // Find the articulated sibling CC courses for this group
+                                const sibling = overlapData.rows.find(r =>
+                                  r.programEntries.some(pe => pe.groupId === na.groupId && pe.program === na.program)
+                                )
+                                const siblingLabel = sibling
+                                  ? sibling.primaryCourses.map(c => `${c.prefix} ${c.number}`).join(' + ')
+                                  : null
+                                return (
+                                  <div style={{ fontSize: 12, color: '#166534', marginTop: 4, fontWeight: 500 }}>
+                                    ✓ {siblingLabel ? `${siblingLabel} at ${ccName} covers this` : `Another option in this group is available at ${ccName}`} — you're covered
+                                  </div>
+                                )
+                              })()}
                             </div>
                             <span style={{ fontSize: 11, background: '#f0f0f0', color: '#aaa', borderRadius: 4, padding: '2px 8px', fontWeight: 600, flexShrink: 0, marginLeft: 8 }}>Optional path</span>
                           </div>
@@ -1125,7 +1136,7 @@ export default function Tab2() {
                       <div key={i} style={{ marginBottom: i < summary.length - 1 ? 16 : 0 }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
                           <div style={{ fontSize: 12, fontWeight: isTop ? 600 : 400, color: isTop ? '#1a1a1a' : '#555', flex: 1, marginRight: 8 }}>
-                            {isTop && summary.length > 1 && <span style={{ color: '#6C5CE7' }}>🟣 </span>}{s.label}
+                            {isTop && summary.length > 1 && <span>💜 </span>}{s.label}
                           </div>
                           <div style={{ fontSize: 11, color: '#888', flexShrink: 0 }}>{s.completed}/{s.total}</div>
                         </div>
