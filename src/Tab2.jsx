@@ -1080,16 +1080,26 @@ export default function Tab2() {
                               </div>
                               <div style={{ fontSize: 12, color: '#aaa', marginTop: 2 }}>{na.program}</div>
                               {(() => {
-                                // Find the articulated sibling CC courses for this group
+                                // Find the articulated sibling — match rows whose entries share the same
+                                // section label + program as this no-art entry (groupId may differ due to override)
                                 const sibling = overlapData.rows.find(r =>
-                                  r.programEntries.some(pe => pe.groupId === na.groupId && pe.program === na.program)
+                                  r.programEntries.some(pe =>
+                                    pe.program === na.program && (
+                                      pe.groupId === na.groupId ||
+                                      (pe.sectionLabel && pe.sectionLabel === na.sectionLabel) ||
+                                      (pe.nRequired !== null && pe.groupTitle === na.groupTitle && pe.sectionLabel === na.sectionLabel)
+                                    )
+                                  )
                                 )
                                 const siblingLabel = sibling
                                   ? sibling.primaryCourses.map(c => `${c.prefix} ${c.number}`).join(' + ')
                                   : null
                                 return (
-                                  <div style={{ fontSize: 12, color: '#166534', marginTop: 4, fontWeight: 500 }}>
-                                    ✓ {siblingLabel ? `${siblingLabel} at ${ccName} covers this` : `Another option in this group is available at ${ccName}`} — you're covered
+                                  <div style={{ fontSize: 12, color: '#166534', marginTop: 6, fontWeight: 500 }}>
+                                    ✓ {siblingLabel
+                                      ? <><strong>{siblingLabel}</strong> at {ccName} satisfies this requirement — you're covered</>
+                                      : <>Another option in this group is available at {ccName} — you're covered</>
+                                    }
                                   </div>
                                 )
                               })()}
@@ -1119,11 +1129,11 @@ export default function Tab2() {
                       fontWeight: 500, transition: 'all 0.15s',
                     }}
                   >
-                    {includeRecommended ? '✓ ' : ''}+ recommended
+                    {includeRecommended ? 'Required + recommended' : 'Required only'}
                   </button>
                 </div>
                 <div style={{ fontSize: 11, color: '#888', marginBottom: 12 }}>
-                  {includeRecommended ? 'Incl. recommended' : 'Required only'} · check rows to track
+                  Showing {includeRecommended ? 'required + recommended' : 'required only'} · check rows to track
                 </div>
 
                 {summary.length === 0 ? (
