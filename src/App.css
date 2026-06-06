@@ -72,24 +72,3 @@ body {
 .top-row-info p { font-size: 13px; color: #666; margin-top: 2px; }
 
 
-
-.dark { background: #0f0f0f; color: #e8e8e8; }
-body:has(.dark) { background: #0f0f0f; }
-.dark .card { background: #1a1a1a; border-color: #333; }
-.dark .field input, .dark .field select { background: #222; border-color: #444; color: #e8e8e8; }
-.dark .result-block { border-color: #333; }
-.dark .result-header { background: #1e1e1e; }
-.dark .result-header:hover { background: #252525; }
-.dark .result-body { border-color: #333; }
-.dark .eq-row { border-color: #2a2a2a; }
-.dark .step-bar { border-color: #333; }
-.dark .step-pill { background: #1a1a1a; border-color: #333; color: #666; }
-.dark .step-pill.active { background: #252525; color: #e8e8e8; }
-.dark .pref-chip { background: #1a1a1a; border-color: #333; color: #888; }
-.dark .pref-chip:hover { border-color: #666; color: #e8e8e8; }
-.dark .pref-chip.selected { background: #2a2a2a; border-color: #888; color: #e8e8e8; }
-.dark .avail-card { background: #1a1a1a; border-color: #333; }
-.dark .btn-secondary { border-color: #444; color: #ccc; }
-.dark .btn-secondary:hover { background: #252525; }
-.dark .error-box { background: #2a1a1a; border-color: #5c2a2a; color: #ef9a9a; }
-.dark .key-note { background: #2a2510; border-color: #5c4a10; color: #ffc107; }
