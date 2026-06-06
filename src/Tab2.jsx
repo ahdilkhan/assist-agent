@@ -70,10 +70,28 @@ function parseSendingOptions(topItems) {
   return options
 }
 
+// ─── CHANGE 1: buildCellMap — handles ALL patterns from 3,170 major audit ────
+//
+// Patterns that mean pick-N (yellow card):
+//   Group level (Or/Complete or Or/Select):
+//     instruction.conjunction === 'Or' → sections are the options, pick N
+//     groupAdv NFollowing(N) → N is explicit; default to 1 if absent
+//   Section level (And/*, none/*, any conjunction):
+//     sectionAdv NFollowing(N)       → pick N courses from this section
+//     sectionAdv NFromUnits(N)       → pick courses totaling N units
+//     sectionAdv NToNFollowing()     → pick a range (min/max on advisement)
+//     sectionAdv NInNDifferentAreas  → pick N from different areas
+//     sectionAdv CompleteFollowing   → complete all (treated as required, no pick)
+//
+// pickType is stored on each ctx so the UI can show the right label:
+//   'count'  → "Choose any N of these"
+//   'units'  → "Choose courses totaling N units"
+//   'range'  → "Choose N–M courses"
+//   'areas'  → "Choose N courses from different areas"
+//   null     → all required
+
 function buildCellMap(templateAssets) {
   const cellMap = new Map()
-  // groupFallbackMap: keyed by raw ASSIST group.groupId → context of its first section
-  // Used when a templateCellId isn't in cellMap but we can infer the group from the item itself
   const groupFallbackMap = new Map()
   let assets
   try {
@@ -96,14 +114,83 @@ function buildCellMap(templateAssets) {
     const sectionLabel = sectionHeader?.content || ''
     const dataSections = sections.filter(s => s.type === 'Section')
 
-    for (const section of dataSections) {
-      const nFollowing = section.advisements?.find(a => a.type === 'NFollowing')
-      const nRequired = nFollowing ? nFollowing.amount : null
-      const sectionGroupId = `${group.groupId}_${section.position}`
-      const ctx = { sectionLabel, groupTitle, nRequired, groupId: sectionGroupId, sectionPosition: section.position, groupPosition: group.position }
+    // Detect group-level pick-N
+    // Or/Complete and Or/Select both mean "pick from sections"
+    const instrIsOr = group.instruction?.conjunction === 'Or'
+    const groupNAdv = (group.advisements || []).find(a => a.type === 'NFollowing')
+    const groupUnitsAdv = (group.advisements || []).find(a => a.type === 'NFromUnits')
+    const groupIsPickN = instrIsOr
 
-      // Store fallback by raw group.groupId so sibling items can find each other
-      // even when their templateCellId isn't a direct cell.id match
+    for (const section of dataSections) {
+      const secAdvs = section.advisements || []
+      const secNFollowing = secAdvs.find(a => a.type === 'NFollowing')
+      const secNFromUnits = secAdvs.find(a => a.type === 'NFromUnits')
+      const secNToN = secAdvs.find(a => a.type === 'NToNFollowing')
+      const secNInAreas = secAdvs.find(a => a.type === 'NInNDifferentAreas')
+      const secCompleteAll = secAdvs.find(a => a.type === 'CompleteFollowing')
+
+      let nRequired = null
+      let pickType = null
+      let pickMin = null
+      let pickMax = null
+      let groupId
+
+      if (groupIsPickN) {
+        // All sections under this group share one pick pool keyed by group.groupId
+        if (groupNAdv) {
+          nRequired = groupNAdv.amount ?? 1
+          pickType = 'count'
+        } else if (groupUnitsAdv) {
+          nRequired = groupUnitsAdv.amount ?? 1
+          pickType = 'units'
+        } else {
+          nRequired = 1
+          pickType = 'count'
+        }
+        groupId = `or_group_${group.groupId}`
+      } else if (secCompleteAll) {
+        // Explicit "complete all" — treat as required
+        nRequired = null
+        pickType = null
+        groupId = `${group.groupId}_${section.position}`
+      } else if (secNFollowing) {
+        nRequired = secNFollowing.amount ?? 1
+        pickType = 'count'
+        groupId = `${group.groupId}_${section.position}`
+      } else if (secNFromUnits) {
+        nRequired = secNFromUnits.amount ?? 1
+        pickType = 'units'
+        groupId = `${group.groupId}_${section.position}`
+      } else if (secNToN) {
+        // Range — use min as nRequired for progress tracking
+        pickMin = secNToN.minAmount ?? secNToN.amount ?? 1
+        pickMax = secNToN.maxAmount ?? null
+        nRequired = pickMin
+        pickType = 'range'
+        groupId = `${group.groupId}_${section.position}`
+      } else if (secNInAreas) {
+        nRequired = secNInAreas.amount ?? 1
+        pickType = 'areas'
+        groupId = `${group.groupId}_${section.position}`
+      } else {
+        // No pick constraint — all required
+        nRequired = null
+        pickType = null
+        groupId = `${group.groupId}_${section.position}`
+      }
+
+      const ctx = {
+        sectionLabel,
+        groupTitle,
+        nRequired,
+        pickType,
+        pickMin,
+        pickMax,
+        groupId,
+        sectionPosition: section.position,
+        groupPosition: group.position,
+      }
+
       if (!groupFallbackMap.has(String(group.groupId))) {
         groupFallbackMap.set(String(group.groupId), ctx)
       }
@@ -112,21 +199,20 @@ function buildCellMap(templateAssets) {
         for (const cell of row.cells || []) {
           if (cell.id) {
             cellMap.set(cell.id, ctx)
-            // Also index by string version in case of type mismatch
             cellMap.set(String(cell.id), ctx)
           }
         }
       }
     }
   }
-  // Attach fallback map so parseAllForProgram can use it
+
   cellMap._groupFallback = groupFallbackMap
   return cellMap
 }
+// ─── END CHANGE 1 ─────────────────────────────────────────────────────────────
 
 function parseAllForProgram(agreement, programLabel) {
   try {
-    console.log('[templateAssets]', JSON.stringify(agreement.templateAssets).slice(18000, 22000))
     const arts = typeof agreement.articulations === 'string'
       ? JSON.parse(agreement.articulations) : agreement.articulations || []
 
@@ -134,15 +220,11 @@ function parseAllForProgram(agreement, programLabel) {
     const results = []
     const noArticulationResults = []
 
-    // Group items by their ASSIST groupId so we can detect when a pick-N group
-    // has some articulated and some unarticulated members.
     const groupRegistry = {}
 
     for (const item of arts) {
       const art = item.articulation || item
       const templateCellId = item.templateCellId
-      // Try direct cell ID lookup first, then try the raw group fallback,
-      // then use templateCellId as last resort (keeps the item isolated but safe)
       const rawGroupId = item.requirementGroupId ?? item.requirementGroup?.id ?? item.groupId
       const cellContext = cellMap.get(templateCellId)
         || cellMap.get(String(templateCellId))
@@ -151,14 +233,16 @@ function parseAllForProgram(agreement, programLabel) {
           sectionLabel: '',
           groupTitle: 'MAJOR REQUIREMENTS',
           nRequired: null,
+          pickType: null,
+          pickMin: null,
+          pickMax: null,
           groupId: templateCellId || Math.random().toString(),
           sectionPosition: 0,
           groupPosition: 0,
         }
       const gid = cellContext.groupId
-      console.log('[groupTitle]', cellContext.groupTitle, '| nRequired:', cellContext.nRequired, '| groupId:', cellContext.groupId)
       if (!groupRegistry[gid]) {
-        groupRegistry[gid] = { nRequired: cellContext.nRequired, articulated: [], unarticulated: [] }
+        groupRegistry[gid] = { nRequired: cellContext.nRequired, pickType: cellContext.pickType, articulated: [], unarticulated: [] }
       }
 
       let receivingCourses = []
@@ -176,7 +260,6 @@ function parseAllForProgram(agreement, programLabel) {
       else groupRegistry[gid].unarticulated.push(entry)
     }
 
-    // Emit results from each group
     for (const gid of Object.keys(groupRegistry)) {
       const grp = groupRegistry[gid]
       const isPickN = grp.nRequired !== null
@@ -202,7 +285,6 @@ function parseAllForProgram(agreement, programLabel) {
         })
       }
 
-      // Emit unarticulated entries — always surface them, but flag pick-group ones
       for (const { cellContext, receivingCourses, primary, sendingArt } of grp.unarticulated) {
         const allCourseLabels = receivingCourses.map(rc =>
           `${(rc.prefix || '').trim()} ${(rc.courseNumber || rc.number || '').trim()}`
@@ -225,10 +307,6 @@ function parseAllForProgram(agreement, programLabel) {
       }
     }
 
-    // ASSIST sometimes omits cells entirely from the articulations array (no entry at all,
-    // not even a noArticulationReason). This happens for ECON C3 style cases.
-    // Fix: scan templateAssets for any cell IDs in pick-N groups that were never seen,
-    // and emit them as noArticulation so they surface in the UI.
     const seenCellIds = new Set(arts.map(item => item.templateCellId))
     const assets = typeof agreement.templateAssets === 'string'
       ? JSON.parse(agreement.templateAssets) : agreement.templateAssets || []
@@ -240,17 +318,50 @@ function parseAllForProgram(agreement, programLabel) {
       const sections = group.sections || []
       const sectionHeader = sections.find(s => s.type === 'SectionHeader')
       const sectionLabel = sectionHeader?.content || ''
+      const instrIsOr = group.instruction?.conjunction === 'Or'
       for (const section of sections.filter(s => s.type === 'Section')) {
-        const nFollowing = section.advisements?.find(a => a.type === 'NFollowing')
-        const nRequired = nFollowing ? nFollowing.amount : null
-        const sectionGroupId = `${group.groupId}_${section.position}`
+        const secAdvs = section.advisements || []
+        const secNFollowing = secAdvs.find(a => a.type === 'NFollowing')
+        const secNFromUnits = secAdvs.find(a => a.type === 'NFromUnits')
+        const secNToN = secAdvs.find(a => a.type === 'NToNFollowing')
+        const secNInAreas = secAdvs.find(a => a.type === 'NInNDifferentAreas')
+        const groupNAdv = (group.advisements || []).find(a => a.type === 'NFollowing')
+
+        let nRequired = null
+        let pickType = null
+        let sectionGroupId
+
+        if (instrIsOr) {
+          nRequired = groupNAdv?.amount ?? 1
+          pickType = 'count'
+          sectionGroupId = `or_group_${group.groupId}`
+        } else if (secNFollowing) {
+          nRequired = secNFollowing.amount ?? 1
+          pickType = 'count'
+          sectionGroupId = `${group.groupId}_${section.position}`
+        } else if (secNFromUnits) {
+          nRequired = secNFromUnits.amount ?? 1
+          pickType = 'units'
+          sectionGroupId = `${group.groupId}_${section.position}`
+        } else if (secNToN) {
+          nRequired = secNToN.minAmount ?? secNToN.amount ?? 1
+          pickType = 'range'
+          sectionGroupId = `${group.groupId}_${section.position}`
+        } else if (secNInAreas) {
+          nRequired = secNInAreas.amount ?? 1
+          pickType = 'areas'
+          sectionGroupId = `${group.groupId}_${section.position}`
+        } else {
+          nRequired = null
+          pickType = null
+          sectionGroupId = `${group.groupId}_${section.position}`
+        }
+
         for (const row of section.rows || []) {
           for (const cell of row.cells || []) {
             if (!cell.id || seenCellIds.has(cell.id)) continue
-            // This cell was never in articulations at all — emit as noArticulation
             const course = cell.course || {}
             const isPickN = nRequired !== null
-            // Check if any sibling in this group was articulated
             const siblingArticulated = groupRegistry[sectionGroupId]?.articulated?.length > 0
             noArticulationResults.push({
               program: programLabel,
@@ -268,6 +379,7 @@ function parseAllForProgram(agreement, programLabel) {
               sectionLabel,
               groupTitle,
               nRequired,
+              pickType,
               groupId: sectionGroupId,
               sectionPosition: section.position,
               groupPosition: group.position,
@@ -287,6 +399,52 @@ function parseAllForProgram(agreement, programLabel) {
 function getPlanSaveKey(programs) {
   return 'tab2_progress_' + programs.map(p => p.majorKey).sort().join('|')
 }
+
+// ─── CHANGE 2: isRecommendedSection — only truly optional titles ──────────────
+// Based on full audit of 3,170 majors across all UCs and CSUs.
+// We ONLY collapse sections that are unambiguously optional.
+// Everything else (electives, preparation, prerequisites, etc.) stays visible
+// because at many schools (e.g. SJSU) those ARE required for transfer.
+function isRecommendedSection(label) {
+  if (!label) return false
+  const lower = label.toLowerCase().trim()
+  return (
+    lower === 'recommended courses' ||
+    lower === 'recommended electives' ||
+    lower === 'recommended preparation' ||
+    lower === 'recommended but not required' ||
+    lower === 'recommended to complete prior to transfer' ||
+    lower === 'strongly recommended courses' ||
+    lower === 'highly recommended' ||
+    lower === 'departmental recommendations' ||
+    // Also catch these as substrings since they're unambiguous
+    lower.includes('strongly recommended') ||
+    lower.includes('highly recommended') ||
+    lower.includes('recommended but not required') ||
+    lower.includes('departmental recommendation')
+  )
+}
+// ─── END CHANGE 2 ─────────────────────────────────────────────────────────────
+
+// ─── CHANGE 3: pickGroupLabel — generates correct yellow card header text ─────
+function pickGroupLabel(group) {
+  const n = group.nRequired
+  const total = group.rows.length
+  switch (group.pickType) {
+    case 'units':
+      return `Choose courses totaling ${n} unit${n !== 1 ? 's' : ''} from these ${total} options`
+    case 'range':
+      return group.pickMax
+        ? `Choose ${group.pickMin}–${group.pickMax} courses from these ${total} options`
+        : `Choose at least ${n} course${n !== 1 ? 's' : ''} from these ${total} options`
+    case 'areas':
+      return `Choose ${n} course${n !== 1 ? 's' : ''} from different areas (${total} options)`
+    case 'count':
+    default:
+      return `Choose any ${n} of these ${total} options`
+  }
+}
+// ─── END CHANGE 3 ─────────────────────────────────────────────────────────────
 
 export default function Tab2() {
   const [ccId, setCcId] = useState('')
@@ -433,6 +591,9 @@ export default function Tab2() {
               groupTitle: art.groupTitle,
               sectionLabel: art.sectionLabel,
               nRequired: art.nRequired,
+              pickType: art.pickType,
+              pickMin: art.pickMin,
+              pickMax: art.pickMax,
               groupId: art.groupId,
             })
           }
@@ -449,6 +610,7 @@ export default function Tab2() {
               sectionLabel: na.sectionLabel,
               groupId: na.groupId,
               nRequired: na.nRequired ?? null,
+              pickType: na.pickType ?? null,
               partOfPickGroup: na.partOfPickGroup || false,
               coveredByAnotherOption: na.coveredByAnotherOption || false,
             }
@@ -458,8 +620,6 @@ export default function Tab2() {
 
       const rows = Object.values(reqMap).map(entry => {
         const coverage = new Set(entry.programEntries.map(e => e.program)).size
-        // Use the strictest entry for section placement: if any program requires this course,
-        // file it under that required section rather than a recommended one.
         const requiredEntry = entry.programEntries.find(
           pe => !isRecommendedSection(pe.groupTitle) && !isRecommendedSection(pe.sectionLabel)
         )
@@ -471,6 +631,9 @@ export default function Tab2() {
           sectionLabel: canonicalEntry?.sectionLabel,
           groupId: canonicalEntry?.groupId,
           nRequired: canonicalEntry?.nRequired ?? null,
+          pickType: canonicalEntry?.pickType ?? null,
+          pickMin: canonicalEntry?.pickMin ?? null,
+          pickMax: canonicalEntry?.pickMax ?? null,
           _groupPosition: canonicalEntry?.groupPosition ?? 999,
           _sectionPosition: canonicalEntry?.sectionPosition ?? 999,
         }
@@ -494,14 +657,7 @@ export default function Tab2() {
     }
   }
 
-  function isRecommendedSection(groupTitle) {
-    if (!groupTitle) return false
-    const lower = groupTitle.toLowerCase()
-    return lower.includes('recommended') || lower.includes('suggested') ||
-           lower.includes('advised') || lower.includes('optional') ||
-           lower.includes('preparation') || lower.includes('strongly')
-  }
-
+  // ─── CHANGE 4: computeAttainability — correct progress for all pick types ───
   function computeAttainability() {
     if (!overlapData) return []
     const programMap = {}
@@ -518,7 +674,13 @@ export default function Tab2() {
         if (!includeRecommended && (isRecommendedSection(pe.groupTitle) || isRecommendedSection(pe.sectionLabel))) continue
         const pgKey = `${pe.program}|${pe.groupId}`
         if (!programGroupMap[pgKey]) {
-          programGroupMap[pgKey] = { program: pe.program, nRequired: pe.nRequired, totalCourses: 0, completedCourses: 0 }
+          programGroupMap[pgKey] = {
+            program: pe.program,
+            nRequired: pe.nRequired,
+            pickType: pe.pickType,
+            totalCourses: 0,
+            completedCourses: 0,
+          }
         }
         programGroupMap[pgKey].totalCourses += 1
         if (isDone) programGroupMap[pgKey].completedCourses += 1
@@ -528,9 +690,16 @@ export default function Tab2() {
     for (const pg of Object.values(programGroupMap)) {
       if (!programMap[pg.program]) continue
       if (pg.nRequired !== null) {
+        // Pick-N group counts as 1 requirement unit
+        // For units/areas/range: mark done when user checks anything (best we can do client-side)
+        // For count: mark done when completedCourses >= nRequired
         programMap[pg.program].total += 1
-        if (pg.completedCourses >= pg.nRequired) programMap[pg.program].completed += 1
+        const isDone = pg.pickType === 'count'
+          ? pg.completedCourses >= pg.nRequired
+          : pg.completedCourses >= 1
+        if (isDone) programMap[pg.program].completed += 1
       } else {
+        // All required — each course is its own unit
         programMap[pg.program].total += pg.totalCourses
         programMap[pg.program].completed += pg.completedCourses
       }
@@ -542,6 +711,7 @@ export default function Tab2() {
       return bPct - aPct
     })
   }
+  // ─── END CHANGE 4 ───────────────────────────────────────────────────────────
 
   function shortLabel(label) {
     const parts = label.split(' → ')
@@ -665,7 +835,7 @@ export default function Tab2() {
                 <strong style={{ display: 'block', marginBottom: 8, fontSize: 13, color: '#1a1a1a' }}>How to read this</strong>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                   <div><span style={{ color: '#6C5CE7', fontWeight: 700 }}>●</span> purple = that program requires this course &nbsp;·&nbsp; <span style={{ color: '#ccc', fontWeight: 700 }}>●</span> grey = not required</div>
-                  <div><span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 2, background: '#ffe082', verticalAlign: 'middle', marginRight: 4 }}/>yellow-bordered card = choose <em>any one</em> from the group — you don't need all of them</div>
+                  <div><span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 2, background: '#ffe082', verticalAlign: 'middle', marginRight: 4 }}/>yellow-bordered card = choose from the group — you don't need all of them</div>
                   <div>▼ tap any row to see which university requirement it satisfies and additional info</div>
                   <div>☑ check it off once you've taken it — progress saves automatically</div>
                   <div>📊 the progress bar tracks required courses only by default — click "+ Add recommended" to include recommended courses in your progress too</div>
@@ -689,12 +859,10 @@ export default function Tab2() {
             {/* LEFT: grouped course list */}
             <div>
               {(() => {
-                // Pre-group rows by groupId to render pick-N groups as single visual units
                 const groups = []
                 const groupIdToGroup = {}
 
                 for (const row of overlapData.rows) {
-                  // Use row-level context (already resolved to strictest entry in generateOverlap)
                   const groupId = row.groupId ?? `singleton_${row.ccKey}`
                   const nRequired = row.nRequired ?? null
 
@@ -704,6 +872,9 @@ export default function Tab2() {
                       groupTitle: row.groupTitle || 'MAJOR REQUIREMENTS',
                       sectionLabel: row.sectionLabel || '',
                       nRequired,
+                      pickType: row.pickType ?? null,
+                      pickMin: row.pickMin ?? null,
+                      pickMax: row.pickMax ?? null,
                       rows: [],
                     }
                     groupIdToGroup[groupId] = g
@@ -712,22 +883,17 @@ export default function Tab2() {
                   groupIdToGroup[groupId].rows.push(row)
                 }
 
-                // Sort groups: required sections first, recommended/optional last
-                // Within each bucket, preserve original ASSIST order
                 const isRecommendedGroup = (g) => isRecommendedSection(g.groupTitle) || isRecommendedSection(g.sectionLabel)
-                // "Required" sections first, then named dept sections, then recommended last
-                // Within each tier, preserve original ASSIST groupPosition order
                 const sectionTier = (g) => {
                   if (isRecommendedGroup(g)) return 2
                   const label = (g.sectionLabel || g.groupTitle || '').toLowerCase()
                   if (label.includes('required')) return 0
-                  return 1  // named dept sections like "Computer Science Engineering"
+                  return 1
                 }
                 groups.sort((a, b) => {
                   const aTier = sectionTier(a)
                   const bTier = sectionTier(b)
                   if (aTier !== bTier) return aTier - bTier
-                  // Within same tier, preserve ASSIST order via groupPosition
                   return (a.rows[0]?._groupPosition ?? 999) - (b.rows[0]?._groupPosition ?? 999)
                 })
 
@@ -737,11 +903,8 @@ export default function Tab2() {
                 for (const group of groups) {
                   const isPickN = group.nRequired !== null
                   const totalAvailableAtCC = group.rows.length
-                  // If it's pick-N but only 1 option exists at this CC, treat as effectively required
                   const isEffectivelyRequired = isPickN && totalAvailableAtCC <= 1
 
-                  // Show the most specific label available. If sectionLabel exists use it,
-                  // otherwise fall back to groupTitle. Never stack both — they're usually redundant.
                   const displayLabel = group.sectionLabel || group.groupTitle || 'REQUIREMENTS'
 
                   if (displayLabel !== lastDisplayLabel) {
@@ -761,7 +924,6 @@ export default function Tab2() {
                   }
 
                   if (isPickN && !isEffectivelyRequired) {
-                    // Render as a grouped card with amber border — whole group = one choice
                     rendered.push(
                       <div key={`group-${group.groupId}`} style={{
                         border: '1.5px solid #ffe082',
@@ -770,7 +932,7 @@ export default function Tab2() {
                         overflow: 'hidden',
                         background: '#fffdf5',
                       }}>
-                        {/* Group header — clearly explains the choice */}
+                        {/* ─── CHANGE 3 applied: use pickGroupLabel for header ─── */}
                         <div style={{
                           padding: '9px 14px',
                           borderBottom: '1px solid #ffe082',
@@ -782,7 +944,7 @@ export default function Tab2() {
                           <span style={{ fontSize: 14 }}>↓</span>
                           <div>
                             <span style={{ fontSize: 12, fontWeight: 700, color: '#b45309' }}>
-                              Choose any {group.nRequired} of these {totalAvailableAtCC} options
+                              {pickGroupLabel(group)}
                             </span>
                             <span style={{ fontSize: 11, color: '#999', marginLeft: 8 }}>
                               — you don't need all of them
@@ -850,7 +1012,6 @@ export default function Tab2() {
                                     <div key={i} style={{ marginBottom: i < row.programEntries.length - 1 ? 14 : 0, paddingBottom: i < row.programEntries.length - 1 ? 14 : 0, borderBottom: i < row.programEntries.length - 1 ? '1px solid #eee' : 'none' }}>
                                       <div style={{ fontSize: 12, fontWeight: 600, color: '#555', marginBottom: 4 }}>{pe.program}</div>
                                       {(() => {
-                                        console.log('[isRec check]', pe.groupTitle, '|', pe.sectionLabel)
                                         const isRec = isRecommendedSection(pe.groupTitle) || isRecommendedSection(pe.sectionLabel)
                                         return (
                                           <span style={{ fontSize: 11, color: isRec ? '#b45309' : '#166534', marginBottom: 4, display: 'block' }}>
@@ -892,14 +1053,12 @@ export default function Tab2() {
                       </div>
                     )
                   } else {
-                    // Normal required rows (or effectively-required pick-N with 1 option)
                     group.rows.forEach((row) => {
                       const isDone = completedCourses.has(row.ccKey)
                       const isExpanded = expandedRow === row.ccKey
                       const label = row.primaryCourses.map(c => `${c.prefix} ${c.number}`).join(' + ')
                       const subtitle = row.primaryCourses.map(c => c.title).filter(Boolean).join(' + ')
                       const units = row.primaryCourses.reduce((sum, c) => sum + (c.units || 0), 0)
-                      const hasAlts = row.programEntries.some(pe => pe.options.length > 1)
                       const coverageAll = row.coverage === overlapData.totalPrograms
                       const coverageMost = row.coverage > 1 && !coverageAll
 
@@ -966,7 +1125,6 @@ export default function Tab2() {
                                 <div key={i} style={{ marginBottom: i < row.programEntries.length - 1 ? 14 : 0, paddingBottom: i < row.programEntries.length - 1 ? 14 : 0, borderBottom: i < row.programEntries.length - 1 ? '1px solid #eee' : 'none' }}>
                                   <div style={{ fontSize: 12, fontWeight: 600, color: '#555', marginBottom: 4 }}>{pe.program}</div>
                                   {(() => {
-                                    console.log('[isRec check]', pe.groupTitle, '|', pe.sectionLabel)
                                     const isRec = isRecommendedSection(pe.groupTitle) || isRecommendedSection(pe.sectionLabel)
                                     return (
                                       <div style={{ fontSize: 11, marginBottom: 6, display: 'inline-flex', alignItems: 'center', gap: 4,
@@ -1017,7 +1175,6 @@ export default function Tab2() {
                 <div className="key-note">No articulated courses found. Try different programs or check ASSIST.org directly.</div>
               )}
 
-              {/* No articulation section — split into truly missing vs covered by another option */}
               {overlapData.noArticulation?.length > 0 && (() => {
                 const trulyMissing = overlapData.noArticulation.filter(na => !na.coveredByAnotherOption)
                 const coveredElsewhere = overlapData.noArticulation.filter(na => na.coveredByAnotherOption)
@@ -1086,9 +1243,6 @@ export default function Tab2() {
                               </div>
                               <div style={{ fontSize: 12, color: '#aaa', marginTop: 2 }}>{na.program}</div>
                               {(() => {
-                                // Find the articulated sibling — must match exact groupId from the same program
-                                // The noArt entry's groupId is `${group.groupId}_${section.position}` from buildCellMap.
-                                // The row's programEntries store the original groupId before canonical override.
                                 const sibling = overlapData.rows.find(r =>
                                   r.programEntries.some(pe =>
                                     pe.program === na.program &&
@@ -1119,7 +1273,7 @@ export default function Tab2() {
               })()}
             </div>
 
-            {/* RIGHT: Progress + legend */}
+            {/* RIGHT: Progress */}
             <div style={{ position: isWide ? 'sticky' : 'static', top: 20 }}>
               <div className="card" style={{ background: '#f9f9f7', border: '1px solid #e8e8e4' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
@@ -1162,7 +1316,6 @@ export default function Tab2() {
                             borderRadius: 4, transition: 'width 0.3s ease'
                           }} />
                         </div>
-
                       </div>
                     )
                   })
