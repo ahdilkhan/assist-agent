@@ -155,6 +155,7 @@ function parseAllForProgram(agreement, programLabel) {
           groupPosition: 0,
         }
       const gid = cellContext.groupId
+      console.log('[groupTitle]', cellContext.groupTitle, '| nRequired:', cellContext.nRequired, '| groupId:', cellContext.groupId)
       if (!groupRegistry[gid]) {
         groupRegistry[gid] = { nRequired: cellContext.nRequired, articulated: [], unarticulated: [] }
       }
