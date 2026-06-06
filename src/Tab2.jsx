@@ -850,6 +850,8 @@ export default function Tab2() {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                   <div><span style={{ color: '#6C5CE7', fontWeight: 700 }}>●</span> purple = that program requires this course &nbsp;·&nbsp; <span style={{ color: '#ccc', fontWeight: 700 }}>●</span> grey = not required</div>
                   <div><span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 2, background: '#ffe082', verticalAlign: 'middle', marginRight: 4 }}/>yellow-bordered card = choose from the group — you don't need all of them</div>
+                  <div>🚫 greyed-out row inside a yellow card = no equivalent at your CC for that option — but you can still satisfy the group with another option</div>
+                  <div>🔴 red row = required course with no equivalent at your CC — you may need to take it after transferring</div>
                   <div>▼ tap any row to see which university requirement it satisfies and additional info</div>
                   <div>☑ check it off once you've taken it — progress saves automatically</div>
                   <div>📊 the progress bar tracks required courses only by default — click "+ Add recommended" to include recommended courses in your progress too</div>
@@ -876,6 +878,19 @@ export default function Tab2() {
                 const groups = []
                 const groupIdToGroup = {}
 
+                // Build lookup of noArt items by groupId for inline rendering
+                const noArtByGroupId = {}
+                const inlineRequiredNoArt = [] // truly missing, not in a pick group
+                for (const na of (overlapData.noArticulation || [])) {
+                  if (na.coveredByAnotherOption) continue // skip "already covered" ones
+                  if (na.partOfPickGroup) {
+                    if (!noArtByGroupId[na.groupId]) noArtByGroupId[na.groupId] = []
+                    noArtByGroupId[na.groupId].push(na)
+                  } else {
+                    inlineRequiredNoArt.push(na)
+                  }
+                }
+
                 for (const row of overlapData.rows) {
                   const groupId = row.groupId ?? `singleton_${row.ccKey}`
                   const nRequired = row.nRequired ?? null
@@ -895,6 +910,30 @@ export default function Tab2() {
                     groups.push(g)
                   }
                   groupIdToGroup[groupId].rows.push(row)
+                }
+
+                // Also add groups for inline required no-art items that have no articulated sibling
+                for (const na of inlineRequiredNoArt) {
+                  const groupId = na.groupId ?? `noart_${na.uniReq.prefix}_${na.uniReq.number}`
+                  if (!groupIdToGroup[groupId]) {
+                    const g = {
+                      groupId,
+                      groupTitle: na.groupTitle || 'MAJOR REQUIREMENTS',
+                      sectionLabel: na.sectionLabel || '',
+                      nRequired: null,
+                      pickType: null,
+                      pickMin: null,
+                      pickMax: null,
+                      rows: [],
+                      noArtRows: [],
+                      _groupPosition: na.groupPosition ?? 999,
+                      _sectionPosition: na.sectionPosition ?? 999,
+                    }
+                    groupIdToGroup[groupId] = g
+                    groups.push(g)
+                  }
+                  if (!groupIdToGroup[groupId].noArtRows) groupIdToGroup[groupId].noArtRows = []
+                  groupIdToGroup[groupId].noArtRows.push(na)
                 }
 
                 const isRecommendedGroup = (g) => isRecommendedSection(g.groupTitle) || isRecommendedSection(g.sectionLabel)
@@ -966,7 +1005,33 @@ export default function Tab2() {
                           </div>
                         </div>
 
-                        {group.rows.map((row, rowIdx) => {
+                        {[...group.rows, ...(noArtByGroupId[group.groupId] || []).map(na => ({ _isNoArt: true, na }))].map((rowOrNa, rowIdx) => {
+                          // Render greyed-out no-equiv rows inside yellow card
+                          if (rowOrNa._isNoArt) {
+                            const na = rowOrNa.na
+                            return (
+                              <div key={`noart-${na.uniReq.prefix}-${na.uniReq.number}`} style={{
+                                borderTop: '1px dashed #f0e6c8',
+                                background: '#fafafa',
+                                opacity: 0.6,
+                              }}>
+                                <div style={{ textAlign: 'center', fontSize: 11, fontWeight: 700, color: '#ccc', padding: '4px 0', letterSpacing: '0.05em' }}>OR</div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px' }}>
+                                  <div style={{ width: 15, height: 15, flexShrink: 0 }} />
+                                  <div style={{ flex: 1, minWidth: 0 }}>
+                                    <div style={{ fontWeight: 600, fontSize: 13, color: '#aaa', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                                      {na.uniReq.prefix} {na.uniReq.number}
+                                      <span style={{ fontSize: 10, background: '#fee2e2', color: '#dc2626', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>No equivalent at {ccName}</span>
+                                    </div>
+                                    {na.uniReq.title && <div style={{ fontSize: 11, color: '#bbb', marginTop: 1 }}>{na.uniReq.title}{na.uniReq.units ? ` · ${na.uniReq.units} units` : ''}</div>}
+                                    {na.reason && <div style={{ fontSize: 11, color: '#dc2626', marginTop: 2 }}>{na.reason}</div>}
+                                  </div>
+                                </div>
+                              </div>
+                            )
+                          }
+
+                          const row = rowOrNa
                           const isDone = completedCourses.has(row.ccKey)
                           const isExpanded = expandedRow === row.ccKey
                           const label = row.primaryCourses.map(c => `${c.prefix} ${c.number}`).join(' + ')
@@ -1182,109 +1247,55 @@ export default function Tab2() {
                   }
                 }
 
+                // Render inline required no-art rows (groups with only noArtRows, no articulated rows)
+                for (const g of groups) {
+                  if ((g.noArtRows || []).length > 0 && g.rows.length === 0) {
+                    const displayLabel = g.sectionLabel || g.groupTitle || 'REQUIREMENTS'
+                    if (displayLabel !== lastDisplayLabel) {
+                      lastDisplayLabel = displayLabel
+                      rendered.push(
+                        <div key={`sec-noart-${displayLabel}-${g.groupId}`} style={{
+                          marginTop: rendered.length === 0 ? 0 : 32,
+                          marginBottom: 10, paddingBottom: 8, borderBottom: '2px solid #e8e8e4',
+                        }}>
+                          <div style={{ fontSize: 11, fontWeight: 700, color: '#aaa', textTransform: 'uppercase', letterSpacing: '0.1em' }}>
+                            {displayLabel}
+                          </div>
+                        </div>
+                      )
+                    }
+                    for (const na of g.noArtRows) {
+                      rendered.push(
+                        <div key={`noart-req-${na.uniReq.prefix}-${na.uniReq.number}-${na.program}`} style={{
+                          border: '1px solid #fecaca', borderRadius: 8, marginBottom: 6,
+                          background: '#fff5f5', overflow: 'hidden',
+                        }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px' }}>
+                            <div style={{ width: 15, height: 15, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                              <span style={{ color: '#fca5a5', fontSize: 14 }}>✕</span>
+                            </div>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ fontWeight: 600, fontSize: 13, color: '#991b1b', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                                {na.uniReq.prefix} {na.uniReq.number}
+                                {na.uniReq.title && <span style={{ fontWeight: 400, color: '#b91c1c' }}>— {na.uniReq.title}</span>}
+                              </div>
+                              {na.uniReq.units && <div style={{ fontSize: 11, color: '#f87171', marginTop: 1 }}>{na.uniReq.units} units · {na.program}</div>}
+                              {na.reason && <div style={{ fontSize: 11, color: '#dc2626', marginTop: 2 }}>{na.reason}</div>}
+                            </div>
+                            <span style={{ fontSize: 11, background: '#fee2e2', color: '#dc2626', borderRadius: 4, padding: '2px 8px', fontWeight: 600, flexShrink: 0 }}>No equivalent at {ccName}</span>
+                          </div>
+                        </div>
+                      )
+                    }
+                  }
+                }
+
                 return rendered
               })()}
 
               {overlapData.rows.length === 0 && (
                 <div className="key-note">No articulated courses found. Try different programs or check ASSIST.org directly.</div>
               )}
-
-              {overlapData.noArticulation?.length > 0 && (() => {
-                const trulyMissing = overlapData.noArticulation.filter(na => !na.coveredByAnotherOption)
-                const coveredElsewhere = overlapData.noArticulation.filter(na => na.coveredByAnotherOption)
-                return (
-                  <div style={{ marginTop: 32 }}>
-                    {trulyMissing.length > 0 && (
-                      <>
-                        <div style={{
-                          fontSize: 11, fontWeight: 700, color: '#aaa', textTransform: 'uppercase',
-                          letterSpacing: '0.1em', paddingBottom: 8, borderBottom: '2px solid #e8e8e4', marginBottom: 8
-                        }}>
-                          Required — no course available at {ccName}
-                        </div>
-                        <div style={{ fontSize: 12, color: '#999', marginBottom: 12 }}>
-                          These university requirements have no equivalent course at {ccName}. You may need to complete them after transferring, or check if another CC offers an articulated equivalent.
-                        </div>
-                        {trulyMissing.map((na, i) => (
-                          <div key={i} style={{
-                            background: '#fff5f5', border: '1px solid #fecaca', borderRadius: 8,
-                            padding: '10px 14px', marginBottom: 8,
-                            display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start'
-                          }}>
-                            <div>
-                              <div style={{ fontSize: 10, fontWeight: 700, color: '#aaa', textTransform: 'uppercase', marginBottom: 4 }}>
-                                {na.sectionLabel || na.groupTitle}
-                              </div>
-                              <div style={{ fontWeight: 600, fontSize: 13 }}>
-                                {na.uniReq.prefix} {na.uniReq.number} — {na.uniReq.title}
-                                {na.uniReq.units ? <span style={{ fontWeight: 400, color: '#888', fontSize: 12, marginLeft: 6 }}>{na.uniReq.units} units</span> : ''}
-                              </div>
-                              <div style={{ fontSize: 12, color: '#888', marginTop: 2 }}>{na.program}</div>
-                              {na.reason && <div style={{ fontSize: 12, color: '#dc2626', marginTop: 4 }}>{na.reason}</div>}
-                            </div>
-                            <span style={{ fontSize: 11, background: '#fee2e2', color: '#dc2626', borderRadius: 4, padding: '2px 8px', fontWeight: 600, flexShrink: 0, marginLeft: 8 }}>No equivalent</span>
-                          </div>
-                        ))}
-                      </>
-                    )}
-
-                    {coveredElsewhere.length > 0 && (
-                      <>
-                        <div style={{
-                          fontSize: 11, fontWeight: 700, color: '#aaa', textTransform: 'uppercase',
-                          letterSpacing: '0.1em', paddingBottom: 8, borderBottom: '2px solid #e8e8e4',
-                          marginBottom: 8, marginTop: trulyMissing.length > 0 ? 28 : 0
-                        }}>
-                          Already covered — alternative available at {ccName}
-                        </div>
-                        <div style={{ fontSize: 12, color: '#999', marginBottom: 12 }}>
-                          These university courses have no direct equivalent at {ccName}, but they're part of a "choose any one" group — and another option in that group <em>is</em> available at {ccName}, so <strong>you're already covered</strong>. You could also look for an equivalent at another CC if you prefer this path.
-                        </div>
-                        {coveredElsewhere.map((na, i) => (
-                          <div key={i} style={{
-                            background: '#f5f5f5', border: '1px solid #e0e0e0', borderRadius: 8,
-                            padding: '10px 14px', marginBottom: 8,
-                            display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
-                            opacity: 0.8,
-                          }}>
-                            <div>
-                              <div style={{ fontSize: 10, fontWeight: 700, color: '#bbb', textTransform: 'uppercase', marginBottom: 4 }}>
-                                {na.sectionLabel || na.groupTitle} · choose any {na.nRequired || 1}
-                              </div>
-                              <div style={{ fontWeight: 600, fontSize: 13, color: '#555' }}>
-                                {na.uniReq.prefix} {na.uniReq.number} — {na.uniReq.title}
-                                {na.uniReq.units ? <span style={{ fontWeight: 400, color: '#999', fontSize: 12, marginLeft: 6 }}>{na.uniReq.units} units</span> : ''}
-                              </div>
-                              <div style={{ fontSize: 12, color: '#aaa', marginTop: 2 }}>{na.program}</div>
-                              {(() => {
-                                const sibling = overlapData.rows.find(r =>
-                                  r.programEntries.some(pe =>
-                                    pe.program === na.program &&
-                                    pe.nRequired !== null &&
-                                    pe.groupId === na.groupId
-                                  )
-                                )
-                                const siblingLabel = sibling
-                                  ? sibling.primaryCourses.map(c => `${c.prefix} ${c.number}`).join(' + ')
-                                  : null
-                                return (
-                                  <div style={{ fontSize: 12, color: '#166534', marginTop: 6, fontWeight: 500 }}>
-                                    ✓ {siblingLabel
-                                      ? <><strong>{siblingLabel}</strong> at {ccName} satisfies this requirement — you're covered</>
-                                      : <>Another option in this group is available at {ccName} — you're covered</>
-                                    }
-                                  </div>
-                                )
-                              })()}
-                            </div>
-                            <span style={{ fontSize: 11, background: '#f0f0f0', color: '#aaa', borderRadius: 4, padding: '2px 8px', fontWeight: 600, flexShrink: 0, marginLeft: 8 }}>Optional path</span>
-                          </div>
-                        ))}
-                      </>
-                    )}
-                  </div>
-                )
-              })()}
             </div>
 
             {/* RIGHT: Progress */}
@@ -1315,11 +1326,12 @@ export default function Tab2() {
                   summary.map((s, i) => {
                     const pct = s.total === 0 ? 0 : Math.round((s.completed / s.total) * 100)
                     const isTop = i === 0 && summary.length > 1
+                    const showHeart = isTop && summary.length > 1 && completedCourses.size > 0
                     return (
                       <div key={i} style={{ marginBottom: i < summary.length - 1 ? 16 : 0 }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
                           <div style={{ fontSize: 12, fontWeight: isTop ? 600 : 400, color: isTop ? '#1a1a1a' : '#555', flex: 1, marginRight: 8 }}>
-                            {isTop && summary.length > 1 && <span>💜 </span>}{s.label}
+                            {showHeart && <span>💜 </span>}{s.label}
                           </div>
                           <div style={{ fontSize: 11, color: '#888', flexShrink: 0 }}>{s.completed}/{s.total}</div>
                         </div>
