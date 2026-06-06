@@ -126,6 +126,7 @@ function buildCellMap(templateAssets) {
 
 function parseAllForProgram(agreement, programLabel) {
   try {
+    console.log('[templateAssets]', JSON.stringify(agreement.templateAssets).slice(0, 3000))
     const arts = typeof agreement.articulations === 'string'
       ? JSON.parse(agreement.articulations) : agreement.articulations || []
 
