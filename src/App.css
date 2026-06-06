@@ -74,6 +74,7 @@ body {
 
 
 .dark { background: #0f0f0f; color: #e8e8e8; }
+body:has(.dark) { background: #0f0f0f; }
 .dark .card { background: #1a1a1a; border-color: #333; }
 .dark .field input, .dark .field select { background: #222; border-color: #444; color: #e8e8e8; }
 .dark .result-block { border-color: #333; }

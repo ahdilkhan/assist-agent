@@ -400,7 +400,7 @@ export default function App() {
   const [showSaved, setShowSaved] = useState(false)
   const [user, setUser] = useState(null)
   const [dropdownOpen, setDropdownOpen] = useState(false)
-  const [darkMode, setDarkMode] = useState(false)
+  const [darkMode, setDarkMode] = useState(() => localStorage.getItem('darkMode') === 'true')
   const dropdownRef = useRef(null)
 
   useEffect(() => {
@@ -576,7 +576,7 @@ const deduped = Object.values(byCC)
         marginBottom: 32,
         paddingTop: 16,
       }}>
-      <button onClick={() => setDarkMode(d => !d)} style={{
+      <button onClick={() => setDarkMode(d => { localStorage.setItem('darkMode', !d); return !d })} style={{
         position: 'fixed', top: 16, right: 16,
         background: 'none', border: '1px solid #ddd',
         borderRadius: 20, padding: '6px 12px',
