@@ -711,10 +711,20 @@ export default function Tab2() {
                 // Sort groups: required sections first, recommended/optional last
                 // Within each bucket, preserve original ASSIST order
                 const isRecommendedGroup = (g) => isRecommendedSection(g.groupTitle) || isRecommendedSection(g.sectionLabel)
+                // "Required" sections first, then named dept sections, then recommended last
+                // Within each tier, preserve original ASSIST groupPosition order
+                const sectionTier = (g) => {
+                  if (isRecommendedGroup(g)) return 2
+                  const label = (g.sectionLabel || g.groupTitle || '').toLowerCase()
+                  if (label.includes('required')) return 0
+                  return 1  // named dept sections like "Computer Science Engineering"
+                }
                 groups.sort((a, b) => {
-                  const aRec = isRecommendedGroup(a) ? 1 : 0
-                  const bRec = isRecommendedGroup(b) ? 1 : 0
-                  return aRec - bRec
+                  const aTier = sectionTier(a)
+                  const bTier = sectionTier(b)
+                  if (aTier !== bTier) return aTier - bTier
+                  // Within same tier, preserve ASSIST order via groupPosition
+                  return (a.rows[0]?._groupPosition ?? 999) - (b.rows[0]?._groupPosition ?? 999)
                 })
 
                 let lastDisplayLabel = null
@@ -1020,7 +1030,7 @@ export default function Tab2() {
                         </div>
                         {trulyMissing.map((na, i) => (
                           <div key={i} style={{
-                            background: '#fff8e1', border: '1px solid #ffe082', borderRadius: 8,
+                            background: '#fff5f5', border: '1px solid #fecaca', borderRadius: 8,
                             padding: '10px 14px', marginBottom: 8,
                             display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start'
                           }}>
@@ -1033,9 +1043,9 @@ export default function Tab2() {
                                 {na.uniReq.units ? <span style={{ fontWeight: 400, color: '#888', fontSize: 12, marginLeft: 6 }}>{na.uniReq.units} units</span> : ''}
                               </div>
                               <div style={{ fontSize: 12, color: '#888', marginTop: 2 }}>{na.program}</div>
-                              {na.reason && <div style={{ fontSize: 12, color: '#f57f17', marginTop: 4 }}>{na.reason}</div>}
+                              {na.reason && <div style={{ fontSize: 12, color: '#dc2626', marginTop: 4 }}>{na.reason}</div>}
                             </div>
-                            <span style={{ fontSize: 11, background: '#fff3e0', color: '#f57f17', borderRadius: 4, padding: '2px 8px', fontWeight: 600, flexShrink: 0, marginLeft: 8 }}>No equivalent</span>
+                            <span style={{ fontSize: 11, background: '#fee2e2', color: '#dc2626', borderRadius: 4, padding: '2px 8px', fontWeight: 600, flexShrink: 0, marginLeft: 8 }}>No equivalent</span>
                           </div>
                         ))}
                       </>
@@ -1105,14 +1115,6 @@ export default function Tab2() {
                   {includeRecommended ? 'Incl. recommended' : 'Required only'} · check rows to track
                 </div>
 
-                {/* Compact legend */}
-                <div style={{ borderTop: '1px solid #e8e8e4', paddingTop: 10, marginBottom: 14, fontSize: 11, color: '#888', lineHeight: 1.8 }}>
-                  <span style={{ color: '#6C5CE7' }}>●</span> required &nbsp;
-                  <span style={{ color: '#e0e0e0' }}>●</span> not required<br/>
-                  <span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 2, background: '#ffe082', verticalAlign: 'middle', marginRight: 3 }}/>yellow = choose any 1<br/>
-                  ☑ check off when done
-                </div>
-
                 {summary.length === 0 ? (
                   <div style={{ fontSize: 12, color: '#aaa' }}>Check off courses to see your progress</div>
                 ) : (
@@ -1123,7 +1125,7 @@ export default function Tab2() {
                       <div key={i} style={{ marginBottom: i < summary.length - 1 ? 16 : 0 }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
                           <div style={{ fontSize: 12, fontWeight: isTop ? 600 : 400, color: isTop ? '#1a1a1a' : '#555', flex: 1, marginRight: 8 }}>
-                            {isTop && summary.length > 1 && <span style={{ color: '#6C5CE7' }}>⭐ </span>}{s.label}
+                            {isTop && summary.length > 1 && <span style={{ color: '#6C5CE7' }}>🟣 </span>}{s.label}
                           </div>
                           <div style={{ fontSize: 11, color: '#888', flexShrink: 0 }}>{s.completed}/{s.total}</div>
                         </div>
@@ -1134,9 +1136,7 @@ export default function Tab2() {
                             borderRadius: 4, transition: 'width 0.3s ease'
                           }} />
                         </div>
-                        {isTop && summary.length > 1 && (
-                          <div style={{ fontSize: 10, color: '#888', marginTop: 3 }}>Most attainable so far</div>
-                        )}
+
                       </div>
                     )
                   })
