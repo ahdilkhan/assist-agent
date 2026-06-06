@@ -400,6 +400,7 @@ export default function App() {
   const [showSaved, setShowSaved] = useState(false)
   const [user, setUser] = useState(null)
   const [dropdownOpen, setDropdownOpen] = useState(false)
+  const [darkMode, setDarkMode] = useState(false)
   const dropdownRef = useRef(null)
 
   useEffect(() => {
@@ -566,7 +567,7 @@ const deduped = Object.values(byCC)
   }
 
   return (
-    <div className={`app${activeTab === 'tab2' ? ' wide' : ''}`}>
+    <div className={`app${activeTab === 'tab2' ? ' wide' : ''}${darkMode ? ' dark' : ''}`}>
       {/* Top navbar */}
       <div style={{
         display: 'flex',
@@ -575,6 +576,14 @@ const deduped = Object.values(byCC)
         marginBottom: 32,
         paddingTop: 16,
       }}>
+      <button onClick={() => setDarkMode(d => !d)} style={{
+        position: 'fixed', top: 16, right: 16,
+        background: 'none', border: '1px solid #ddd',
+        borderRadius: 20, padding: '6px 12px',
+        fontSize: 13, cursor: 'pointer', zIndex: 999,
+      }}>
+        {darkMode ? '☀️ Light' : '🌙 Dark'}
+      </button>
         {/* Logo + wordmark */}
         {user ? (
           // Logged-in: icon + "Kourzo" wordmark, clickable to go home
