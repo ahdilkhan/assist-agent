@@ -393,6 +393,7 @@ export default function Tab2() {
               reason: na.reason,
               groupTitle: na.groupTitle,
               sectionLabel: na.sectionLabel,
+              nRequired: na.nRequired ?? null,
               partOfPickGroup: na.partOfPickGroup || false,
               coveredByAnotherOption: na.coveredByAnotherOption || false,
             }
@@ -459,7 +460,7 @@ export default function Tab2() {
       const isDone = completedCourses.has(row.ccKey)
       for (const pe of row.programEntries) {
         if (!programMap[pe.program]) continue
-        if (!includeRecommended && isRecommendedSection(pe.groupTitle)) continue
+        if (!includeRecommended && (isRecommendedSection(pe.groupTitle) || isRecommendedSection(pe.sectionLabel))) continue
         const pgKey = `${pe.program}|${pe.groupId}`
         if (!programGroupMap[pgKey]) {
           programGroupMap[pgKey] = { program: pe.program, nRequired: pe.nRequired, totalCourses: 0, completedCourses: 0 }
@@ -605,11 +606,14 @@ export default function Tab2() {
               padding: '12px 14px', marginBottom: 20,
               display: 'flex', gap: 12, alignItems: 'flex-start',
             }}>
-              <div style={{ flex: 1, fontSize: 12, color: '#444', lineHeight: 1.7 }}>
-                <strong style={{ display: 'block', marginBottom: 4, fontSize: 13, color: '#1a1a1a' }}>How to read this</strong>
-                Each row is a course at {ccName}. <span style={{ color: '#6C5CE7', fontWeight: 700 }}>●</span> means that program requires it, <span style={{ color: '#ccc', fontWeight: 700 }}>●</span> means it doesn't.
-                Yellow-bordered groups = choose <em>any one</em> — you don't need all of them.
-                Tap a row to see exactly which university requirement it satisfies. Check it off when done.
+              <div style={{ flex: 1, fontSize: 12, color: '#444' }}>
+                <strong style={{ display: 'block', marginBottom: 8, fontSize: 13, color: '#1a1a1a' }}>How to read this</strong>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  <div><span style={{ color: '#6C5CE7', fontWeight: 700 }}>●</span> purple = that program requires this course &nbsp;·&nbsp; <span style={{ color: '#ccc', fontWeight: 700 }}>●</span> grey = not required</div>
+                  <div><span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 2, background: '#ffe082', verticalAlign: 'middle', marginRight: 4 }}/>yellow-bordered card = choose <em>any one</em> from the group — you don't need all of them</div>
+                  <div>▼ tap any row to see which university requirement it satisfies</div>
+                  <div>☑ check it off once you've taken it — progress saves automatically</div>
+                </div>
               </div>
               <button
                 onClick={() => { setShowBanner(false); localStorage.setItem('tab2_banner_dismissed', '1') }}
@@ -1069,7 +1073,7 @@ export default function Tab2() {
                           <div style={{ fontSize: 12, fontWeight: isTop ? 600 : 400, color: isTop ? '#1a1a1a' : '#555', flex: 1, marginRight: 8 }}>
                             {isTop && summary.length > 1 && <span style={{ color: '#6C5CE7' }}>⭐ </span>}{s.label}
                           </div>
-                          <div style={{ fontSize: 11, color: '#888', flexShrink: 0 }}>{s.completed}/{s.total} · {pct}%</div>
+                          <div style={{ fontSize: 11, color: '#888', flexShrink: 0 }}>{s.completed}/{s.total}</div>
                         </div>
                         <div style={{ background: '#e0e0e0', borderRadius: 4, height: 6, overflow: 'hidden' }}>
                           <div style={{
