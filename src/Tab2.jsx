@@ -577,9 +577,23 @@ export default function Tab2() {
       for (const { prog, arts, noArts } of programArts) {
         for (const art of arts) {
           const cheapestOpt = art.options.reduce((a, b) => a.courses.length <= b.courses.length ? a : b)
-          const ccKey = cheapestOpt.courses.map(c => `${c.prefix} ${c.number}`).sort().join('+')
+          // For or_group (Complete A,B,C,D,E style), each SECTION is one option slot.
+          // Key by groupId+sectionPosition so all CC courses in the same lettered section
+          // collapse into one yellow card row instead of splitting into individual rows.
+          const isOrGroup = art.groupId?.startsWith('or_group_')
+          const ccKey = isOrGroup
+            ? `${art.groupId}__sec${art.sectionPosition}`
+            : cheapestOpt.courses.map(c => `${c.prefix} ${c.number}`).sort().join('+')
           if (!reqMap[ccKey]) {
-            reqMap[ccKey] = { ccKey, primaryCourses: cheapestOpt.courses, programEntries: [] }
+            reqMap[ccKey] = { ccKey, primaryCourses: [...cheapestOpt.courses], programEntries: [], isOrGroupSection: isOrGroup }
+          }
+          // For or_group rows accumulate all CC courses in this section
+          if (isOrGroup) {
+            cheapestOpt.courses.forEach(c => {
+              if (!reqMap[ccKey].primaryCourses.some(e => e.prefix === c.prefix && e.number === c.number)) {
+                reqMap[ccKey].primaryCourses.push(c)
+              }
+            })
           }
           const entryKey = `${prog.uniName}|${art.uniRequirement.prefix}|${art.uniRequirement.number}`
           if (!reqMap[ccKey].programEntries.some(e => e._entryKey === entryKey)) {
