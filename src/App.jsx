@@ -587,22 +587,23 @@ const deduped = Object.values(byCC)
         ) : (
           // Logged-out: centered icon + big wordmark + tagline
           <div style={{ textAlign: 'center', width: '100%' }}>
-  <img src={kourzoLogo} alt="Kourzo icon" style={{ height: 64, width: 64, display: 'block', margin: '0 auto 10px' }} />
+  <img src={kourzoLogo} alt="Kourzo icon" style={{ height: 64, width: 64, display: 'block', margin: '0 auto 18px' }} />
   <div style={{ fontSize: 32, fontWeight: 700, letterSpacing: '-0.5px', marginBottom: 8 }}>
     <span style={{ color: '#6C5CE7' }}>K</span><span style={{ color: '#1a1a1a' }}>ourzo</span>
   </div>
-  <p style={{ margin: '0 auto 28px', color: '#666', fontSize: 15, maxWidth: 380 }}>
+  
+  <p style={{ margin: '0 auto 40px', color: '#666', fontSize: 15, maxWidth: 380 }}>
     The fastest way to plan your California CC transfer — find course equivalents and map out your path to any UC or CSU.
   </p>
-  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 20, textAlign: 'left' }}>
-    <div style={{ background: '#fff', border: '0.5px solid #e0e0e0', borderRadius: 12, padding: 16 }}>
+  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 32, textAlign: 'left' }}>
+    <div style={{ background: '#fff', border: '0.5px solid #e0e0e0', borderRadius: 12, padding: 22 }}>
       <div style={{ width: 32, height: 32, borderRadius: 8, background: '#EEEDFE', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 10 }}>
         <span style={{ color: '#6C5CE7', fontSize: 17 }}>🔍</span>
       </div>
       <div style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a', marginBottom: 4 }}>Find CC equivalents</div>
       <div style={{ fontSize: 12, color: '#888', lineHeight: 1.5 }}>Pick a UC or CSU course and instantly see which community colleges offer an equivalent.</div>
     </div>
-    <div style={{ background: '#fff', border: '0.5px solid #e0e0e0', borderRadius: 12, padding: 16 }}>
+    <div style={{ background: '#fff', border: '0.5px solid #e0e0e0', borderRadius: 12, padding: 22 }}>
       <div style={{ width: 32, height: 32, borderRadius: 8, background: '#EEEDFE', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 10 }}>
         <span style={{ color: '#6C5CE7', fontSize: 17 }}>🗺️</span>
       </div>
@@ -665,7 +666,7 @@ const deduped = Object.values(byCC)
       </div>
 
       {!user ? (
-        <div className="card" style={{ textAlign: 'center' }}>
+        <div className="card" style={{ textAlign: 'center', marginTop: 40 }}>
   <h3 style={{ marginBottom: 4 }}>Sign in to get started</h3>
   <p style={{ fontSize: 12, color: '#888', marginBottom: 16 }}>Free — takes a couple seconds</p>
   <button onClick={signInWithGoogle}>Sign in with Google</button>

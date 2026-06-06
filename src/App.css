@@ -7,7 +7,7 @@ body {
   min-height: 100vh;
 }
 
-.app { max-width: 720px; margin: 0 auto; padding: 2rem 1rem; }
+.app { max-width: 720px; margin: 0 auto; padding: 3rem 1.5rem; }
 .app.wide { max-width: 1400px; padding: 2rem 2.5rem; }
 .header { margin-bottom: 2rem; }
 .header h1 { font-size: 22px; font-weight: 600; }
@@ -19,8 +19,7 @@ body {
 .step-pill.active { background: #fff; color: #1a1a1a; font-weight: 500; }
 .step-pill.done { background: #e8f5e9; color: #2e7d32; }
 
-.card { background: #fff; border: 1px solid #e0e0e0; border-radius: 12px; padding: 1.25rem; margin-bottom: 1rem; }
-
+.card { background: #fff; border: 1px solid #e0e0e0; border-radius: 12px; padding: 2rem; margin-bottom: 1.5rem; }
 .field { margin-bottom: 1rem; }
 .field label { display: block; font-size: 13px; color: #555; margin-bottom: 5px; }
 .field input, .field select { width: 100%; padding: 9px 12px; border: 1px solid #ddd; border-radius: 7px; font-size: 14px; background: #fff; color: #1a1a1a; outline: none; }
