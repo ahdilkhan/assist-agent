@@ -589,11 +589,11 @@ const deduped = Object.values(byCC)
           // Logged-out: centered icon + big wordmark + tagline
           <div style={{ textAlign: 'center', width: '100%' }}>
   <img src={kourzoLogo} alt="Kourzo icon" style={{ height: 64, width: 64, display: 'block', margin: '0 auto 18px' }} />
-  <div style={{ fontSize: 32, fontWeight: 700, letterSpacing: '-0.5px', marginBottom: 8 }}>
+  <div style={{ fontSize: 32, fontWeight: 700, letterSpacing: '-0.5px', marginBottom: 16 }}>
     <span style={{ color: '#6C5CE7' }}>K</span><span style={{ color: '#1a1a1a' }}>ourzo</span>
   </div>
   
-  <p style={{ margin: '0 auto 40px', color: '#666', fontSize: 15, maxWidth: 380 }}>
+  <p style={{ margin: '0 auto 48px', color: '#666', fontSize: 15, maxWidth: 380 }}>
     The fastest way to plan your California CC transfer — find course equivalents and map out your path to any UC or CSU.
   </p>
   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 32, textAlign: 'left' }}>
