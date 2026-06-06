@@ -850,6 +850,7 @@ export default function Tab2() {
                                     <div key={i} style={{ marginBottom: i < row.programEntries.length - 1 ? 14 : 0, paddingBottom: i < row.programEntries.length - 1 ? 14 : 0, borderBottom: i < row.programEntries.length - 1 ? '1px solid #eee' : 'none' }}>
                                       <div style={{ fontSize: 12, fontWeight: 600, color: '#555', marginBottom: 4 }}>{pe.program}</div>
                                       {(() => {
+                                        console.log('[isRec check]', pe.groupTitle, '|', pe.sectionLabel)
                                         const isRec = isRecommendedSection(pe.groupTitle) || isRecommendedSection(pe.sectionLabel)
                                         return (
                                           <span style={{ fontSize: 11, color: isRec ? '#b45309' : '#166534', marginBottom: 4, display: 'block' }}>
@@ -965,6 +966,7 @@ export default function Tab2() {
                                 <div key={i} style={{ marginBottom: i < row.programEntries.length - 1 ? 14 : 0, paddingBottom: i < row.programEntries.length - 1 ? 14 : 0, borderBottom: i < row.programEntries.length - 1 ? '1px solid #eee' : 'none' }}>
                                   <div style={{ fontSize: 12, fontWeight: 600, color: '#555', marginBottom: 4 }}>{pe.program}</div>
                                   {(() => {
+                                    console.log('[isRec check]', pe.groupTitle, '|', pe.sectionLabel)
                                     const isRec = isRecommendedSection(pe.groupTitle) || isRecommendedSection(pe.sectionLabel)
                                     return (
                                       <div style={{ fontSize: 11, marginBottom: 6, display: 'inline-flex', alignItems: 'center', gap: 4,
