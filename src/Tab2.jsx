@@ -445,6 +445,7 @@ export default function Tab2() {
               reason: na.reason,
               groupTitle: na.groupTitle,
               sectionLabel: na.sectionLabel,
+              groupId: na.groupId,
               nRequired: na.nRequired ?? null,
               partOfPickGroup: na.partOfPickGroup || false,
               coveredByAnotherOption: na.coveredByAnotherOption || false,
@@ -665,6 +666,7 @@ export default function Tab2() {
                   <div><span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 2, background: '#ffe082', verticalAlign: 'middle', marginRight: 4 }}/>yellow-bordered card = choose <em>any one</em> from the group — you don't need all of them</div>
                   <div>▼ tap any row to see which university requirement it satisfies and additional info</div>
                   <div>☑ check it off once you've taken it — progress saves automatically</div>
+                  <div>📊 the progress bar tracks required courses only by default — click "+ Add recommended" to include recommended courses in your progress too</div>
                 </div>
               </div>
               <button
@@ -1080,15 +1082,14 @@ export default function Tab2() {
                               </div>
                               <div style={{ fontSize: 12, color: '#aaa', marginTop: 2 }}>{na.program}</div>
                               {(() => {
-                                // Find the articulated sibling — match rows whose entries share the same
-                                // section label + program as this no-art entry (groupId may differ due to override)
+                                // Find the articulated sibling — must match exact groupId from the same program
+                                // The noArt entry's groupId is `${group.groupId}_${section.position}` from buildCellMap.
+                                // The row's programEntries store the original groupId before canonical override.
                                 const sibling = overlapData.rows.find(r =>
                                   r.programEntries.some(pe =>
-                                    pe.program === na.program && (
-                                      pe.groupId === na.groupId ||
-                                      (pe.sectionLabel && pe.sectionLabel === na.sectionLabel) ||
-                                      (pe.nRequired !== null && pe.groupTitle === na.groupTitle && pe.sectionLabel === na.sectionLabel)
-                                    )
+                                    pe.program === na.program &&
+                                    pe.nRequired !== null &&
+                                    pe.groupId === na.groupId
                                   )
                                 )
                                 const siblingLabel = sibling
@@ -1129,11 +1130,11 @@ export default function Tab2() {
                       fontWeight: 500, transition: 'all 0.15s',
                     }}
                   >
-                    {includeRecommended ? 'Required + recommended' : 'Required only'}
+                    {includeRecommended ? '✓ Including recommended' : '+ Add recommended'}
                   </button>
                 </div>
                 <div style={{ fontSize: 11, color: '#888', marginBottom: 12 }}>
-                  Showing {includeRecommended ? 'required + recommended' : 'required only'} · check rows to track
+                  Tracking {includeRecommended ? 'required + recommended' : 'required only'} · check rows to update
                 </div>
 
                 {summary.length === 0 ? (
