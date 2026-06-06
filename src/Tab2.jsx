@@ -223,6 +223,58 @@ function parseAllForProgram(agreement, programLabel) {
       }
     }
 
+    // ASSIST sometimes omits cells entirely from the articulations array (no entry at all,
+    // not even a noArticulationReason). This happens for ECON C3 style cases.
+    // Fix: scan templateAssets for any cell IDs in pick-N groups that were never seen,
+    // and emit them as noArticulation so they surface in the UI.
+    const seenCellIds = new Set(arts.map(item => item.templateCellId))
+    const assets = typeof agreement.templateAssets === 'string'
+      ? JSON.parse(agreement.templateAssets) : agreement.templateAssets || []
+    for (const group of assets.filter(a => a.type === 'RequirementGroup')) {
+      const groupTitle = (() => {
+        const reqTitles = assets.filter(a => a.type === 'RequirementTitle').sort((a,b) => a.position - b.position)
+        return reqTitles.filter(t => t.position < group.position).sort((a,b) => b.position - a.position)[0]?.content || 'MAJOR REQUIREMENTS'
+      })()
+      const sections = group.sections || []
+      const sectionHeader = sections.find(s => s.type === 'SectionHeader')
+      const sectionLabel = sectionHeader?.content || ''
+      for (const section of sections.filter(s => s.type === 'Section')) {
+        const nFollowing = section.advisements?.find(a => a.type === 'NFollowing')
+        const nRequired = nFollowing ? nFollowing.amount : null
+        const sectionGroupId = `${group.groupId}_${section.position}`
+        for (const row of section.rows || []) {
+          for (const cell of row.cells || []) {
+            if (!cell.id || seenCellIds.has(cell.id)) continue
+            // This cell was never in articulations at all — emit as noArticulation
+            const course = cell.course || {}
+            const isPickN = nRequired !== null
+            // Check if any sibling in this group was articulated
+            const siblingArticulated = groupRegistry[sectionGroupId]?.articulated?.length > 0
+            noArticulationResults.push({
+              program: programLabel,
+              uniRequirement: {
+                prefix: (course.prefix || '').trim(),
+                number: (course.courseNumber || course.number || '').trim(),
+                title: course.courseTitle || course.title || '',
+                units: course.maxUnits || course.minUnits || null,
+                allCourseLabels: [`${(course.prefix||'').trim()} ${(course.courseNumber||course.number||'').trim()}`],
+              },
+              noArticulation: true,
+              reason: null,
+              partOfPickGroup: isPickN,
+              coveredByAnotherOption: isPickN && siblingArticulated,
+              sectionLabel,
+              groupTitle,
+              nRequired,
+              groupId: sectionGroupId,
+              sectionPosition: section.position,
+              groupPosition: group.position,
+            })
+          }
+        }
+      }
+    }
+
     return { articulated: results, noArticulation: noArticulationResults }
   } catch (e) {
     console.warn('parseAllForProgram error:', e)
