@@ -849,8 +849,7 @@ export default function Tab2() {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                   <div><span style={{ color: '#6C5CE7', fontWeight: 700 }}>●</span> purple = that program requires this course &nbsp;·&nbsp; <span style={{ color: '#ccc', fontWeight: 700 }}>●</span> grey = not required</div>
                   <div><span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 2, background: '#ffe082', verticalAlign: 'middle', marginRight: 4 }}/>yellow-bordered card = choose from the group — you don't need all of them</div>
-                  <div>⬜ faded row inside a yellow card = that option has no equivalent at your CC — pick a different option from the group instead</div>
-                  <div>🔴 red row = required course with no equivalent at your CC — you may need to take it after transferring</div>
+                  <div>🔴 red row = no equivalent at your CC — if inside a yellow card, choose a different option from the group; if standalone, you may need to take it after transferring</div>
                   <div>▼ tap any row to see which university requirement it satisfies and additional info</div>
                   <div>☑ check it off once you've taken it — progress saves automatically</div>
                   <div>📊 the progress bar tracks all courses including recommended ones</div>
@@ -1030,20 +1029,24 @@ export default function Tab2() {
                             const units = slot.courses.reduce((sum, c) => sum + (c.units || 0), 0)
                             return (
                               <div key={`noart-${label}`} style={{
-                                borderTop: '1px dashed #e8e8e4',
-                                background: '#f5f5f5',
-                                opacity: 0.8,
+                                borderTop: '1px dashed #fecaca',
+                                background: '#fff5f5',
                               }}>
-                                <div style={{ textAlign: 'center', fontSize: 11, fontWeight: 700, color: '#bbb', padding: '4px 0', letterSpacing: '0.05em' }}>OR</div>
+                                <div style={{ textAlign: 'center', fontSize: 11, fontWeight: 700, color: '#fca5a5', padding: '4px 0', letterSpacing: '0.05em' }}>OR</div>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px' }}>
-                                  <div style={{ width: 15, height: 15, flexShrink: 0 }} />
+                                  <div style={{ width: 15, height: 15, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                    <span style={{ color: '#fca5a5', fontSize: 14 }}>✕</span>
+                                  </div>
                                   <div style={{ flex: 1, minWidth: 0 }}>
-                                    <div style={{ fontWeight: 600, fontSize: 13, color: '#999', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                                    <div style={{ fontWeight: 600, fontSize: 13, color: '#991b1b', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                                       {label}
-                                      <span style={{ fontSize: 10, background: '#e5e5e5', color: '#666', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>No equivalent at {ccName}</span>
+                                      <span style={{ fontSize: 10, background: '#fee2e2', color: '#dc2626', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>No equivalent at {ccName}</span>
                                     </div>
-                                    {subtitle && <div style={{ fontSize: 11, color: '#bbb', marginTop: 1 }}>{subtitle}{units ? ` · ${units} units` : ''}</div>}
-                                    {slot.reason && <div style={{ fontSize: 11, color: '#999', marginTop: 2 }}>{slot.reason}</div>}
+                                    {subtitle && <div style={{ fontSize: 11, color: '#f87171', marginTop: 1 }}>{subtitle}{units ? ` · ${units} units` : ''}</div>}
+                                    {slot.reason && <div style={{ fontSize: 11, color: '#dc2626', marginTop: 2 }}>{slot.reason}</div>}
+                                    <div style={{ fontSize: 11, color: '#b91c1c', marginTop: 4, fontStyle: 'italic' }}>
+                                      Choose a different option from this group instead
+                                    </div>
                                   </div>
                                 </div>
                               </div>
