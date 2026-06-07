@@ -217,7 +217,7 @@ function parseAllForProgram(agreement, programLabel) {
           sectionPosition: 0,
           groupPosition: 0,
         }
-      const gid = cellContext.groupId
+      const gid = cellContext.groupId || rawGroupId || templateCellId
       if (!groupRegistry[gid]) {
         groupRegistry[gid] = { nRequired: cellContext.nRequired, pickType: cellContext.pickType, articulated: [], unarticulated: [] }
       }
@@ -246,8 +246,14 @@ function parseAllForProgram(agreement, programLabel) {
         const allCourseLabels = receivingCourses.map(rc =>
           `${(rc.prefix || '').trim()} ${(rc.courseNumber || rc.number || '').trim()}`
         )
-        const options = parseSendingOptions(art.sendingArticulation.items || [])
-        if (options.length === 0) continue
+        let options = parseSendingOptions(art.sendingArticulation?.items || [])
+
+if (options.length === 0) {
+  options = (art.series?.courses || art.courses || []).map(c => {
+    const course = extractCourse(c)
+    return course ? { courses: [course], groupNote: null } : null
+  }).filter(Boolean)
+}
         results.push({
           program: programLabel,
           uniRequirement: {
@@ -548,9 +554,14 @@ export default function Tab2() {
         for (const art of arts) {
           const cheapestOpt = art.options.reduce((a, b) => a.courses.length <= b.courses.length ? a : b)
           const isOrGroup = art.groupId?.startsWith('or_group_')
-          const ccKey = isOrGroup
-            ? `${art.groupId}__sec${art.sectionPosition}`
-            : cheapestOpt.courses.map(c => `${c.prefix} ${c.number}`).sort().join('+')
+          const baseKey = art.groupId || art.sectionLabel || art.groupTitle
+
+const ccKey = isOrGroup
+  ? `OR__${baseKey}`
+  : cheapestOpt.courses
+      .map(c => `${c.prefix} ${c.number}`)
+      .sort()
+      .join('+')
           if (!reqMap[ccKey]) {
             reqMap[ccKey] = { ccKey, primaryCourses: [...cheapestOpt.courses], programEntries: [], isOrGroupSection: isOrGroup }
           }
