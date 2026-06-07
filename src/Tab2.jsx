@@ -978,7 +978,10 @@ export default function Tab2() {
                 for (const group of groups) {
                   const isPickN = group.nRequired !== null
                   const totalAvailableAtCC = group.rows.length
-                  const isEffectivelyRequired = isPickN && totalAvailableAtCC <= 1
+                  const noArtSiblings = (noArtByGroupIdFlat[group.groupId] || []).length
+                  // isEffectivelyRequired: pick group but only 1 CC option AND no no-art siblings to show
+                  // If there are no-art siblings, show yellow card so student sees all options
+                  const isEffectivelyRequired = isPickN && totalAvailableAtCC <= 1 && noArtSiblings === 0
 
                   const displayLabel = group.sectionLabel || group.groupTitle || 'REQUIREMENTS'
 
