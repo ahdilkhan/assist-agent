@@ -849,11 +849,11 @@ export default function Tab2() {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                   <div><span style={{ color: '#6C5CE7', fontWeight: 700 }}>●</span> purple = that program requires this course &nbsp;·&nbsp; <span style={{ color: '#ccc', fontWeight: 700 }}>●</span> grey = not required</div>
                   <div><span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 2, background: '#ffe082', verticalAlign: 'middle', marginRight: 4 }}/>yellow-bordered card = choose from the group — you don't need all of them</div>
-                  <div>🚫 greyed-out row inside a yellow card = no equivalent at your CC for that option — but you can still satisfy the group with another option</div>
+                  <div>⬜ faded row inside a yellow card = that option has no equivalent at your CC — pick a different option from the group instead</div>
                   <div>🔴 red row = required course with no equivalent at your CC — you may need to take it after transferring</div>
                   <div>▼ tap any row to see which university requirement it satisfies and additional info</div>
                   <div>☑ check it off once you've taken it — progress saves automatically</div>
-                  <div>📊 the progress bar tracks required courses only by default — click "+ Add recommended" to include recommended courses in your progress too</div>
+                  <div>📊 the progress bar tracks all courses including recommended ones</div>
                 </div>
               </div>
               <button
@@ -878,18 +878,24 @@ export default function Tab2() {
                 const groupIdToGroup = {}
 
                 // Build lookup of noArt items by groupId for inline rendering
+                // For or_group items, bundle by sectionPosition so POLI 5 + POLI 30 (same section D)
+                // appear as one combined slot, not two separate rows
                 const noArtByGroupId = {}
-                const inlineRequiredNoArt = [] // truly missing, not in a pick group
+                const inlineRequiredNoArt = []
                 for (const na of (overlapData.noArticulation || [])) {
                   if (na.partOfPickGroup) {
-                    // Always show in yellow card even if coveredByAnotherOption —
-                    // student needs to see ALL options including unavailable ones
-                    if (!noArtByGroupId[na.groupId]) noArtByGroupId[na.groupId] = []
-                    // Avoid duplicates (same course from multiple programs)
-                    const alreadyAdded = noArtByGroupId[na.groupId].some(
-                      x => x.uniReq.prefix === na.uniReq.prefix && x.uniReq.number === na.uniReq.number
+                    if (!noArtByGroupId[na.groupId]) noArtByGroupId[na.groupId] = {}
+                    // Key by sectionPosition to bundle courses from same lettered section
+                    const secKey = na.sectionPosition ?? 'unknown'
+                    if (!noArtByGroupId[na.groupId][secKey]) {
+                      noArtByGroupId[na.groupId][secKey] = { courses: [], reason: na.reason, sectionPosition: na.sectionPosition }
+                    }
+                    const slot = noArtByGroupId[na.groupId][secKey]
+                    const alreadyAdded = slot.courses.some(
+                      x => x.prefix === na.uniReq.prefix && x.number === na.uniReq.number
                     )
-                    if (!alreadyAdded) noArtByGroupId[na.groupId].push(na)
+                    if (!alreadyAdded) slot.courses.push({ prefix: na.uniReq.prefix, number: na.uniReq.number, title: na.uniReq.title, units: na.uniReq.units })
+                    if (na.reason && !slot.reason) slot.reason = na.reason
                   } else if (!na.coveredByAnotherOption) {
                     inlineRequiredNoArt.push(na)
                   }
@@ -1020,26 +1026,29 @@ export default function Tab2() {
                           </div>
                         </div>
 
-                        {[...group.rows, ...(noArtByGroupId[group.groupId] || []).map(na => ({ _isNoArt: true, na }))].map((rowOrNa, rowIdx) => {
-                          // Render greyed-out no-equiv rows inside yellow card
+                        {[...group.rows, ...Object.values(noArtByGroupId[group.groupId] || {}).map(slot => ({ _isNoArt: true, slot }))].map((rowOrNa, rowIdx) => {
+                          // Render amber no-equiv rows inside yellow card (bundled by section)
                           if (rowOrNa._isNoArt) {
-                            const na = rowOrNa.na
+                            const slot = rowOrNa.slot
+                            const label = slot.courses.map(c => `${c.prefix} ${c.number}`).join(' + ')
+                            const subtitle = slot.courses.map(c => c.title).filter(Boolean).join(' + ')
+                            const units = slot.courses.reduce((sum, c) => sum + (c.units || 0), 0)
                             return (
-                              <div key={`noart-${na.uniReq.prefix}-${na.uniReq.number}`} style={{
-                                borderTop: '1px dashed #f0e6c8',
-                                background: '#fdf6e3',
-                                opacity: 0.75,
+                              <div key={`noart-${label}`} style={{
+                                borderTop: '1px dashed #e8e8e4',
+                                background: '#f5f5f5',
+                                opacity: 0.8,
                               }}>
-                                <div style={{ textAlign: 'center', fontSize: 11, fontWeight: 700, color: '#d4a04a', padding: '4px 0', letterSpacing: '0.05em' }}>OR</div>
+                                <div style={{ textAlign: 'center', fontSize: 11, fontWeight: 700, color: '#bbb', padding: '4px 0', letterSpacing: '0.05em' }}>OR</div>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px' }}>
                                   <div style={{ width: 15, height: 15, flexShrink: 0 }} />
                                   <div style={{ flex: 1, minWidth: 0 }}>
-                                    <div style={{ fontWeight: 600, fontSize: 13, color: '#b45309', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                                      {na.uniReq.prefix} {na.uniReq.number}
-                                      <span style={{ fontSize: 10, background: '#fde68a', color: '#92400e', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>No equivalent at {ccName}</span>
+                                    <div style={{ fontWeight: 600, fontSize: 13, color: '#999', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                                      {label}
+                                      <span style={{ fontSize: 10, background: '#e5e5e5', color: '#666', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>No equivalent at {ccName}</span>
                                     </div>
-                                    {na.uniReq.title && <div style={{ fontSize: 11, color: '#c08020', marginTop: 1 }}>{na.uniReq.title}{na.uniReq.units ? ` · ${na.uniReq.units} units` : ''}</div>}
-                                    {na.reason && <div style={{ fontSize: 11, color: '#b45309', marginTop: 2 }}>{na.reason}</div>}
+                                    {subtitle && <div style={{ fontSize: 11, color: '#bbb', marginTop: 1 }}>{subtitle}{units ? ` · ${units} units` : ''}</div>}
+                                    {slot.reason && <div style={{ fontSize: 11, color: '#999', marginTop: 2 }}>{slot.reason}</div>}
                                   </div>
                                 </div>
                               </div>
