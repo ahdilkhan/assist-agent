@@ -880,6 +880,7 @@ export default function Tab2() {
                 // For or_group items, bundle by sectionPosition so POLI 5 + POLI 30 (same section D)
                 // appear as one combined slot, not two separate rows
                 const noArtByGroupId = {}
+                const noArtByGroupIdFlat = {} // for isEffectivelyRequired groups
                 const inlineRequiredNoArt = []
                 for (const na of (overlapData.noArticulation || [])) {
                   if (na.partOfPickGroup) {
@@ -895,6 +896,12 @@ export default function Tab2() {
                     )
                     if (!alreadyAdded) slot.courses.push({ prefix: na.uniReq.prefix, number: na.uniReq.number, title: na.uniReq.title, units: na.uniReq.units })
                     if (na.reason && !slot.reason) slot.reason = na.reason
+                    // Also track flat for isEffectivelyRequired groups
+                    if (!noArtByGroupIdFlat[na.groupId]) noArtByGroupIdFlat[na.groupId] = []
+                    const alreadyFlat = noArtByGroupIdFlat[na.groupId].some(
+                      x => x.uniReq.prefix === na.uniReq.prefix && x.uniReq.number === na.uniReq.number
+                    )
+                    if (!alreadyFlat) noArtByGroupIdFlat[na.groupId].push(na)
                   } else if (!na.coveredByAnotherOption) {
                     inlineRequiredNoArt.push(na)
                   }
@@ -1155,6 +1162,10 @@ export default function Tab2() {
                     )
                   } else {
                     // Render articulated rows first, then no-art rows after
+                    // For isEffectivelyRequired groups, use noArtByGroupIdFlat to show siblings
+                    const effectiveNoArtRows = isEffectivelyRequired
+                      ? (noArtByGroupIdFlat[group.groupId] || [])
+                      : (group.noArtRows || [])
                     group.rows.forEach((row) => {
                       const isDone = completedCourses.has(row.ccKey)
                       const isExpanded = expandedRow === row.ccKey
@@ -1268,7 +1279,7 @@ export default function Tab2() {
                       )
                     })
                     // Render no-art rows AFTER articulated rows in same section
-                    ;(group.noArtRows || []).forEach((na) => {
+                    ;effectiveNoArtRows.forEach((na) => {
                       rendered.push(
                         <div key={`noart-inline-${na.uniReq.prefix}-${na.uniReq.number}-${na.program}`} style={{
                           border: '1px solid #fecaca', borderRadius: 8, marginBottom: 6,
