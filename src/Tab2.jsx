@@ -581,11 +581,24 @@ export default function Tab2() {
           // Key by groupId+sectionPosition so all CC courses in the same lettered section
           // collapse into one yellow card row instead of splitting into individual rows.
           const isOrGroup = art.groupId?.startsWith('or_group_')
+          const isPickGroup = art.nRequired !== null
+          // For or_group: key by groupId+sectionPosition (each lettered section = one slot)
+          // For section-level pick groups: key by groupId+ccCourses so each unique CC option
+          // is its own slot within the yellow card
+          const ccCourseKey = cheapestOpt.courses.map(c => `${c.prefix} ${c.number}`).sort().join('+')
           const ccKey = isOrGroup
             ? `${art.groupId}__sec${art.sectionPosition}`
-            : cheapestOpt.courses.map(c => `${c.prefix} ${c.number}`).sort().join('+')
+            : isPickGroup
+              ? `${art.groupId}__${ccCourseKey}`
+              : ccCourseKey
           if (!reqMap[ccKey]) {
-            reqMap[ccKey] = { ccKey, primaryCourses: [...cheapestOpt.courses], programEntries: [], isOrGroupSection: isOrGroup }
+            reqMap[ccKey] = {
+              ccKey,
+              primaryCourses: [...cheapestOpt.courses],
+              programEntries: [],
+              isOrGroupSection: isOrGroup,
+
+            }
           }
           // For or_group rows accumulate all CC courses in this section
           if (isOrGroup) {
