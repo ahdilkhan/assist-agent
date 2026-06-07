@@ -265,6 +265,10 @@ function parseAllForProgram(agreement, programLabel) {
         item.group?.groupId ??
         null
 
+      if (!cellMap.get(templateCellId) && !cellMap.get(String(templateCellId))) {
+  console.warn('MISS', { templateCellId, rawGroupId, keys: Object.keys(item) })
+}
+
       const cellContext =
         cellMap.get(templateCellId) ||
         cellMap.get(String(templateCellId)) ||
@@ -618,7 +622,15 @@ export default function Tab2() {
       const programArts = await Promise.all(programs.map(async prog => {
         setLoadingMsg(`Fetching ${prog.uniName} — ${prog.majorLabel}...`)
         const agreement = await getAgreement(prog.majorKey)
-        const parsed = parseAllForProgram(agreement, `${prog.uniName} → ${prog.majorLabel}`)
+console.log(JSON.stringify({
+  sampleArt: (typeof agreement.articulations === 'string' 
+    ? JSON.parse(agreement.articulations) 
+    : agreement.articulations).slice(0, 3),
+  sampleAssets: (typeof agreement.templateAssets === 'string'
+    ? JSON.parse(agreement.templateAssets)
+    : agreement.templateAssets).slice(0, 5)
+}, null, 2))
+const parsed = parseAllForProgram(agreement, `${prog.uniName} → ${prog.majorLabel}`)
         return { prog, arts: parsed.articulated, noArts: parsed.noArticulation }
       }))
 
