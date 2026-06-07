@@ -1002,6 +1002,13 @@ export default function Tab2() {
                   return aPos - bPos
                 })
 
+                console.table(groups.map(g => ({
+  label: g.sectionLabel || g.groupTitle,
+  nRequired: g.nRequired,
+  rowCount: g.rows.length,
+  showsYellowCard: g.nRequired !== null && g.rows.length > 1,
+})))
+
                 let lastDisplayLabel = null
                 const rendered = []
 
