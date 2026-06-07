@@ -922,13 +922,8 @@ export default function Tab2() {
                   groupIdToGroup[groupId].rows.push(row)
                 }
 
-                // Attach noArtByGroupId items to their existing groups (pick groups with partial articulation)
-                for (const [gid, naItems] of Object.entries(noArtByGroupId)) {
-                  if (groupIdToGroup[gid]) {
-                    if (!groupIdToGroup[gid].noArtRows) groupIdToGroup[gid].noArtRows = []
-                    groupIdToGroup[gid].noArtRows.push(...naItems)
-                  }
-                }
+                // noArtByGroupId is already used directly via Object.values() in rendering
+                // No need to attach to groups — yellow card reads it directly by group.groupId
 
                 // Also add groups for inline required no-art items that have no articulated sibling
                 for (const na of inlineRequiredNoArt) {
