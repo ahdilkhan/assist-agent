@@ -685,7 +685,6 @@ export default function Tab2() {
       const isDone = completedCourses.has(row.ccKey)
       for (const pe of row.programEntries) {
         if (!programMap[pe.program]) continue
-        if (!includeRecommended && (isRecommendedSection(pe.groupTitle) || isRecommendedSection(pe.sectionLabel))) continue
         const pgKey = `${pe.program}|${pe.groupId}`
         if (!programGroupMap[pgKey]) {
           programGroupMap[pgKey] = {
@@ -882,11 +881,16 @@ export default function Tab2() {
                 const noArtByGroupId = {}
                 const inlineRequiredNoArt = [] // truly missing, not in a pick group
                 for (const na of (overlapData.noArticulation || [])) {
-                  if (na.coveredByAnotherOption) continue // skip "already covered" ones
                   if (na.partOfPickGroup) {
+                    // Always show in yellow card even if coveredByAnotherOption —
+                    // student needs to see ALL options including unavailable ones
                     if (!noArtByGroupId[na.groupId]) noArtByGroupId[na.groupId] = []
-                    noArtByGroupId[na.groupId].push(na)
-                  } else {
+                    // Avoid duplicates (same course from multiple programs)
+                    const alreadyAdded = noArtByGroupId[na.groupId].some(
+                      x => x.uniReq.prefix === na.uniReq.prefix && x.uniReq.number === na.uniReq.number
+                    )
+                    if (!alreadyAdded) noArtByGroupId[na.groupId].push(na)
+                  } else if (!na.coveredByAnotherOption) {
                     inlineRequiredNoArt.push(na)
                   }
                 }
@@ -1023,19 +1027,19 @@ export default function Tab2() {
                             return (
                               <div key={`noart-${na.uniReq.prefix}-${na.uniReq.number}`} style={{
                                 borderTop: '1px dashed #f0e6c8',
-                                background: '#fafafa',
-                                opacity: 0.6,
+                                background: '#fdf6e3',
+                                opacity: 0.75,
                               }}>
-                                <div style={{ textAlign: 'center', fontSize: 11, fontWeight: 700, color: '#ccc', padding: '4px 0', letterSpacing: '0.05em' }}>OR</div>
+                                <div style={{ textAlign: 'center', fontSize: 11, fontWeight: 700, color: '#d4a04a', padding: '4px 0', letterSpacing: '0.05em' }}>OR</div>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px' }}>
                                   <div style={{ width: 15, height: 15, flexShrink: 0 }} />
                                   <div style={{ flex: 1, minWidth: 0 }}>
-                                    <div style={{ fontWeight: 600, fontSize: 13, color: '#aaa', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                                    <div style={{ fontWeight: 600, fontSize: 13, color: '#b45309', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                                       {na.uniReq.prefix} {na.uniReq.number}
-                                      <span style={{ fontSize: 10, background: '#fee2e2', color: '#dc2626', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>No equivalent at {ccName}</span>
+                                      <span style={{ fontSize: 10, background: '#fde68a', color: '#92400e', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>No equivalent at {ccName}</span>
                                     </div>
-                                    {na.uniReq.title && <div style={{ fontSize: 11, color: '#bbb', marginTop: 1 }}>{na.uniReq.title}{na.uniReq.units ? ` · ${na.uniReq.units} units` : ''}</div>}
-                                    {na.reason && <div style={{ fontSize: 11, color: '#dc2626', marginTop: 2 }}>{na.reason}</div>}
+                                    {na.uniReq.title && <div style={{ fontSize: 11, color: '#c08020', marginTop: 1 }}>{na.uniReq.title}{na.uniReq.units ? ` · ${na.uniReq.units} units` : ''}</div>}
+                                    {na.reason && <div style={{ fontSize: 11, color: '#b45309', marginTop: 2 }}>{na.reason}</div>}
                                   </div>
                                 </div>
                               </div>
@@ -1143,30 +1147,7 @@ export default function Tab2() {
                       </div>
                     )
                   } else {
-                    // Render inline no-art rows for this group if any (non-pick groups with mixed articulated/unarticulated)
-                    ;(group.noArtRows || []).forEach((na) => {
-                      rendered.push(
-                        <div key={`noart-inline-${na.uniReq.prefix}-${na.uniReq.number}-${na.program}`} style={{
-                          border: '1px solid #fecaca', borderRadius: 8, marginBottom: 6,
-                          background: '#fff5f5', overflow: 'hidden',
-                        }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px' }}>
-                            <div style={{ width: 15, height: 15, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                              <span style={{ color: '#fca5a5', fontSize: 14 }}>✕</span>
-                            </div>
-                            <div style={{ flex: 1, minWidth: 0 }}>
-                              <div style={{ fontWeight: 600, fontSize: 13, color: '#991b1b', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                                {na.uniReq.prefix} {na.uniReq.number}
-                                {na.uniReq.title && <span style={{ fontWeight: 400, color: '#b91c1c' }}>— {na.uniReq.title}</span>}
-                              </div>
-                              {na.uniReq.units && <div style={{ fontSize: 11, color: '#f87171', marginTop: 1 }}>{na.uniReq.units} units · {na.program}</div>}
-                              {na.reason && <div style={{ fontSize: 11, color: '#dc2626', marginTop: 2 }}>{na.reason}</div>}
-                            </div>
-                            <span style={{ fontSize: 11, background: '#fee2e2', color: '#dc2626', borderRadius: 4, padding: '2px 8px', fontWeight: 600, flexShrink: 0 }}>No equivalent at {ccName}</span>
-                          </div>
-                        </div>
-                      )
-                    })
+                    // Render articulated rows first, then no-art rows after
                     group.rows.forEach((row) => {
                       const isDone = completedCourses.has(row.ccKey)
                       const isExpanded = expandedRow === row.ccKey
@@ -1279,6 +1260,30 @@ export default function Tab2() {
                         </div>
                       )
                     })
+                    // Render no-art rows AFTER articulated rows in same section
+                    ;(group.noArtRows || []).forEach((na) => {
+                      rendered.push(
+                        <div key={`noart-inline-${na.uniReq.prefix}-${na.uniReq.number}-${na.program}`} style={{
+                          border: '1px solid #fecaca', borderRadius: 8, marginBottom: 6,
+                          background: '#fff5f5', overflow: 'hidden',
+                        }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px' }}>
+                            <div style={{ width: 15, height: 15, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                              <span style={{ color: '#fca5a5', fontSize: 14 }}>✕</span>
+                            </div>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ fontWeight: 600, fontSize: 13, color: '#991b1b', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                                {na.uniReq.prefix} {na.uniReq.number}
+                                {na.uniReq.title && <span style={{ fontWeight: 400, color: '#b91c1c' }}>— {na.uniReq.title}</span>}
+                              </div>
+                              {na.uniReq.units && <div style={{ fontSize: 11, color: '#f87171', marginTop: 1 }}>{na.uniReq.units} units · {na.program}</div>}
+                              {na.reason && <div style={{ fontSize: 11, color: '#dc2626', marginTop: 2 }}>{na.reason}</div>}
+                            </div>
+                            <span style={{ fontSize: 11, background: '#fee2e2', color: '#dc2626', borderRadius: 4, padding: '2px 8px', fontWeight: 600, flexShrink: 0 }}>No equivalent at {ccName}</span>
+                          </div>
+                        </div>
+                      )
+                    })
                   }
                 }
 
@@ -1338,21 +1343,9 @@ export default function Tab2() {
               <div className="card" style={{ background: '#f9f9f7', border: '1px solid #e8e8e4' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
                   <div style={{ fontWeight: 600, fontSize: 14 }}>📊 Progress</div>
-                  <button
-                    onClick={() => setIncludeRecommended(r => !r)}
-                    style={{
-                      fontSize: 11, padding: '3px 8px', borderRadius: 20, cursor: 'pointer', border: '1px solid',
-                      borderColor: includeRecommended ? '#6C5CE7' : '#ccc',
-                      background: includeRecommended ? '#ede9ff' : '#f5f5f5',
-                      color: includeRecommended ? '#6C5CE7' : '#888',
-                      fontWeight: 500, transition: 'all 0.15s',
-                    }}
-                  >
-                    {includeRecommended ? '✓ Including recommended' : '+ Add recommended'}
-                  </button>
                 </div>
                 <div style={{ fontSize: 11, color: '#888', marginBottom: 12 }}>
-                  Tracking {includeRecommended ? 'required + recommended' : 'required only'} · check rows to update
+                  Check rows to update
                 </div>
 
                 {summary.length === 0 ? (
