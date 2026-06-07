@@ -912,6 +912,14 @@ export default function Tab2() {
                   groupIdToGroup[groupId].rows.push(row)
                 }
 
+                // Attach noArtByGroupId items to their existing groups (pick groups with partial articulation)
+                for (const [gid, naItems] of Object.entries(noArtByGroupId)) {
+                  if (groupIdToGroup[gid]) {
+                    if (!groupIdToGroup[gid].noArtRows) groupIdToGroup[gid].noArtRows = []
+                    groupIdToGroup[gid].noArtRows.push(...naItems)
+                  }
+                }
+
                 // Also add groups for inline required no-art items that have no articulated sibling
                 for (const na of inlineRequiredNoArt) {
                   const groupId = na.groupId ?? `noart_${na.uniReq.prefix}_${na.uniReq.number}`
@@ -947,7 +955,10 @@ export default function Tab2() {
                   const aTier = sectionTier(a)
                   const bTier = sectionTier(b)
                   if (aTier !== bTier) return aTier - bTier
-                  return (a.rows[0]?._groupPosition ?? 999) - (b.rows[0]?._groupPosition ?? 999)
+                  // Use _groupPosition from rows if available, else from noArtRows
+                  const aPos = a.rows[0]?._groupPosition ?? a._groupPosition ?? 999
+                  const bPos = b.rows[0]?._groupPosition ?? b._groupPosition ?? 999
+                  return aPos - bPos
                 })
 
                 let lastDisplayLabel = null
@@ -1132,6 +1143,30 @@ export default function Tab2() {
                       </div>
                     )
                   } else {
+                    // Render inline no-art rows for this group if any (non-pick groups with mixed articulated/unarticulated)
+                    ;(group.noArtRows || []).forEach((na) => {
+                      rendered.push(
+                        <div key={`noart-inline-${na.uniReq.prefix}-${na.uniReq.number}-${na.program}`} style={{
+                          border: '1px solid #fecaca', borderRadius: 8, marginBottom: 6,
+                          background: '#fff5f5', overflow: 'hidden',
+                        }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px' }}>
+                            <div style={{ width: 15, height: 15, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                              <span style={{ color: '#fca5a5', fontSize: 14 }}>✕</span>
+                            </div>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ fontWeight: 600, fontSize: 13, color: '#991b1b', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                                {na.uniReq.prefix} {na.uniReq.number}
+                                {na.uniReq.title && <span style={{ fontWeight: 400, color: '#b91c1c' }}>— {na.uniReq.title}</span>}
+                              </div>
+                              {na.uniReq.units && <div style={{ fontSize: 11, color: '#f87171', marginTop: 1 }}>{na.uniReq.units} units · {na.program}</div>}
+                              {na.reason && <div style={{ fontSize: 11, color: '#dc2626', marginTop: 2 }}>{na.reason}</div>}
+                            </div>
+                            <span style={{ fontSize: 11, background: '#fee2e2', color: '#dc2626', borderRadius: 4, padding: '2px 8px', fontWeight: 600, flexShrink: 0 }}>No equivalent at {ccName}</span>
+                          </div>
+                        </div>
+                      )
+                    })
                     group.rows.forEach((row) => {
                       const isDone = completedCourses.has(row.ccKey)
                       const isExpanded = expandedRow === row.ccKey
