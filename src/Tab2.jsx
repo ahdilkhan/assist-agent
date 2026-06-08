@@ -70,9 +70,22 @@ function parseSendingOptions(topItems) {
   return options
 }
 
+// ─── buildCellMap ─────────────────────────────────────────────────────────────
+// Reads templateAssets and builds: cell.id → { groupId, nRequired, pickType, ... }
+//
+// Pick-N is signaled by group.instruction.type — this is the real ASSIST field:
+//   'NFromArea'     → pick N courses  (instruction.amount)
+//   'NFollowing'    → pick N courses  (instruction.amount)
+//   'NFromUnits'    → pick N units    (instruction.amount)
+//   'NToNFollowing' → pick a range    (instruction.amount to instruction.toAmount)
+//   'Following'     → complete ALL — NOT a pick group
+//   conjunction='Or'→ legacy UC pattern, kept as fallback
+//
+// All sections in a pick-N group share groupId: pick_${group.groupId}
+// Required sections each get their own: ${group.groupId}_${section.position}
+// ─────────────────────────────────────────────────────────────────────────────
 function buildCellMap(templateAssets) {
   const cellMap = new Map()
-  const groupFallbackMap = new Map()
   let assets
   try {
     assets = typeof templateAssets === 'string' ? JSON.parse(templateAssets) : templateAssets || []
@@ -82,9 +95,7 @@ function buildCellMap(templateAssets) {
     .filter(a => a.type === 'RequirementTitle')
     .sort((a, b) => a.position - b.position)
 
-  const reqGroups = assets.filter(a => a.type === 'RequirementGroup')
-
-  for (const group of reqGroups) {
+  for (const group of assets.filter(a => a.type === 'RequirementGroup')) {
     const groupTitle = reqTitles
       .filter(t => t.position < group.position)
       .sort((a, b) => b.position - a.position)[0]?.content || 'MAJOR REQUIREMENTS'
@@ -94,10 +105,38 @@ function buildCellMap(templateAssets) {
     const sectionLabel = sectionHeader?.content || ''
     const dataSections = sections.filter(s => s.type === 'Section')
 
-    const instrIsOr = group.instruction?.conjunction === 'Or'
-    const groupNAdv = (group.advisements || []).find(a => a.type === 'NFollowing')
-    const groupUnitsAdv = (group.advisements || []).find(a => a.type === 'NFromUnits')
-    const groupIsPickN = instrIsOr
+    const instr = group.instruction || {}
+    const instrType = instr.type || ''
+    const instrConjunction = (instr.conjunction || '').toLowerCase()
+
+    let groupIsPickN = false
+    let groupNRequired = null
+    let groupPickType = null
+    let groupPickMin = null
+    let groupPickMax = null
+
+    if (instrType === 'NFromArea' || instrType === 'NFollowing') {
+      groupIsPickN = true
+      groupNRequired = instr.amount ?? 1
+      groupPickType = 'count'
+    } else if (instrType === 'NFromUnits') {
+      groupIsPickN = true
+      groupNRequired = instr.amount ?? 1
+      groupPickType = 'units'
+    } else if (instrType === 'NToNFollowing') {
+      groupIsPickN = true
+      groupPickMin = instr.amount ?? 1
+      groupPickMax = instr.toAmount ?? null
+      groupNRequired = groupPickMin
+      groupPickType = 'range'
+    } else if (instrConjunction === 'or') {
+      // Legacy UC pattern — sections are the options
+      groupIsPickN = true
+      const groupNAdv = (group.advisements || []).find(a => a.type === 'NFollowing')
+      groupNRequired = groupNAdv?.amount ?? 1
+      groupPickType = 'count'
+    }
+    // instrType === 'Following' + selectionType === 'Complete' means all required
 
     for (const section of dataSections) {
       const secAdvs = section.advisements || []
@@ -113,43 +152,32 @@ function buildCellMap(templateAssets) {
       let pickMax = null
       let groupId
 
-      if (groupIsPickN) {
-        if (groupNAdv) {
-          nRequired = groupNAdv.amount ?? 1
-          pickType = 'count'
-        } else if (groupUnitsAdv) {
-          nRequired = groupUnitsAdv.amount ?? 1
-          pickType = 'units'
-        } else {
-          nRequired = 1
-          pickType = 'count'
-        }
-        groupId = `or_group_${group.groupId}`
-      } else if (secCompleteAll) {
-        nRequired = null
-        pickType = null
+      if (secCompleteAll) {
+        nRequired = null; pickType = null
         groupId = `${group.groupId}_${section.position}`
       } else if (secNFollowing) {
-        nRequired = secNFollowing.amount ?? 1
-        pickType = 'count'
+        nRequired = secNFollowing.amount ?? 1; pickType = 'count'
         groupId = `${group.groupId}_${section.position}`
       } else if (secNFromUnits) {
-        nRequired = secNFromUnits.amount ?? 1
-        pickType = 'units'
+        nRequired = secNFromUnits.amount ?? 1; pickType = 'units'
         groupId = `${group.groupId}_${section.position}`
       } else if (secNToN) {
         pickMin = secNToN.minAmount ?? secNToN.amount ?? 1
         pickMax = secNToN.maxAmount ?? null
-        nRequired = pickMin
-        pickType = 'range'
+        nRequired = pickMin; pickType = 'range'
         groupId = `${group.groupId}_${section.position}`
       } else if (secNInAreas) {
-        nRequired = secNInAreas.amount ?? 1
-        pickType = 'areas'
+        nRequired = secNInAreas.amount ?? 1; pickType = 'areas'
         groupId = `${group.groupId}_${section.position}`
+      } else if (groupIsPickN) {
+        // Inherit group-level pick-N — all sections share one pool
+        nRequired = groupNRequired
+        pickType = groupPickType
+        pickMin = groupPickMin
+        pickMax = groupPickMax
+        groupId = `pick_${group.groupId}`
       } else {
-        nRequired = null
-        pickType = null
+        nRequired = null; pickType = null
         groupId = `${group.groupId}_${section.position}`
       }
 
@@ -165,12 +193,6 @@ function buildCellMap(templateAssets) {
         groupPosition: group.position,
       }
 
-      // FIX 1: Or-groups always overwrite groupFallbackMap so that
-      // or_group_ context wins over any _0-suffix entry stored first.
-      if (groupIsPickN || !groupFallbackMap.has(String(group.groupId))) {
-        groupFallbackMap.set(String(group.groupId), ctx)
-      }
-
       for (const row of section.rows || []) {
         for (const cell of row.cells || []) {
           if (cell.id) {
@@ -182,7 +204,6 @@ function buildCellMap(templateAssets) {
     }
   }
 
-  cellMap._groupFallback = groupFallbackMap
   return cellMap
 }
 
@@ -194,105 +215,15 @@ function parseAllForProgram(agreement, programLabel) {
     const cellMap = buildCellMap(agreement.templateAssets)
     const results = []
     const noArticulationResults = []
-
     const groupRegistry = {}
-
-    const supplementalCellMap = new Map()
-    try {
-      const _assets = typeof agreement.templateAssets === 'string'
-        ? JSON.parse(agreement.templateAssets) : agreement.templateAssets || []
-      const _reqTitles = _assets.filter(a => a.type === 'RequirementTitle').sort((a,b) => a.position - b.position)
-      for (const _group of _assets.filter(a => a.type === 'RequirementGroup')) {
-        const _groupTitle = _reqTitles.filter(t => t.position < _group.position)
-          .sort((a,b) => b.position - a.position)[0]?.content || 'MAJOR REQUIREMENTS'
-        const _instrIsOr = _group.instruction?.conjunction === 'Or'
-        const _groupNAdv = (_group.advisements||[]).find(a => a.type === 'NFollowing')
-        const _sections = (_group.sections||[]).filter(s => s.type === 'Section')
-        const _sectionHeader = (_group.sections||[]).find(s => s.type === 'SectionHeader')
-        const _sectionLabel = _sectionHeader?.content || ''
-        for (const _section of _sections) {
-          const _secAdvs = _section.advisements || []
-          const _secNF = _secAdvs.find(a => a.type === 'NFollowing')
-          const _secNU = _secAdvs.find(a => a.type === 'NFromUnits')
-          const _secNR = _secAdvs.find(a => a.type === 'NToNFollowing')
-          const _secNA = _secAdvs.find(a => a.type === 'NInNDifferentAreas')
-          let _nRequired = null, _pickType = null, _gid
-          if (_instrIsOr) {
-            _nRequired = _groupNAdv?.amount ?? 1; _pickType = 'count'
-            _gid = `or_group_${_group.groupId}`
-          } else if (_secNF) {
-            _nRequired = _secNF.amount ?? 1; _pickType = 'count'
-            _gid = `${_group.groupId}_${_section.position}`
-          } else if (_secNU) {
-            _nRequired = _secNU.amount ?? 1; _pickType = 'units'
-            _gid = `${_group.groupId}_${_section.position}`
-          } else if (_secNR) {
-            _nRequired = _secNR.minAmount ?? _secNR.amount ?? 1; _pickType = 'range'
-            _gid = `${_group.groupId}_${_section.position}`
-          } else if (_secNA) {
-            _nRequired = _secNA.amount ?? 1; _pickType = 'areas'
-            _gid = `${_group.groupId}_${_section.position}`
-          } else {
-            _gid = `${_group.groupId}_${_section.position}`
-          }
-          const _ctx = { sectionLabel: _sectionLabel, groupTitle: _groupTitle, nRequired: _nRequired, pickType: _pickType, pickMin: null, pickMax: null, groupId: _gid, sectionPosition: _section.position, groupPosition: _group.position }
-          // FIX 1 (mirror): Or-groups always overwrite in supplementalCellMap too
-          if (_instrIsOr || !supplementalCellMap.has(String(_group.groupId))) {
-            supplementalCellMap.set(String(_group.groupId), _ctx)
-          }
-          for (const _row of _section.rows || []) {
-            for (const _cell of _row.cells || []) {
-              if (_cell.id) {
-                supplementalCellMap.set(_cell.id, _ctx)
-                supplementalCellMap.set(String(_cell.id), _ctx)
-              }
-            }
-          }
-        }
-      }
-    } catch(e) {}
 
     for (const item of arts) {
       const art = item.articulation || item
       const templateCellId = item.templateCellId
 
-      // FIX 2: Extract rawGroupId from every possible field ASSIST uses
-      const rawGroupId =
-        item.requirementGroupId ??
-        item.requirementGroup?.id ??
-        item.groupId ??
-        item.group?.id ??
-        item.group?.groupId ??
-        null
-
-      if (!cellMap.get(templateCellId) && !cellMap.get(String(templateCellId))) {
-  console.warn('MISS', { templateCellId, rawGroupId, keys: Object.keys(item) })
-}
-
       const cellContext =
         cellMap.get(templateCellId) ||
         cellMap.get(String(templateCellId)) ||
-        supplementalCellMap.get(templateCellId) ||
-        supplementalCellMap.get(String(templateCellId)) ||
-        (rawGroupId != null ? cellMap._groupFallback?.get(String(rawGroupId)) : null) ||
-        (rawGroupId != null ? supplementalCellMap.get(String(rawGroupId)) : null) ||
-        // FIX 3: Scan fallback — templateCellId exists but wasn't indexed.
-        // Search cellMap for any entry whose groupId references the same ASSIST group.
-        (() => {
-          if (!templateCellId) return null
-          const tid = String(templateCellId)
-          // Search primary cellMap
-          for (const [key, ctx] of cellMap) {
-            if (key === '_groupFallback' || !ctx || typeof ctx !== 'object') continue
-            if (ctx.groupId === `or_group_${tid}` || ctx.groupId?.startsWith(`${tid}_`)) return ctx
-          }
-          // Search supplementalCellMap
-          for (const [, ctx] of supplementalCellMap) {
-            if (!ctx || typeof ctx !== 'object') continue
-            if (ctx.groupId === `or_group_${tid}` || ctx.groupId?.startsWith(`${tid}_`)) return ctx
-          }
-          return null
-        })() ||
         {
           sectionLabel: '',
           groupTitle: 'MAJOR REQUIREMENTS',
@@ -307,7 +238,12 @@ function parseAllForProgram(agreement, programLabel) {
 
       const gid = cellContext.groupId
       if (!groupRegistry[gid]) {
-        groupRegistry[gid] = { nRequired: cellContext.nRequired, pickType: cellContext.pickType, articulated: [], unarticulated: [] }
+        groupRegistry[gid] = {
+          nRequired: cellContext.nRequired,
+          pickType: cellContext.pickType,
+          articulated: [],
+          unarticulated: [],
+        }
       }
 
       let receivingCourses = []
@@ -372,62 +308,21 @@ function parseAllForProgram(agreement, programLabel) {
       }
     }
 
+    // Walk templateAssets for cells not seen in articulations array
     const seenCellIds = new Set(arts.map(item => item.templateCellId))
     const assets = typeof agreement.templateAssets === 'string'
       ? JSON.parse(agreement.templateAssets) : agreement.templateAssets || []
+
     for (const group of assets.filter(a => a.type === 'RequirementGroup')) {
-      const groupTitle = (() => {
-        const reqTitles = assets.filter(a => a.type === 'RequirementTitle').sort((a,b) => a.position - b.position)
-        return reqTitles.filter(t => t.position < group.position).sort((a,b) => b.position - a.position)[0]?.content || 'MAJOR REQUIREMENTS'
-      })()
-      const sections = group.sections || []
-      const sectionHeader = sections.find(s => s.type === 'SectionHeader')
-      const sectionLabel = sectionHeader?.content || ''
-      const instrIsOr = group.instruction?.conjunction === 'Or'
-      for (const section of sections.filter(s => s.type === 'Section')) {
-        const secAdvs = section.advisements || []
-        const secNFollowing = secAdvs.find(a => a.type === 'NFollowing')
-        const secNFromUnits = secAdvs.find(a => a.type === 'NFromUnits')
-        const secNToN = secAdvs.find(a => a.type === 'NToNFollowing')
-        const secNInAreas = secAdvs.find(a => a.type === 'NInNDifferentAreas')
-        const groupNAdv = (group.advisements || []).find(a => a.type === 'NFollowing')
-
-        let nRequired = null
-        let pickType = null
-        let sectionGroupId
-
-        if (instrIsOr) {
-          nRequired = groupNAdv?.amount ?? 1
-          pickType = 'count'
-          sectionGroupId = `or_group_${group.groupId}`
-        } else if (secNFollowing) {
-          nRequired = secNFollowing.amount ?? 1
-          pickType = 'count'
-          sectionGroupId = `${group.groupId}_${section.position}`
-        } else if (secNFromUnits) {
-          nRequired = secNFromUnits.amount ?? 1
-          pickType = 'units'
-          sectionGroupId = `${group.groupId}_${section.position}`
-        } else if (secNToN) {
-          nRequired = secNToN.minAmount ?? secNToN.amount ?? 1
-          pickType = 'range'
-          sectionGroupId = `${group.groupId}_${section.position}`
-        } else if (secNInAreas) {
-          nRequired = secNInAreas.amount ?? 1
-          pickType = 'areas'
-          sectionGroupId = `${group.groupId}_${section.position}`
-        } else {
-          nRequired = null
-          pickType = null
-          sectionGroupId = `${group.groupId}_${section.position}`
-        }
-
+      for (const section of (group.sections || []).filter(s => s.type === 'Section')) {
         for (const row of section.rows || []) {
           for (const cell of row.cells || []) {
             if (!cell.id || seenCellIds.has(cell.id)) continue
+            const ctx = cellMap.get(cell.id) || cellMap.get(String(cell.id))
+            if (!ctx) continue
             const course = cell.course || {}
-            const isPickN = nRequired !== null
-            const siblingArticulated = groupRegistry[sectionGroupId]?.articulated?.length > 0
+            const isPickN = ctx.nRequired !== null
+            const siblingArticulated = groupRegistry[ctx.groupId]?.articulated?.length > 0
             noArticulationResults.push({
               program: programLabel,
               uniRequirement: {
@@ -435,19 +330,13 @@ function parseAllForProgram(agreement, programLabel) {
                 number: (course.courseNumber || course.number || '').trim(),
                 title: course.courseTitle || course.title || '',
                 units: course.maxUnits || course.minUnits || null,
-                allCourseLabels: [`${(course.prefix||'').trim()} ${(course.courseNumber||course.number||'').trim()}`],
+                allCourseLabels: [`${(course.prefix || '').trim()} ${(course.courseNumber || course.number || '').trim()}`],
               },
               noArticulation: true,
               reason: null,
               partOfPickGroup: isPickN,
               coveredByAnotherOption: isPickN && siblingArticulated,
-              sectionLabel,
-              groupTitle,
-              nRequired,
-              pickType,
-              groupId: sectionGroupId,
-              sectionPosition: section.position,
-              groupPosition: group.position,
+              ...ctx,
             })
           }
         }
@@ -518,7 +407,6 @@ export default function Tab2() {
   const [overlapData, setOverlapData] = useState(null)
   const [expandedRow, setExpandedRow] = useState(null)
   const [completedCourses, setCompletedCourses] = useState(new Set())
-  const [includeRecommended, setIncludeRecommended] = useState(false)
   const [isWide, setIsWide] = useState(window.innerWidth > 768)
   const [showBanner, setShowBanner] = useState(() => localStorage.getItem('tab2_banner_dismissed') !== '1')
   const saveTimeoutRef = useRef(null)
@@ -622,11 +510,7 @@ export default function Tab2() {
       const programArts = await Promise.all(programs.map(async prog => {
         setLoadingMsg(`Fetching ${prog.uniName} — ${prog.majorLabel}...`)
         const agreement = await getAgreement(prog.majorKey)
-const assets = typeof agreement.templateAssets === 'string'
-  ? JSON.parse(agreement.templateAssets)
-  : agreement.templateAssets || []
-console.log(JSON.stringify(assets.slice(0, 5), null, 2))
-const parsed = parseAllForProgram(agreement, `${prog.uniName} → ${prog.majorLabel}`)
+        const parsed = parseAllForProgram(agreement, `${prog.uniName} → ${prog.majorLabel}`)
         return { prog, arts: parsed.articulated, noArts: parsed.noArticulation }
       }))
 
@@ -637,29 +521,16 @@ const parsed = parseAllForProgram(agreement, `${prog.uniName} → ${prog.majorLa
       for (const { prog, arts, noArts } of programArts) {
         for (const art of arts) {
           const cheapestOpt = art.options.reduce((a, b) => a.courses.length <= b.courses.length ? a : b)
-          const isOrGroup = art.groupId?.startsWith('or_group_')
           const isPickGroup = art.nRequired !== null
           const ccCourseKey = cheapestOpt.courses.map(c => `${c.prefix} ${c.number}`).sort().join('+')
-          const ccKey = isOrGroup
-            ? `${art.groupId}__sec${art.sectionPosition}`
-            : isPickGroup
-              ? `${art.groupId}__${ccCourseKey}`
-              : ccCourseKey
+          const ccKey = isPickGroup
+            ? `${art.groupId}__${ccCourseKey}`
+            : ccCourseKey
+
           if (!reqMap[ccKey]) {
-            reqMap[ccKey] = {
-              ccKey,
-              primaryCourses: [...cheapestOpt.courses],
-              programEntries: [],
-              isOrGroupSection: isOrGroup,
-            }
+            reqMap[ccKey] = { ccKey, primaryCourses: [...cheapestOpt.courses], programEntries: [] }
           }
-          if (isOrGroup) {
-            cheapestOpt.courses.forEach(c => {
-              if (!reqMap[ccKey].primaryCourses.some(e => e.prefix === c.prefix && e.number === c.number)) {
-                reqMap[ccKey].primaryCourses.push(c)
-              }
-            })
-          }
+
           const entryKey = `${prog.uniName}|${art.uniRequirement.prefix}|${art.uniRequirement.number}`
           if (!reqMap[ccKey].programEntries.some(e => e._entryKey === entryKey)) {
             reqMap[ccKey].programEntries.push({
@@ -674,6 +545,8 @@ const parsed = parseAllForProgram(agreement, `${prog.uniName} → ${prog.majorLa
               pickMin: art.pickMin,
               pickMax: art.pickMax,
               groupId: art.groupId,
+              groupPosition: art.groupPosition,
+              sectionPosition: art.sectionPosition,
             })
           }
         }
@@ -692,6 +565,8 @@ const parsed = parseAllForProgram(agreement, `${prog.uniName} → ${prog.majorLa
               pickType: na.pickType ?? null,
               partOfPickGroup: na.partOfPickGroup || false,
               coveredByAnotherOption: na.coveredByAnotherOption || false,
+              groupPosition: na.groupPosition ?? 999,
+              sectionPosition: na.sectionPosition ?? 999,
             }
           }
         }
@@ -717,6 +592,7 @@ const parsed = parseAllForProgram(agreement, `${prog.uniName} → ${prog.majorLa
           _sectionPosition: canonicalEntry?.sectionPosition ?? 999,
         }
       })
+
       rows.sort((a, b) => {
         if (a._groupPosition !== b._groupPosition) return a._groupPosition - b._groupPosition
         if (a._sectionPosition !== b._sectionPosition) return a._sectionPosition - b._sectionPosition
@@ -742,42 +618,30 @@ const parsed = parseAllForProgram(agreement, `${prog.uniName} → ${prog.majorLa
     for (const label of overlapData.programLabels) {
       programMap[label] = { label, total: 0, completed: 0 }
     }
-
     const programGroupMap = {}
-
     for (const row of overlapData.rows) {
       const isDone = completedCourses.has(row.ccKey)
       for (const pe of row.programEntries) {
         if (!programMap[pe.program]) continue
         const pgKey = `${pe.program}|${pe.groupId}`
         if (!programGroupMap[pgKey]) {
-          programGroupMap[pgKey] = {
-            program: pe.program,
-            nRequired: pe.nRequired,
-            pickType: pe.pickType,
-            totalCourses: 0,
-            completedCourses: 0,
-          }
+          programGroupMap[pgKey] = { program: pe.program, nRequired: pe.nRequired, pickType: pe.pickType, totalCourses: 0, completedCourses: 0 }
         }
         programGroupMap[pgKey].totalCourses += 1
         if (isDone) programGroupMap[pgKey].completedCourses += 1
       }
     }
-
     for (const pg of Object.values(programGroupMap)) {
       if (!programMap[pg.program]) continue
       if (pg.nRequired !== null) {
         programMap[pg.program].total += 1
-        const isDone = pg.pickType === 'count'
-          ? pg.completedCourses >= pg.nRequired
-          : pg.completedCourses >= 1
+        const isDone = pg.pickType === 'count' ? pg.completedCourses >= pg.nRequired : pg.completedCourses >= 1
         if (isDone) programMap[pg.program].completed += 1
       } else {
         programMap[pg.program].total += pg.totalCourses
         programMap[pg.program].completed += pg.completedCourses
       }
     }
-
     return Object.values(programMap).sort((a, b) => {
       const aPct = a.total === 0 ? 0 : a.completed / a.total
       const bPct = b.total === 0 ? 0 : b.completed / b.total
@@ -810,11 +674,7 @@ const parsed = parseAllForProgram(agreement, `${prog.uniName} → ${prog.majorLa
               <select value={ccId} onChange={e => {
                 const newCcId = e.target.value
                 const newCcName = e.target.selectedOptions[0]?.text || ''
-                setCcId(newCcId)
-                setCcName(newCcName)
-                setPrograms([])
-                setSelUniId('')
-                setMajors([])
+                setCcId(newCcId); setCcName(newCcName); setPrograms([]); setSelUniId(''); setMajors([])
                 savePlan(newCcId, newCcName, [])
               }}>
                 <option value="">Select your CC...</option>
@@ -840,11 +700,7 @@ const parsed = parseAllForProgram(agreement, `${prog.uniName} → ${prog.majorLa
               <div className="field-row">
                 <div className="field">
                   <label>University</label>
-                  <select value={selUniId} onChange={e => {
-                    setSelUniId(e.target.value)
-                    setSelUniName(e.target.selectedOptions[0]?.text || '')
-                    setSelMajor(null)
-                  }}>
+                  <select value={selUniId} onChange={e => { setSelUniId(e.target.value); setSelUniName(e.target.selectedOptions[0]?.text || ''); setSelMajor(null) }}>
                     <option value="">Select university...</option>
                     {KNOWN_UNIVERSITIES.map(g => (
                       <optgroup key={g.group} label={g.group}>
@@ -857,16 +713,14 @@ const parsed = parseAllForProgram(agreement, `${prog.uniName} → ${prog.majorLa
                   <label>Major / Department</label>
                   {majorsLoading
                     ? <div className="status" style={{ padding: '9px 0' }}><div className="spinner" />Loading...</div>
-                    : <select value={selMajor?.key || ''} onChange={e => setSelMajor(majors.find(m => m.key === e.target.value) || null)}
-                        disabled={!selUniId || majors.length === 0}>
+                    : <select value={selMajor?.key || ''} onChange={e => setSelMajor(majors.find(m => m.key === e.target.value) || null)} disabled={!selUniId || majors.length === 0}>
                         <option value="">{!selUniId ? 'Select university first' : majors.length === 0 ? 'No agreement found' : 'Select major or department...'}</option>
                         {majors.map(m => <option key={m.key} value={m.key}>{m.label}</option>)}
                       </select>
                   }
                 </div>
               </div>
-              <button className="btn-secondary" style={{ width: '100%', marginTop: 4 }}
-                onClick={addProgram} disabled={!selUniId || !selMajor}>
+              <button className="btn-secondary" style={{ width: '100%', marginTop: 4 }} onClick={addProgram} disabled={!selUniId || !selMajor}>
                 + Add program
               </button>
             </div>
@@ -898,46 +752,31 @@ const parsed = parseAllForProgram(agreement, `${prog.uniName} → ${prog.majorLa
           </div>
 
           {showBanner && (
-            <div style={{
-              background: '#f0edff', border: '1px solid #d4ccff', borderRadius: 10,
-              padding: '12px 14px', marginBottom: 20,
-              display: 'flex', gap: 12, alignItems: 'flex-start',
-            }}>
+            <div style={{ background: '#f0edff', border: '1px solid #d4ccff', borderRadius: 10, padding: '12px 14px', marginBottom: 20, display: 'flex', gap: 12, alignItems: 'flex-start' }}>
               <div style={{ flex: 1, fontSize: 12, color: '#444' }}>
                 <strong style={{ display: 'block', marginBottom: 8, fontSize: 13, color: '#1a1a1a' }}>How to read this</strong>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                   <div><span style={{ color: '#6C5CE7', fontWeight: 700 }}>●</span> purple = that program requires this course &nbsp;·&nbsp; <span style={{ color: '#ccc', fontWeight: 700 }}>●</span> grey = not required</div>
                   <div><span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 2, background: '#ffe082', verticalAlign: 'middle', marginRight: 4 }}/>yellow-bordered card = choose from the group — you don't need all of them</div>
-                  <div>🔴 red row = no equivalent at your CC — if inside a yellow card, choose a different option from the group; if standalone, you may need to take it after transferring</div>
-                  <div>▼ tap any row to see which university requirement it satisfies and additional info</div>
+                  <div>🔴 red row = no equivalent at your CC — if inside a yellow card, choose a different option; if standalone, you may need to take it after transferring</div>
+                  <div>▼ tap any row to see which university requirement it satisfies</div>
                   <div>☑ check it off once you've taken it — progress saves automatically</div>
-                  <div>📊 the progress bar tracks all courses including recommended ones</div>
                 </div>
               </div>
-              <button
-                onClick={() => { setShowBanner(false); localStorage.setItem('tab2_banner_dismissed', '1') }}
-                style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#aaa', fontSize: 20, lineHeight: 1, padding: 0, flexShrink: 0, marginTop: 2 }}
-                aria-label="Dismiss"
-              >×</button>
+              <button onClick={() => { setShowBanner(false); localStorage.setItem('tab2_banner_dismissed', '1') }}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#aaa', fontSize: 20, lineHeight: 1, padding: 0, flexShrink: 0, marginTop: 2 }} aria-label="Dismiss">×</button>
             </div>
           )}
 
-          <div style={{
-            display: isWide ? 'grid' : 'block',
-            gridTemplateColumns: isWide ? '1fr 300px' : undefined,
-            gap: isWide ? 24 : 0,
-            alignItems: 'start',
-          }}>
-
-            {/* LEFT: grouped course list */}
+          <div style={{ display: isWide ? 'grid' : 'block', gridTemplateColumns: isWide ? '1fr 300px' : undefined, gap: isWide ? 24 : 0, alignItems: 'start' }}>
             <div>
               {(() => {
                 const groups = []
                 const groupIdToGroup = {}
-
                 const noArtByGroupId = {}
                 const noArtByGroupIdFlat = {}
                 const inlineRequiredNoArt = []
+
                 for (const na of (overlapData.noArticulation || [])) {
                   if (na.partOfPickGroup) {
                     if (!noArtByGroupId[na.groupId]) noArtByGroupId[na.groupId] = {}
@@ -946,16 +785,12 @@ const parsed = parseAllForProgram(agreement, `${prog.uniName} → ${prog.majorLa
                       noArtByGroupId[na.groupId][secKey] = { courses: [], reason: na.reason, sectionPosition: na.sectionPosition }
                     }
                     const slot = noArtByGroupId[na.groupId][secKey]
-                    const alreadyAdded = slot.courses.some(
-                      x => x.prefix === na.uniReq.prefix && x.number === na.uniReq.number
-                    )
-                    if (!alreadyAdded) slot.courses.push({ prefix: na.uniReq.prefix, number: na.uniReq.number, title: na.uniReq.title, units: na.uniReq.units })
+                    if (!slot.courses.some(x => x.prefix === na.uniReq.prefix && x.number === na.uniReq.number))
+                      slot.courses.push({ prefix: na.uniReq.prefix, number: na.uniReq.number, title: na.uniReq.title, units: na.uniReq.units })
                     if (na.reason && !slot.reason) slot.reason = na.reason
                     if (!noArtByGroupIdFlat[na.groupId]) noArtByGroupIdFlat[na.groupId] = []
-                    const alreadyFlat = noArtByGroupIdFlat[na.groupId].some(
-                      x => x.uniReq.prefix === na.uniReq.prefix && x.uniReq.number === na.uniReq.number
-                    )
-                    if (!alreadyFlat) noArtByGroupIdFlat[na.groupId].push(na)
+                    if (!noArtByGroupIdFlat[na.groupId].some(x => x.uniReq.prefix === na.uniReq.prefix && x.uniReq.number === na.uniReq.number))
+                      noArtByGroupIdFlat[na.groupId].push(na)
                   } else if (!na.coveredByAnotherOption) {
                     inlineRequiredNoArt.push(na)
                   }
@@ -963,19 +798,8 @@ const parsed = parseAllForProgram(agreement, `${prog.uniName} → ${prog.majorLa
 
                 for (const row of overlapData.rows) {
                   const groupId = row.groupId ?? `singleton_${row.ccKey}`
-                  const nRequired = row.nRequired ?? null
-
                   if (!groupIdToGroup[groupId]) {
-                    const g = {
-                      groupId,
-                      groupTitle: row.groupTitle || 'MAJOR REQUIREMENTS',
-                      sectionLabel: row.sectionLabel || '',
-                      nRequired,
-                      pickType: row.pickType ?? null,
-                      pickMin: row.pickMin ?? null,
-                      pickMax: row.pickMax ?? null,
-                      rows: [],
-                    }
+                    const g = { groupId, groupTitle: row.groupTitle || 'MAJOR REQUIREMENTS', sectionLabel: row.sectionLabel || '', nRequired: row.nRequired ?? null, pickType: row.pickType ?? null, pickMin: row.pickMin ?? null, pickMax: row.pickMax ?? null, rows: [] }
                     groupIdToGroup[groupId] = g
                     groups.push(g)
                   }
@@ -985,19 +809,7 @@ const parsed = parseAllForProgram(agreement, `${prog.uniName} → ${prog.majorLa
                 for (const na of inlineRequiredNoArt) {
                   const groupId = na.groupId ?? `noart_${na.uniReq.prefix}_${na.uniReq.number}`
                   if (!groupIdToGroup[groupId]) {
-                    const g = {
-                      groupId,
-                      groupTitle: na.groupTitle || 'MAJOR REQUIREMENTS',
-                      sectionLabel: na.sectionLabel || '',
-                      nRequired: null,
-                      pickType: null,
-                      pickMin: null,
-                      pickMax: null,
-                      rows: [],
-                      noArtRows: [],
-                      _groupPosition: na.groupPosition ?? 999,
-                      _sectionPosition: na.sectionPosition ?? 999,
-                    }
+                    const g = { groupId, groupTitle: na.groupTitle || 'MAJOR REQUIREMENTS', sectionLabel: na.sectionLabel || '', nRequired: null, pickType: null, pickMin: null, pickMax: null, rows: [], noArtRows: [], _groupPosition: na.groupPosition ?? 999, _sectionPosition: na.sectionPosition ?? 999 }
                     groupIdToGroup[groupId] = g
                     groups.push(g)
                   }
@@ -1005,16 +817,15 @@ const parsed = parseAllForProgram(agreement, `${prog.uniName} → ${prog.majorLa
                   groupIdToGroup[groupId].noArtRows.push(na)
                 }
 
-                const isRecommendedGroup = (g) => isRecommendedSection(g.groupTitle) || isRecommendedSection(g.sectionLabel)
-                const sectionTier = (g) => {
+                const isRecommendedGroup = g => isRecommendedSection(g.groupTitle) || isRecommendedSection(g.sectionLabel)
+                const sectionTier = g => {
                   if (isRecommendedGroup(g)) return 2
                   const label = (g.sectionLabel || g.groupTitle || '').toLowerCase()
                   if (label.includes('required')) return 0
                   return 1
                 }
                 groups.sort((a, b) => {
-                  const aTier = sectionTier(a)
-                  const bTier = sectionTier(b)
+                  const aTier = sectionTier(a), bTier = sectionTier(b)
                   if (aTier !== bTier) return aTier - bTier
                   const aPos = a.rows[0]?._groupPosition ?? a._groupPosition ?? 999
                   const bPos = b.rows[0]?._groupPosition ?? b._groupPosition ?? 999
@@ -1026,73 +837,42 @@ const parsed = parseAllForProgram(agreement, `${prog.uniName} → ${prog.majorLa
 
                 for (const group of groups) {
                   const isPickN = group.nRequired !== null
-                  const totalAvailableAtCC = group.rows.length
                   const noArtSiblingSlots = Object.keys(noArtByGroupId[group.groupId] || {}).length
                   const noArtSiblingsFlat = (noArtByGroupIdFlat[group.groupId] || []).length
-                  const isEffectivelyRequired = isPickN && totalAvailableAtCC <= 1 && noArtSiblingSlots === 0 && noArtSiblingsFlat === 0
-
+                  const isEffectivelyRequired = isPickN && group.rows.length <= 1 && noArtSiblingSlots === 0 && noArtSiblingsFlat === 0
                   const displayLabel = group.sectionLabel || group.groupTitle || 'REQUIREMENTS'
 
                   if (displayLabel !== lastDisplayLabel) {
                     lastDisplayLabel = displayLabel
                     rendered.push(
-                      <div key={`sec-${displayLabel}-${group.groupId}`} style={{
-                        marginTop: rendered.length === 0 ? 0 : 32,
-                        marginBottom: 10,
-                        paddingBottom: 8,
-                        borderBottom: '2px solid #e8e8e4',
-                      }}>
-                        <div style={{ fontSize: 11, fontWeight: 700, color: '#aaa', textTransform: 'uppercase', letterSpacing: '0.1em' }}>
-                          {displayLabel}
-                        </div>
+                      <div key={`sec-${displayLabel}-${group.groupId}`} style={{ marginTop: rendered.length === 0 ? 0 : 32, marginBottom: 10, paddingBottom: 8, borderBottom: '2px solid #e8e8e4' }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: '#aaa', textTransform: 'uppercase', letterSpacing: '0.1em' }}>{displayLabel}</div>
                       </div>
                     )
                   }
 
                   if (isPickN && !isEffectivelyRequired) {
                     rendered.push(
-                      <div key={`group-${group.groupId}`} style={{
-                        border: '1.5px solid #ffe082',
-                        borderRadius: 10,
-                        marginBottom: 12,
-                        overflow: 'hidden',
-                        background: '#fffdf5',
-                      }}>
-                        <div style={{
-                          padding: '9px 14px',
-                          borderBottom: '1px solid #ffe082',
-                          background: '#fff8e1',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 8,
-                        }}>
+                      <div key={`group-${group.groupId}`} style={{ border: '1.5px solid #ffe082', borderRadius: 10, marginBottom: 12, overflow: 'hidden', background: '#fffdf5' }}>
+                        <div style={{ padding: '9px 14px', borderBottom: '1px solid #ffe082', background: '#fff8e1', display: 'flex', alignItems: 'center', gap: 8 }}>
                           <span style={{ fontSize: 14 }}>↓</span>
                           <div>
-                            <span style={{ fontSize: 12, fontWeight: 700, color: '#b45309' }}>
-                              {pickGroupLabel(group)}
-                            </span>
-                            <span style={{ fontSize: 11, color: '#999', marginLeft: 8 }}>
-                              — you don't need all of them
-                            </span>
+                            <span style={{ fontSize: 12, fontWeight: 700, color: '#b45309' }}>{pickGroupLabel(group)}</span>
+                            <span style={{ fontSize: 11, color: '#999', marginLeft: 8 }}>— you don't need all of them</span>
                           </div>
                         </div>
 
                         {[...group.rows, ...Object.values(noArtByGroupId[group.groupId] || {}).map(slot => ({ _isNoArt: true, slot }))].map((rowOrNa, rowIdx) => {
                           if (rowOrNa._isNoArt) {
-                            const slot = rowOrNa.slot
+                            const { slot } = rowOrNa
                             const label = slot.courses.map(c => `${c.prefix} ${c.number}`).join(' + ')
                             const subtitle = slot.courses.map(c => c.title).filter(Boolean).join(' + ')
                             const units = slot.courses.reduce((sum, c) => sum + (c.units || 0), 0)
                             return (
-                              <div key={`noart-${label}`} style={{
-                                borderTop: '1px dashed #fecaca',
-                                background: '#fff5f5',
-                              }}>
+                              <div key={`noart-${label}`} style={{ borderTop: '1px dashed #fecaca', background: '#fff5f5' }}>
                                 <div style={{ textAlign: 'center', fontSize: 11, fontWeight: 700, color: '#fca5a5', padding: '4px 0', letterSpacing: '0.05em' }}>OR</div>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px' }}>
-                                  <div style={{ width: 15, height: 15, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                    <span style={{ color: '#fca5a5', fontSize: 14 }}>✕</span>
-                                  </div>
+                                  <span style={{ color: '#fca5a5', fontSize: 14, flexShrink: 0 }}>✕</span>
                                   <div style={{ flex: 1, minWidth: 0 }}>
                                     <div style={{ fontWeight: 600, fontSize: 13, color: '#991b1b', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                                       {label}
@@ -1100,9 +880,7 @@ const parsed = parseAllForProgram(agreement, `${prog.uniName} → ${prog.majorLa
                                     </div>
                                     {subtitle && <div style={{ fontSize: 11, color: '#f87171', marginTop: 1 }}>{subtitle}{units ? ` · ${units} units` : ''}</div>}
                                     {slot.reason && <div style={{ fontSize: 11, color: '#dc2626', marginTop: 2 }}>{slot.reason}</div>}
-                                    <div style={{ fontSize: 11, color: '#b91c1c', marginTop: 4, fontStyle: 'italic' }}>
-                                      Choose a different option from this group instead
-                                    </div>
+                                    <div style={{ fontSize: 11, color: '#b91c1c', marginTop: 4, fontStyle: 'italic' }}>Choose a different option from this group instead</div>
                                   </div>
                                 </div>
                               </div>
@@ -1119,25 +897,11 @@ const parsed = parseAllForProgram(agreement, `${prog.uniName} → ${prog.majorLa
                           const coverageMost = row.coverage > 1 && !coverageAll
 
                           return (
-                            <div key={row.ccKey} style={{
-                              borderTop: rowIdx > 0 ? '1px dashed #f0e6c8' : 'none',
-                              background: isDone ? '#f7f4ec' : '#fffdf5',
-                              opacity: isDone ? 0.6 : 1,
-                            }}>
-                              {rowIdx > 0 && (
-                                <div style={{ textAlign: 'center', fontSize: 11, fontWeight: 700, color: '#ccc', padding: '4px 0', letterSpacing: '0.05em' }}>OR</div>
-                              )}
-                              <div
-                                onClick={() => setExpandedRow(isExpanded ? null : row.ccKey)}
-                                style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', cursor: 'pointer' }}
-                              >
+                            <div key={row.ccKey} style={{ borderTop: rowIdx > 0 ? '1px dashed #f0e6c8' : 'none', background: isDone ? '#f7f4ec' : '#fffdf5', opacity: isDone ? 0.6 : 1 }}>
+                              {rowIdx > 0 && <div style={{ textAlign: 'center', fontSize: 11, fontWeight: 700, color: '#ccc', padding: '4px 0', letterSpacing: '0.05em' }}>OR</div>}
+                              <div onClick={() => setExpandedRow(isExpanded ? null : row.ccKey)} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', cursor: 'pointer' }}>
                                 <div onClick={e => e.stopPropagation()}>
-                                  <input
-                                    type="checkbox"
-                                    checked={isDone}
-                                    onChange={() => toggleCourse(row.ccKey)}
-                                    style={{ width: 15, height: 15, cursor: 'pointer', accentColor: '#b45309' }}
-                                  />
+                                  <input type="checkbox" checked={isDone} onChange={() => toggleCourse(row.ccKey)} style={{ width: 15, height: 15, cursor: 'pointer', accentColor: '#b45309' }} />
                                 </div>
                                 <div style={{ flex: 1, minWidth: 0 }}>
                                   <div style={{ fontWeight: 600, fontSize: 13, textDecoration: isDone ? 'line-through' : 'none', color: isDone ? '#aaa' : '#1a1a1a', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
@@ -1152,9 +916,7 @@ const parsed = parseAllForProgram(agreement, `${prog.uniName} → ${prog.majorLa
                                     const has = row.programEntries.some(pe => pe.program === progLabel)
                                     return (
                                       <div key={pi} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-                                        {overlapData.programLabels.length > 1 && (
-                                          <div style={{ fontSize: 9, color: '#bbb', textAlign: 'center', maxWidth: 48, lineHeight: 1.2 }}>{shortLabel(progLabel).split('\n')[0]}</div>
-                                        )}
+                                        {overlapData.programLabels.length > 1 && <div style={{ fontSize: 9, color: '#bbb', textAlign: 'center', maxWidth: 48, lineHeight: 1.2 }}>{shortLabel(progLabel).split('\n')[0]}</div>}
                                         <span style={{ color: has ? '#6C5CE7' : '#e0e0e0', fontSize: 16, lineHeight: 1 }}>●</span>
                                       </div>
                                     )
@@ -1162,7 +924,6 @@ const parsed = parseAllForProgram(agreement, `${prog.uniName} → ${prog.majorLa
                                 </div>
                                 <div style={{ fontSize: 11, color: '#ccc' }}>{isExpanded ? '▲' : '▼'}</div>
                               </div>
-
                               {isExpanded && (
                                 <div style={{ borderTop: '1px solid #f0e6c8', background: '#faf5e8', padding: '12px 14px 14px 38px' }}>
                                   {row.programEntries.map((pe, i) => (
@@ -1170,19 +931,13 @@ const parsed = parseAllForProgram(agreement, `${prog.uniName} → ${prog.majorLa
                                       <div style={{ fontSize: 12, fontWeight: 600, color: '#555', marginBottom: 4 }}>{pe.program}</div>
                                       {(() => {
                                         const isRec = isRecommendedSection(pe.groupTitle) || isRecommendedSection(pe.sectionLabel)
-                                        return (
-                                          <span style={{ fontSize: 11, color: isRec ? '#b45309' : '#166534', marginBottom: 4, display: 'block' }}>
-                                            {isRec ? '★ Recommended by this program' : '✓ Required by this program'}
-                                          </span>
-                                        )
+                                        return <span style={{ fontSize: 11, color: isRec ? '#b45309' : '#166534', marginBottom: 4, display: 'block' }}>{isRec ? '★ Recommended by this program' : '✓ Required by this program'}</span>
                                       })()}
                                       <div style={{ fontSize: 12, color: '#888', marginBottom: 8 }}>
                                         Satisfies: <span style={{ fontWeight: 500, color: '#1a1a1a' }}>{pe.uniReq.prefix} {pe.uniReq.number} — {pe.uniReq.title}</span>
                                         {pe.uniReq.units ? ` (${pe.uniReq.units} units)` : ''}
                                       </div>
-                                      {pe.uniReq.allCourseLabels?.length > 1 && (
-                                        <div style={{ fontSize: 11, color: '#888', marginBottom: 8 }}>Also counts toward: {pe.uniReq.allCourseLabels.slice(1).join(', ')}</div>
-                                      )}
+                                      {pe.uniReq.allCourseLabels?.length > 1 && <div style={{ fontSize: 11, color: '#888', marginBottom: 8 }}>Also counts toward: {pe.uniReq.allCourseLabels.slice(1).join(', ')}</div>}
                                       {pe.options.map((opt, j) => (
                                         <div key={j}>
                                           {j > 0 && <div style={{ fontSize: 11, color: '#bbb', padding: '6px 0', borderTop: '1px dashed #eee', marginTop: 6, marginBottom: 2 }}>or instead:</div>}
@@ -1210,10 +965,9 @@ const parsed = parseAllForProgram(agreement, `${prog.uniName} → ${prog.majorLa
                       </div>
                     )
                   } else {
-                    const effectiveNoArtRows = isEffectivelyRequired
-                      ? (noArtByGroupIdFlat[group.groupId] || [])
-                      : (group.noArtRows || [])
-                    group.rows.forEach((row) => {
+                    const effectiveNoArtRows = isEffectivelyRequired ? (noArtByGroupIdFlat[group.groupId] || []) : (group.noArtRows || [])
+
+                    group.rows.forEach(row => {
                       const isDone = completedCourses.has(row.ccKey)
                       const isExpanded = expandedRow === row.ccKey
                       const label = row.primaryCourses.map(c => `${c.prefix} ${c.number}`).join(' + ')
@@ -1223,62 +977,37 @@ const parsed = parseAllForProgram(agreement, `${prog.uniName} → ${prog.majorLa
                       const coverageMost = row.coverage > 1 && !coverageAll
 
                       rendered.push(
-                        <div key={row.ccKey} style={{
-                          border: '1px solid #efefed',
-                          borderRadius: 8,
-                          marginBottom: 6,
-                          background: isDone ? '#fafafa' : '#fff',
-                          opacity: isDone ? 0.55 : 1,
-                          overflow: 'hidden',
-                        }}>
-                          <div
-                            onClick={() => setExpandedRow(isExpanded ? null : row.ccKey)}
-                            style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', cursor: 'pointer' }}
-                          >
+                        <div key={row.ccKey} style={{ border: '1px solid #efefed', borderRadius: 8, marginBottom: 6, background: isDone ? '#fafafa' : '#fff', opacity: isDone ? 0.55 : 1, overflow: 'hidden' }}>
+                          <div onClick={() => setExpandedRow(isExpanded ? null : row.ccKey)} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', cursor: 'pointer' }}>
                             <div onClick={e => e.stopPropagation()}>
-                              <input
-                                type="checkbox"
-                                checked={isDone}
-                                onChange={() => toggleCourse(row.ccKey)}
-                                style={{ width: 15, height: 15, cursor: 'pointer', accentColor: '#1a1a1a' }}
-                              />
+                              <input type="checkbox" checked={isDone} onChange={() => toggleCourse(row.ccKey)} style={{ width: 15, height: 15, cursor: 'pointer', accentColor: '#1a1a1a' }} />
                             </div>
-
                             <div style={{ flex: 1, minWidth: 0 }}>
                               <div style={{ fontWeight: 600, fontSize: 13, textDecoration: isDone ? 'line-through' : 'none', color: isDone ? '#aaa' : '#1a1a1a', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                                 {label}
                                 {coverageAll && <span style={{ fontSize: 10, background: '#ede9ff', color: '#6C5CE7', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>ALL PROGRAMS</span>}
                                 {coverageMost && <span style={{ fontSize: 10, background: '#fff3e0', color: '#f57f17', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>MULTIPLE</span>}
                               </div>
-                              {subtitle && (
-                                <div style={{ fontSize: 11, color: '#999', marginTop: 1 }}>
-                                  {subtitle}{units ? ` · ${units} units` : ''}
-                                </div>
-                              )}
+                              {subtitle && <div style={{ fontSize: 11, color: '#999', marginTop: 1 }}>{subtitle}{units ? ` · ${units} units` : ''}</div>}
                             </div>
-
                             <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
                               {overlapData.programLabels.map((progLabel, pi) => {
                                 const has = row.programEntries.some(pe => pe.program === progLabel)
                                 return (
                                   <div key={pi} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-                                    {overlapData.programLabels.length > 1 && (
-                                      <div style={{ fontSize: 9, color: '#bbb', textAlign: 'center', maxWidth: 48, lineHeight: 1.2 }}>{shortLabel(progLabel).split('\n')[0]}</div>
-                                    )}
+                                    {overlapData.programLabels.length > 1 && <div style={{ fontSize: 9, color: '#bbb', textAlign: 'center', maxWidth: 48, lineHeight: 1.2 }}>{shortLabel(progLabel).split('\n')[0]}</div>}
                                     <span style={{ color: has ? '#6C5CE7' : '#e0e0e0', fontSize: 16, lineHeight: 1 }}>●</span>
                                   </div>
                                 )
                               })}
                             </div>
-
                             <div style={{ fontSize: 11, color: '#ccc' }}>{isExpanded ? '▲' : '▼'}</div>
                           </div>
-
                           {isExpanded && (
                             <div style={{ borderTop: '1px solid #f0f0f0', background: '#fafafa', padding: '12px 14px 14px 38px' }}>
                               {isEffectivelyRequired && (
                                 <div style={{ fontSize: 12, color: '#888', background: '#f0f0f0', borderRadius: 6, padding: '7px 10px', marginBottom: 12 }}>
-                                  ℹ️ The university offers multiple ways to satisfy this requirement, but this is the only one with an equivalent course at {ccName}.
+                                  ℹ️ The university offers multiple ways to satisfy this requirement, but this is the only one with an equivalent at {ccName}.
                                 </div>
                               )}
                               {row.programEntries.map((pe, i) => (
@@ -1287,9 +1016,7 @@ const parsed = parseAllForProgram(agreement, `${prog.uniName} → ${prog.majorLa
                                   {(() => {
                                     const isRec = isRecommendedSection(pe.groupTitle) || isRecommendedSection(pe.sectionLabel)
                                     return (
-                                      <div style={{ fontSize: 11, marginBottom: 6, display: 'inline-flex', alignItems: 'center', gap: 4,
-                                        background: isRec ? '#fff8e1' : '#f0fdf4', borderRadius: 4, padding: '2px 8px',
-                                        color: isRec ? '#b45309' : '#166534', fontWeight: 600 }}>
+                                      <div style={{ fontSize: 11, marginBottom: 6, display: 'inline-flex', alignItems: 'center', gap: 4, background: isRec ? '#fff8e1' : '#f0fdf4', borderRadius: 4, padding: '2px 8px', color: isRec ? '#b45309' : '#166534', fontWeight: 600 }}>
                                         {isRec ? '★ Recommended by this program' : '✓ Required by this program'}
                                       </div>
                                     )
@@ -1298,9 +1025,7 @@ const parsed = parseAllForProgram(agreement, `${prog.uniName} → ${prog.majorLa
                                     Satisfies: <span style={{ fontWeight: 500, color: '#1a1a1a' }}>{pe.uniReq.prefix} {pe.uniReq.number} — {pe.uniReq.title}</span>
                                     {pe.uniReq.units ? ` (${pe.uniReq.units} units)` : ''}
                                   </div>
-                                  {pe.uniReq.allCourseLabels?.length > 1 && (
-                                    <div style={{ fontSize: 11, color: '#888', marginBottom: 8 }}>Also counts toward: {pe.uniReq.allCourseLabels.slice(1).join(', ')}</div>
-                                  )}
+                                  {pe.uniReq.allCourseLabels?.length > 1 && <div style={{ fontSize: 11, color: '#888', marginBottom: 8 }}>Also counts toward: {pe.uniReq.allCourseLabels.slice(1).join(', ')}</div>}
                                   {pe.options.map((opt, j) => (
                                     <div key={j}>
                                       {j > 0 && <div style={{ fontSize: 11, color: '#bbb', padding: '6px 0', borderTop: '1px dashed #eee', marginTop: 6, marginBottom: 2 }}>or instead:</div>}
@@ -1325,16 +1050,12 @@ const parsed = parseAllForProgram(agreement, `${prog.uniName} → ${prog.majorLa
                         </div>
                       )
                     })
-                    ;effectiveNoArtRows.forEach((na) => {
+
+                    effectiveNoArtRows.forEach(na => {
                       rendered.push(
-                        <div key={`noart-inline-${na.uniReq.prefix}-${na.uniReq.number}-${na.program}`} style={{
-                          border: '1px solid #fecaca', borderRadius: 8, marginBottom: 6,
-                          background: '#fff5f5', overflow: 'hidden',
-                        }}>
+                        <div key={`noart-inline-${na.uniReq.prefix}-${na.uniReq.number}-${na.program}`} style={{ border: '1px solid #fecaca', borderRadius: 8, marginBottom: 6, background: '#fff5f5', overflow: 'hidden' }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px' }}>
-                            <div style={{ width: 15, height: 15, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                              <span style={{ color: '#fca5a5', fontSize: 14 }}>✕</span>
-                            </div>
+                            <span style={{ color: '#fca5a5', fontSize: 14, flexShrink: 0 }}>✕</span>
                             <div style={{ flex: 1, minWidth: 0 }}>
                               <div style={{ fontWeight: 600, fontSize: 13, color: '#991b1b', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                                 {na.uniReq.prefix} {na.uniReq.number}
@@ -1357,26 +1078,16 @@ const parsed = parseAllForProgram(agreement, `${prog.uniName} → ${prog.majorLa
                     if (displayLabel !== lastDisplayLabel) {
                       lastDisplayLabel = displayLabel
                       rendered.push(
-                        <div key={`sec-noart-${displayLabel}-${g.groupId}`} style={{
-                          marginTop: rendered.length === 0 ? 0 : 32,
-                          marginBottom: 10, paddingBottom: 8, borderBottom: '2px solid #e8e8e4',
-                        }}>
-                          <div style={{ fontSize: 11, fontWeight: 700, color: '#aaa', textTransform: 'uppercase', letterSpacing: '0.1em' }}>
-                            {displayLabel}
-                          </div>
+                        <div key={`sec-noart-${displayLabel}-${g.groupId}`} style={{ marginTop: rendered.length === 0 ? 0 : 32, marginBottom: 10, paddingBottom: 8, borderBottom: '2px solid #e8e8e4' }}>
+                          <div style={{ fontSize: 11, fontWeight: 700, color: '#aaa', textTransform: 'uppercase', letterSpacing: '0.1em' }}>{displayLabel}</div>
                         </div>
                       )
                     }
                     for (const na of g.noArtRows) {
                       rendered.push(
-                        <div key={`noart-req-${na.uniReq.prefix}-${na.uniReq.number}-${na.program}`} style={{
-                          border: '1px solid #fecaca', borderRadius: 8, marginBottom: 6,
-                          background: '#fff5f5', overflow: 'hidden',
-                        }}>
+                        <div key={`noart-req-${na.uniReq.prefix}-${na.uniReq.number}-${na.program}`} style={{ border: '1px solid #fecaca', borderRadius: 8, marginBottom: 6, background: '#fff5f5', overflow: 'hidden' }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px' }}>
-                            <div style={{ width: 15, height: 15, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                              <span style={{ color: '#fca5a5', fontSize: 14 }}>✕</span>
-                            </div>
+                            <span style={{ color: '#fca5a5', fontSize: 14, flexShrink: 0 }}>✕</span>
                             <div style={{ flex: 1, minWidth: 0 }}>
                               <div style={{ fontWeight: 600, fontSize: 13, color: '#991b1b', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                                 {na.uniReq.prefix} {na.uniReq.number}
@@ -1401,23 +1112,17 @@ const parsed = parseAllForProgram(agreement, `${prog.uniName} → ${prog.majorLa
               )}
             </div>
 
-            {/* RIGHT: Progress */}
             <div style={{ position: isWide ? 'sticky' : 'static', top: 20 }}>
               <div className="card" style={{ background: '#f9f9f7', border: '1px solid #e8e8e4' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                  <div style={{ fontWeight: 600, fontSize: 14 }}>📊 Progress</div>
-                </div>
-                <div style={{ fontSize: 11, color: '#888', marginBottom: 12 }}>
-                  Check rows to update
-                </div>
-
+                <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 4 }}>📊 Progress</div>
+                <div style={{ fontSize: 11, color: '#888', marginBottom: 12 }}>Check rows to update</div>
                 {summary.length === 0 ? (
                   <div style={{ fontSize: 12, color: '#aaa' }}>Check off courses to see your progress</div>
                 ) : (
                   summary.map((s, i) => {
                     const pct = s.total === 0 ? 0 : Math.round((s.completed / s.total) * 100)
                     const isTop = i === 0 && summary.length > 1
-                    const showHeart = isTop && summary.length > 1 && completedCourses.size > 0
+                    const showHeart = isTop && completedCourses.size > 0
                     return (
                       <div key={i} style={{ marginBottom: i < summary.length - 1 ? 16 : 0 }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
@@ -1427,11 +1132,7 @@ const parsed = parseAllForProgram(agreement, `${prog.uniName} → ${prog.majorLa
                           <div style={{ fontSize: 11, color: '#888', flexShrink: 0 }}>{s.completed}/{s.total}</div>
                         </div>
                         <div style={{ background: '#e0e0e0', borderRadius: 4, height: 6, overflow: 'hidden' }}>
-                          <div style={{
-                            background: pct === 100 ? '#4caf50' : '#6C5CE7',
-                            height: '100%', width: `${pct}%`,
-                            borderRadius: 4, transition: 'width 0.3s ease'
-                          }} />
+                          <div style={{ background: pct === 100 ? '#4caf50' : '#6C5CE7', height: '100%', width: `${pct}%`, borderRadius: 4, transition: 'width 0.3s ease' }} />
                         </div>
                       </div>
                     )
