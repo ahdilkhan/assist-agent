@@ -71,18 +71,22 @@ function parseSendingOptions(topItems) {
 }
 
 // ─── buildCellMap ─────────────────────────────────────────────────────────────
-// Reads templateAssets and builds: cell.id → { groupId, nRequired, pickType, ... }
+// Reads templateAssets and builds: cell.id → context
 //
-// Pick-N is signaled by group.instruction.type — this is the real ASSIST field:
-//   'NFromArea'     → pick N courses  (instruction.amount)
-//   'NFollowing'    → pick N courses  (instruction.amount)
-//   'NFromUnits'    → pick N units    (instruction.amount)
-//   'NToNFollowing' → pick a range    (instruction.amount to instruction.toAmount)
-//   'Following'     → complete ALL — NOT a pick group
-//   conjunction='Or'→ legacy UC pattern, kept as fallback
+// Pick-N is signaled by group.instruction.type:
+//   'NFromArea'     → pick N sections (each section = one slot in yellow card)
+//   'NFollowing'    → pick N courses
+//   'NFromUnits'    → pick courses totaling N units
+//   'NToNFollowing' → pick a range
+//   'Following'     → complete ALL — not a pick group
+//   conjunction='Or'→ legacy UC pattern
 //
-// All sections in a pick-N group share groupId: pick_${group.groupId}
-// Required sections each get their own: ${group.groupId}_${section.position}
+// isSectionBundled = true when the group uses NFromArea and nRequired === 1
+//   meaning each lettered section (A, B, C, D) is ONE slot — all courses in
+//   that section must be taken together as a unit
+//
+// groupId for pick groups: pick_${group.groupId}
+// groupId for required:    ${group.groupId}_${section.position}
 // ─────────────────────────────────────────────────────────────────────────────
 function buildCellMap(templateAssets) {
   const cellMap = new Map()
@@ -114,8 +118,16 @@ function buildCellMap(templateAssets) {
     let groupPickType = null
     let groupPickMin = null
     let groupPickMax = null
+    // isSectionBundled: each lettered section is one atomic slot (pick 1 of A,B,C,D)
+    let isSectionBundled = false
 
-    if (instrType === 'NFromArea' || instrType === 'NFollowing') {
+    if (instrType === 'NFromArea') {
+      groupIsPickN = true
+      groupNRequired = instr.amount ?? 1
+      groupPickType = 'count'
+      // NFromArea means pick N *sections* — each section is one bundled slot
+      isSectionBundled = true
+    } else if (instrType === 'NFollowing') {
       groupIsPickN = true
       groupNRequired = instr.amount ?? 1
       groupPickType = 'count'
@@ -130,13 +142,13 @@ function buildCellMap(templateAssets) {
       groupNRequired = groupPickMin
       groupPickType = 'range'
     } else if (instrConjunction === 'or') {
-      // Legacy UC pattern — sections are the options
+      // Legacy UC pattern
       groupIsPickN = true
       const groupNAdv = (group.advisements || []).find(a => a.type === 'NFollowing')
       groupNRequired = groupNAdv?.amount ?? 1
       groupPickType = 'count'
+      isSectionBundled = true
     }
-    // instrType === 'Following' + selectionType === 'Complete' means all required
 
     for (const section of dataSections) {
       const secAdvs = section.advisements || []
@@ -170,7 +182,6 @@ function buildCellMap(templateAssets) {
         nRequired = secNInAreas.amount ?? 1; pickType = 'areas'
         groupId = `${group.groupId}_${section.position}`
       } else if (groupIsPickN) {
-        // Inherit group-level pick-N — all sections share one pool
         nRequired = groupNRequired
         pickType = groupPickType
         pickMin = groupPickMin
@@ -189,6 +200,8 @@ function buildCellMap(templateAssets) {
         pickMin,
         pickMax,
         groupId,
+        // isSectionBundled tells generateOverlap to key by section, not by CC course
+        isSectionBundled: groupIsPickN ? isSectionBundled : false,
         sectionPosition: section.position,
         groupPosition: group.position,
       }
@@ -232,6 +245,7 @@ function parseAllForProgram(agreement, programLabel) {
           pickMin: null,
           pickMax: null,
           groupId: templateCellId || Math.random().toString(),
+          isSectionBundled: false,
           sectionPosition: 0,
           groupPosition: 0,
         }
@@ -308,7 +322,7 @@ function parseAllForProgram(agreement, programLabel) {
       }
     }
 
-    // Walk templateAssets for cells not seen in articulations array
+    // Walk templateAssets for cells not seen in articulations
     const seenCellIds = new Set(arts.map(item => item.templateCellId))
     const assets = typeof agreement.templateAssets === 'string'
       ? JSON.parse(agreement.templateAssets) : agreement.templateAssets || []
@@ -387,6 +401,12 @@ function pickGroupLabel(group) {
       return `Choose ${n} course${n !== 1 ? 's' : ''} from different areas (${total} options)`
     case 'count':
     default:
+      // If isSectionBundled, slots are sections not individual courses
+      if (group.isSectionBundled) {
+        return n === 1
+          ? `Complete 1 of these ${total} options`
+          : `Complete ${n} of these ${total} options`
+      }
       return `Choose any ${n} of these ${total} options`
   }
 }
@@ -510,12 +530,7 @@ export default function Tab2() {
       const programArts = await Promise.all(programs.map(async prog => {
         setLoadingMsg(`Fetching ${prog.uniName} — ${prog.majorLabel}...`)
         const agreement = await getAgreement(prog.majorKey)
-const assets = typeof agreement.templateAssets === 'string'
-  ? JSON.parse(agreement.templateAssets) : agreement.templateAssets || []
-assets.filter(a => a.type === 'RequirementGroup').forEach(g => {
-  console.log(g.groupId, g.instruction?.type, g.instruction?.amount, g.instruction?.toAmount)
-})
-const parsed = parseAllForProgram(agreement, `${prog.uniName} → ${prog.majorLabel}`)
+        const parsed = parseAllForProgram(agreement, `${prog.uniName} → ${prog.majorLabel}`)
         return { prog, arts: parsed.articulated, noArts: parsed.noArticulation }
       }))
 
@@ -527,13 +542,40 @@ const parsed = parseAllForProgram(agreement, `${prog.uniName} → ${prog.majorLa
         for (const art of arts) {
           const cheapestOpt = art.options.reduce((a, b) => a.courses.length <= b.courses.length ? a : b)
           const isPickGroup = art.nRequired !== null
+
+          // Key logic:
+          // isSectionBundled = each section is one atomic slot (Complete A, B, C, or D)
+          //   → key by groupId + sectionPosition so all courses in section A collapse together
+          // regular pick group (NFollowing/NFromUnits)
+          //   → key by groupId + CC course set
+          // required
+          //   → key by CC course set only
           const ccCourseKey = cheapestOpt.courses.map(c => `${c.prefix} ${c.number}`).sort().join('+')
-          const ccKey = isPickGroup
-            ? `${art.groupId}__${ccCourseKey}`
-            : ccCourseKey
+          let ccKey
+          if (isPickGroup && art.isSectionBundled) {
+            ccKey = `${art.groupId}__sec${art.sectionPosition}`
+          } else if (isPickGroup) {
+            ccKey = `${art.groupId}__${ccCourseKey}`
+          } else {
+            ccKey = ccCourseKey
+          }
 
           if (!reqMap[ccKey]) {
-            reqMap[ccKey] = { ccKey, primaryCourses: [...cheapestOpt.courses], programEntries: [] }
+            reqMap[ccKey] = {
+              ccKey,
+              primaryCourses: [...cheapestOpt.courses],
+              programEntries: [],
+              isSectionBundled: art.isSectionBundled || false,
+            }
+          }
+
+          // For section-bundled slots, accumulate ALL CC courses in this section
+          if (art.isSectionBundled) {
+            cheapestOpt.courses.forEach(c => {
+              if (!reqMap[ccKey].primaryCourses.some(e => e.prefix === c.prefix && e.number === c.number)) {
+                reqMap[ccKey].primaryCourses.push(c)
+              }
+            })
           }
 
           const entryKey = `${prog.uniName}|${art.uniRequirement.prefix}|${art.uniRequirement.number}`
@@ -550,6 +592,7 @@ const parsed = parseAllForProgram(agreement, `${prog.uniName} → ${prog.majorLa
               pickMin: art.pickMin,
               pickMax: art.pickMax,
               groupId: art.groupId,
+              isSectionBundled: art.isSectionBundled || false,
               groupPosition: art.groupPosition,
               sectionPosition: art.sectionPosition,
             })
@@ -568,6 +611,7 @@ const parsed = parseAllForProgram(agreement, `${prog.uniName} → ${prog.majorLa
               groupId: na.groupId,
               nRequired: na.nRequired ?? null,
               pickType: na.pickType ?? null,
+              isSectionBundled: na.isSectionBundled || false,
               partOfPickGroup: na.partOfPickGroup || false,
               coveredByAnotherOption: na.coveredByAnotherOption || false,
               groupPosition: na.groupPosition ?? 999,
@@ -593,6 +637,7 @@ const parsed = parseAllForProgram(agreement, `${prog.uniName} → ${prog.majorLa
           pickType: canonicalEntry?.pickType ?? null,
           pickMin: canonicalEntry?.pickMin ?? null,
           pickMax: canonicalEntry?.pickMax ?? null,
+          isSectionBundled: canonicalEntry?.isSectionBundled || false,
           _groupPosition: canonicalEntry?.groupPosition ?? 999,
           _sectionPosition: canonicalEntry?.sectionPosition ?? 999,
         }
@@ -804,7 +849,17 @@ const parsed = parseAllForProgram(agreement, `${prog.uniName} → ${prog.majorLa
                 for (const row of overlapData.rows) {
                   const groupId = row.groupId ?? `singleton_${row.ccKey}`
                   if (!groupIdToGroup[groupId]) {
-                    const g = { groupId, groupTitle: row.groupTitle || 'MAJOR REQUIREMENTS', sectionLabel: row.sectionLabel || '', nRequired: row.nRequired ?? null, pickType: row.pickType ?? null, pickMin: row.pickMin ?? null, pickMax: row.pickMax ?? null, rows: [] }
+                    const g = {
+                      groupId,
+                      groupTitle: row.groupTitle || 'MAJOR REQUIREMENTS',
+                      sectionLabel: row.sectionLabel || '',
+                      nRequired: row.nRequired ?? null,
+                      pickType: row.pickType ?? null,
+                      pickMin: row.pickMin ?? null,
+                      pickMax: row.pickMax ?? null,
+                      isSectionBundled: row.isSectionBundled || false,
+                      rows: [],
+                    }
                     groupIdToGroup[groupId] = g
                     groups.push(g)
                   }
@@ -814,7 +869,16 @@ const parsed = parseAllForProgram(agreement, `${prog.uniName} → ${prog.majorLa
                 for (const na of inlineRequiredNoArt) {
                   const groupId = na.groupId ?? `noart_${na.uniReq.prefix}_${na.uniReq.number}`
                   if (!groupIdToGroup[groupId]) {
-                    const g = { groupId, groupTitle: na.groupTitle || 'MAJOR REQUIREMENTS', sectionLabel: na.sectionLabel || '', nRequired: null, pickType: null, pickMin: null, pickMax: null, rows: [], noArtRows: [], _groupPosition: na.groupPosition ?? 999, _sectionPosition: na.sectionPosition ?? 999 }
+                    const g = {
+                      groupId,
+                      groupTitle: na.groupTitle || 'MAJOR REQUIREMENTS',
+                      sectionLabel: na.sectionLabel || '',
+                      nRequired: null, pickType: null, pickMin: null, pickMax: null,
+                      isSectionBundled: false,
+                      rows: [], noArtRows: [],
+                      _groupPosition: na.groupPosition ?? 999,
+                      _sectionPosition: na.sectionPosition ?? 999,
+                    }
                     groupIdToGroup[groupId] = g
                     groups.push(g)
                   }
@@ -857,6 +921,7 @@ const parsed = parseAllForProgram(agreement, `${prog.uniName} → ${prog.majorLa
                   }
 
                   if (isPickN && !isEffectivelyRequired) {
+                    // ── Yellow pick card ──
                     rendered.push(
                       <div key={`group-${group.groupId}`} style={{ border: '1.5px solid #ffe082', borderRadius: 10, marginBottom: 12, overflow: 'hidden', background: '#fffdf5' }}>
                         <div style={{ padding: '9px 14px', borderBottom: '1px solid #ffe082', background: '#fff8e1', display: 'flex', alignItems: 'center', gap: 8 }}>
