@@ -122,11 +122,13 @@ function buildCellMap(templateAssets) {
     let isSectionBundled = false
 
     if (instrType === 'NFromArea') {
-      groupIsPickN = true
-      groupNRequired = instr.amount ?? 1
-      groupPickType = 'count'
-      // NFromArea means pick N *sections* — each section is one bundled slot
-      isSectionBundled = true
+  groupIsPickN = true
+  groupNRequired = instr.amount ?? 1
+  groupPickType = 'count'
+  // Only bundle sections when picking fewer sections than exist
+  // e.g. "Complete A, B, C, or D" (pick 1 of 4) = bundled
+  // e.g. "Complete 8 from the following" (pick 8 of 8+) = individual courses
+  isSectionBundled = (instr.amount ?? 1) < dataSections.length
     } else if (instrType === 'NFollowing') {
       groupIsPickN = true
       groupNRequired = instr.amount ?? 1
