@@ -510,7 +510,12 @@ export default function Tab2() {
       const programArts = await Promise.all(programs.map(async prog => {
         setLoadingMsg(`Fetching ${prog.uniName} — ${prog.majorLabel}...`)
         const agreement = await getAgreement(prog.majorKey)
-        const parsed = parseAllForProgram(agreement, `${prog.uniName} → ${prog.majorLabel}`)
+const assets = typeof agreement.templateAssets === 'string'
+  ? JSON.parse(agreement.templateAssets) : agreement.templateAssets || []
+assets.filter(a => a.type === 'RequirementGroup').forEach(g => {
+  console.log(g.groupId, g.instruction?.type, g.instruction?.amount, g.instruction?.toAmount)
+})
+const parsed = parseAllForProgram(agreement, `${prog.uniName} → ${prog.majorLabel}`)
         return { prog, arts: parsed.articulated, noArts: parsed.noArticulation }
       }))
 
