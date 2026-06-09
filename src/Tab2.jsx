@@ -935,54 +935,62 @@ export default function Tab2() {
         <div style={{ fontSize: 11, color: '#888', marginBottom: 12 }}>Check rows to update</div>
 
         {/* ── CHANGE 1: Unit budget bar ── */}
-        {budget && (
-          <div style={{
-            marginBottom: 20, padding: '12px',
-            background: budget.isOver ? '#fff5f5' : '#f5f4f0',
-            borderRadius: 10,
-            border: `1px solid ${budget.isOver ? '#fecaca' : '#e8e8e4'}`
-          }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: '#1a1a1a', marginBottom: 10 }}>
-              📦 Transfer unit budget
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 10 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11 }}>
-                <span style={{ color: '#666' }}>Major prep</span>
-                <span style={{ fontWeight: 600 }}>{budget.totalMajorUnits}u</span>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11 }}>
-                <span style={{ color: '#666' }}>GE / IGETC (est.)</span>
-                <span style={{ fontWeight: 600 }}>+{budget.GE_ESTIMATE}u</span>
-              </div>
-              <div style={{
-                borderTop: '1px solid #e0e0e0', marginTop: 4, paddingTop: 4,
-                display: 'flex', justifyContent: 'space-between', fontSize: 12
-              }}>
-                <span style={{ fontWeight: 700 }}>Total</span>
-                <span style={{ fontWeight: 700, color: budget.isOver ? '#dc2626' : '#1a1a1a' }}>
-                  {budget.plannedTotal}u / {budget.TRANSFER_CAP}u
-                </span>
-              </div>
-            </div>
-            <div style={{ background: '#e0e0e0', borderRadius: 4, height: 7, overflow: 'hidden', marginBottom: 8 }}>
-              <div style={{
-                height: '100%', borderRadius: 4,
-                width: `${Math.min(100, Math.round((budget.plannedTotal / budget.TRANSFER_CAP) * 100))}%`,
-                background: budget.isOver ? '#dc2626' : budget.plannedTotal / budget.TRANSFER_CAP > 0.85 ? '#f59e0b' : '#6C5CE7',
-                transition: 'width 0.3s ease'
-              }} />
-            </div>
-            {budget.isOver ? (
-              <div style={{ fontSize: 11, color: '#dc2626', fontWeight: 600 }}>
-                ⚠️ {budget.plannedTotal - budget.TRANSFER_CAP}u over the 70u cap — prioritize ALL PROGRAMS courses first
-              </div>
-            ) : (
-              <div style={{ fontSize: 11, color: '#666' }}>
-                {budget.remainingBudget}u left in your budget after GE — use it on school-specific courses
-              </div>
-            )}
-          </div>
-        )}
+        {budget && (() => {
+  const majorBudget = budget.TRANSFER_CAP - budget.GE_ESTIMATE  // 35u
+  const majorUsed = budget.totalMajorUnits
+  const spare = majorBudget - majorUsed
+  const isOver = spare < 0
+  const pct = Math.min(100, Math.round((majorUsed / majorBudget) * 100))
+
+  return (
+    <div style={{
+      marginBottom: 20, padding: '12px',
+      background: isOver ? '#fff5f5' : '#f5f4f0',
+      borderRadius: 10,
+      border: `1px solid ${isOver ? '#fecaca' : '#e8e8e4'}`
+    }}>
+      <div style={{ fontSize: 12, fontWeight: 700, color: '#1a1a1a', marginBottom: 10 }}>
+        📦 Major prep budget
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 10 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11 }}>
+          <span style={{ color: '#666' }}>Available after GE (~35u)</span>
+          <span style={{ fontWeight: 600 }}>{majorBudget}u</span>
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11 }}>
+          <span style={{ color: '#666' }}>Your major prep</span>
+          <span style={{ fontWeight: 600 }}>{majorUsed}u</span>
+        </div>
+        <div style={{
+          borderTop: '1px solid #e0e0e0', marginTop: 4, paddingTop: 4,
+          display: 'flex', justifyContent: 'space-between', fontSize: 12
+        }}>
+          <span style={{ fontWeight: 700 }}>{isOver ? 'Over by' : 'Spare'}</span>
+          <span style={{ fontWeight: 700, color: isOver ? '#dc2626' : spare <= 5 ? '#f59e0b' : '#166534' }}>
+            {Math.abs(spare)}u
+          </span>
+        </div>
+      </div>
+      <div style={{ background: '#e0e0e0', borderRadius: 4, height: 7, overflow: 'hidden', marginBottom: 8 }}>
+        <div style={{
+          height: '100%', borderRadius: 4,
+          width: `${pct}%`,
+          background: isOver ? '#dc2626' : pct > 90 ? '#f59e0b' : '#6C5CE7',
+          transition: 'width 0.3s ease'
+        }} />
+      </div>
+      {isOver ? (
+        <div style={{ fontSize: 11, color: '#dc2626', fontWeight: 600 }}>
+          ⚠️ {Math.abs(spare)}u over your major prep budget — prioritize ALL PROGRAMS courses and drop school-specific ones
+        </div>
+      ) : (
+        <div style={{ fontSize: 11, color: '#666' }}>
+          {spare}u of spare capacity — use it on school-specific courses you care about
+        </div>
+      )}
+    </div>
+  )
+})()}
 
         {summary.length === 0 ? (
           <div style={{ fontSize: 12, color: '#aaa' }}>Check off courses to see your progress</div>
