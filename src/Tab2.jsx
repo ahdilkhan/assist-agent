@@ -74,19 +74,16 @@ function parseSendingOptions(topItems) {
 // Reads templateAssets and builds: cell.id → context
 //
 // Pick-N is signaled by group.instruction.type:
-//   'NFromArea'     → pick N sections (each section = one slot in yellow card)
-//   'NFollowing'    → pick N courses
+//   'NFromArea'     → pick N sections OR N courses depending on amount vs section count
+//   'NFollowing'    → pick N individual courses
 //   'NFromUnits'    → pick courses totaling N units
 //   'NToNFollowing' → pick a range
 //   'Following'     → complete ALL — not a pick group
 //   conjunction='Or'→ legacy UC pattern
 //
-// isSectionBundled = true when the group uses NFromArea and nRequired === 1
-//   meaning each lettered section (A, B, C, D) is ONE slot — all courses in
-//   that section must be taken together as a unit
-//
-// groupId for pick groups: pick_${group.groupId}
-// groupId for required:    ${group.groupId}_${section.position}
+// isSectionBundled = true when NFromArea amount < number of sections
+//   e.g. "Complete A, B, C, or D" (pick 1 of 4) → each section is one atomic slot
+//   e.g. "Complete 8 from the following" (pick 8 of 8) → individual course slots
 // ─────────────────────────────────────────────────────────────────────────────
 function buildCellMap(templateAssets) {
   const cellMap = new Map()
@@ -118,17 +115,16 @@ function buildCellMap(templateAssets) {
     let groupPickType = null
     let groupPickMin = null
     let groupPickMax = null
-    // isSectionBundled: each lettered section is one atomic slot (pick 1 of A,B,C,D)
     let isSectionBundled = false
 
     if (instrType === 'NFromArea') {
-  groupIsPickN = true
-  groupNRequired = instr.amount ?? 1
-  groupPickType = 'count'
-  // Only bundle sections when picking fewer sections than exist
-  // e.g. "Complete A, B, C, or D" (pick 1 of 4) = bundled
-  // e.g. "Complete 8 from the following" (pick 8 of 8+) = individual courses
-  isSectionBundled = (instr.amount ?? 1) < dataSections.length
+      groupIsPickN = true
+      groupNRequired = instr.amount ?? 1
+      groupPickType = 'count'
+      // Only bundle sections when picking FEWER sections than exist
+      // e.g. pick 1 of 4 sections (A/B/C/D) → bundled
+      // e.g. pick 8 of 8 courses → individual, not bundled
+      isSectionBundled = (instr.amount ?? 1) < dataSections.length
     } else if (instrType === 'NFollowing') {
       groupIsPickN = true
       groupNRequired = instr.amount ?? 1
@@ -202,7 +198,6 @@ function buildCellMap(templateAssets) {
         pickMin,
         pickMax,
         groupId,
-        // isSectionBundled tells generateOverlap to key by section, not by CC course
         isSectionBundled: groupIsPickN ? isSectionBundled : false,
         sectionPosition: section.position,
         groupPosition: group.position,
@@ -324,7 +319,6 @@ function parseAllForProgram(agreement, programLabel) {
       }
     }
 
-    // Walk templateAssets for cells not seen in articulations
     const seenCellIds = new Set(arts.map(item => item.templateCellId))
     const assets = typeof agreement.templateAssets === 'string'
       ? JSON.parse(agreement.templateAssets) : agreement.templateAssets || []
@@ -403,7 +397,6 @@ function pickGroupLabel(group) {
       return `Choose ${n} course${n !== 1 ? 's' : ''} from different areas (${total} options)`
     case 'count':
     default:
-      // If isSectionBundled, slots are sections not individual courses
       if (group.isSectionBundled) {
         return n === 1
           ? `Complete 1 of these ${total} options`
@@ -544,14 +537,6 @@ export default function Tab2() {
         for (const art of arts) {
           const cheapestOpt = art.options.reduce((a, b) => a.courses.length <= b.courses.length ? a : b)
           const isPickGroup = art.nRequired !== null
-
-          // Key logic:
-          // isSectionBundled = each section is one atomic slot (Complete A, B, C, or D)
-          //   → key by groupId + sectionPosition so all courses in section A collapse together
-          // regular pick group (NFollowing/NFromUnits)
-          //   → key by groupId + CC course set
-          // required
-          //   → key by CC course set only
           const ccCourseKey = cheapestOpt.courses.map(c => `${c.prefix} ${c.number}`).sort().join('+')
           let ccKey
           if (isPickGroup && art.isSectionBundled) {
@@ -571,12 +556,11 @@ export default function Tab2() {
             }
           }
 
-          // For section-bundled slots, accumulate ALL CC courses in this section
+          // For section-bundled slots accumulate all CC courses in this section
           if (art.isSectionBundled) {
             cheapestOpt.courses.forEach(c => {
-              if (!reqMap[ccKey].primaryCourses.some(e => e.prefix === c.prefix && e.number === c.number)) {
+              if (!reqMap[ccKey].primaryCourses.some(e => e.prefix === c.prefix && e.number === c.number))
                 reqMap[ccKey].primaryCourses.push(c)
-              }
             })
           }
 
@@ -813,6 +797,7 @@ export default function Tab2() {
                   <div>🔴 red row = no equivalent at your CC — if inside a yellow card, choose a different option; if standalone, you may need to take it after transferring</div>
                   <div>▼ tap any row to see which university requirement it satisfies</div>
                   <div>☑ check it off once you've taken it — progress saves automatically</div>
+                  <div>⚠️ for unit-based groups, unit counts refer to the <strong>university course units</strong> — tap any row to see the university course details</div>
                 </div>
               </div>
               <button onClick={() => { setShowBanner(false); localStorage.setItem('tab2_banner_dismissed', '1') }}
@@ -923,15 +908,20 @@ export default function Tab2() {
                   }
 
                   if (isPickN && !isEffectivelyRequired) {
-                    // ── Yellow pick card ──
                     rendered.push(
                       <div key={`group-${group.groupId}`} style={{ border: '1.5px solid #ffe082', borderRadius: 10, marginBottom: 12, overflow: 'hidden', background: '#fffdf5' }}>
-                        <div style={{ padding: '9px 14px', borderBottom: '1px solid #ffe082', background: '#fff8e1', display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <span style={{ fontSize: 14 }}>↓</span>
-                          <div>
+                        <div style={{ padding: '9px 14px', borderBottom: '1px solid #ffe082', background: '#fff8e1' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <span style={{ fontSize: 14 }}>↓</span>
                             <span style={{ fontSize: 12, fontWeight: 700, color: '#b45309' }}>{pickGroupLabel(group)}</span>
-                            <span style={{ fontSize: 11, color: '#999', marginLeft: 8 }}>— you don't need all of them</span>
+                            <span style={{ fontSize: 11, color: '#999', marginLeft: 4 }}>— you don't need all of them</span>
                           </div>
+                          {/* Units note — unit counts refer to university course units, not CC units */}
+                          {group.pickType === 'units' && (
+                            <div style={{ fontSize: 11, color: '#92400e', marginTop: 6, padding: '4px 8px', background: '#fef3c7', borderRadius: 4, display: 'inline-block' }}>
+                              ⚠️ Unit counts refer to the <strong>university's course units</strong>, not your CC's — tap any row to see university course details
+                            </div>
+                          )}
                         </div>
 
                         {[...group.rows, ...Object.values(noArtByGroupId[group.groupId] || {}).map(slot => ({ _isNoArt: true, slot }))].map((rowOrNa, rowIdx) => {
@@ -1007,7 +997,7 @@ export default function Tab2() {
                                       })()}
                                       <div style={{ fontSize: 12, color: '#888', marginBottom: 8 }}>
                                         Satisfies: <span style={{ fontWeight: 500, color: '#1a1a1a' }}>{pe.uniReq.prefix} {pe.uniReq.number} — {pe.uniReq.title}</span>
-                                        {pe.uniReq.units ? ` (${pe.uniReq.units} units)` : ''}
+                                        {pe.uniReq.units ? ` (${pe.uniReq.units} uni units)` : ''}
                                       </div>
                                       {pe.uniReq.allCourseLabels?.length > 1 && <div style={{ fontSize: 11, color: '#888', marginBottom: 8 }}>Also counts toward: {pe.uniReq.allCourseLabels.slice(1).join(', ')}</div>}
                                       {pe.options.map((opt, j) => (
@@ -1095,7 +1085,7 @@ export default function Tab2() {
                                   })()}
                                   <div style={{ fontSize: 12, color: '#888', marginBottom: 8 }}>
                                     Satisfies: <span style={{ fontWeight: 500, color: '#1a1a1a' }}>{pe.uniReq.prefix} {pe.uniReq.number} — {pe.uniReq.title}</span>
-                                    {pe.uniReq.units ? ` (${pe.uniReq.units} units)` : ''}
+                                    {pe.uniReq.units ? ` (${pe.uniReq.units} uni units)` : ''}
                                   </div>
                                   {pe.uniReq.allCourseLabels?.length > 1 && <div style={{ fontSize: 11, color: '#888', marginBottom: 8 }}>Also counts toward: {pe.uniReq.allCourseLabels.slice(1).join(', ')}</div>}
                                   {pe.options.map((opt, j) => (
