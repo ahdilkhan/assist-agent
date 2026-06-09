@@ -11,8 +11,6 @@ const TERMS = [
   'Fall 2027', 'Spring 2028',
 ]
 
-const GE_TOTAL_ESTIMATE = 35
-
 // ─── ASSIST helpers ───────────────────────────────────────────────────────────
 
 async function assistGet(path) {
@@ -343,44 +341,6 @@ function parseAllForProgram(agreement, programLabel) {
   }
 }
 
-// ─── Pacing helper ────────────────────────────────────────────────────────────
-
-function computePacing(neededRows, startTerm, transferTerm) {
-  const startIdx = TERMS.indexOf(startTerm)
-  const endIdx   = TERMS.indexOf(transferTerm)
-  if (endIdx <= startIdx) return null
-
-  const semesters = TERMS.slice(startIdx, endIdx).filter(t => !t.startsWith('Summer')).length
-  if (semesters === 0) return null
-
-  const majorUnitsLeft = neededRows.reduce(
-    (sum, r) => sum + r.primaryCourses.reduce((s, c) => s + (c.units || 3), 0), 0
-  )
-
-  const semestersDone = Math.max(0, startIdx - 1)
-  const geLeft = Math.max(0, GE_TOTAL_ESTIMATE - semestersDone * 5)
-  const perSemester = Math.round((majorUnitsLeft + geLeft) / semesters)
-
-  let status, statusLabel, statusColor, statusBg, advice
-  if (perSemester <= 15) {
-    status = 'on-track'; statusLabel = 'On track'
-    statusColor = '#3B6D11'; statusBg = '#EAF3DE'
-    advice = "Good pace — you're on track to transfer on time."
-  } else if (perSemester <= 18) {
-    status = 'tight'; statusLabel = 'Tight'
-    statusColor = '#854F0B'; statusBg = '#FAEEDA'
-    advice = "Manageable but busy. Try to stay consistent each semester."
-  } else {
-    status = 'heavy'; statusLabel = 'Heavy load'
-    statusColor = '#A32D2D'; statusBg = '#FCEBEB'
-    advice = "This is a lot. Consider pushing your transfer goal one semester later."
-  }
-
-  const barPct = Math.min(100, Math.round((perSemester / 20) * 100))
-
-  return { majorUnitsLeft, geLeft, semesters, perSemester, status, statusLabel, statusColor, statusBg, advice, barPct }
-}
-
 // ─── Utility ─────────────────────────────────────────────────────────────────
 
 function getPlanSaveKey(programs) {
@@ -565,6 +525,9 @@ export default function Tab2() {
   const [showBanner, setShowBanner] = useState(() => localStorage.getItem('tab2_banner_dismissed') !== '1')
   const [plannerStart, setPlannerStart] = useState(TERMS[0])
   const [plannerEnd, setPlannerEnd] = useState(TERMS[4])
+  const [geTaken, setGeTaken] = useState(0)
+  const GE_TOTAL = 35
+  const [includeSummer, setIncludeSummer] = useState(false)
   const saveTimeoutRef = useRef(null)
 
   useEffect(() => {
@@ -805,53 +768,97 @@ export default function Tab2() {
     return `${uni}\n${major || ''}`
   }
 
+  // ─── Per-program pacing ───────────────────────────────────────────────────
+
+  function computePacingPerProgram(majorUnitsLeft, majorUnitsTotal, majorUnitsDone) {
+    const termList = includeSummer ? TERMS : TERMS.filter(t => !t.startsWith('Summer'))
+    const startIdx = termList.indexOf(plannerStart)
+    const endIdx = termList.indexOf(plannerEnd)
+    if (endIdx <= startIdx) return null
+    const semesters = endIdx - startIdx
+    if (semesters === 0) return null
+
+    const geLeft = Math.max(0, GE_TOTAL - geTaken)
+    const totalLeft = majorUnitsLeft + geLeft
+    const perSemester = Math.round(totalLeft / semesters)
+
+    let status, statusLabel, statusColor, statusBg, advice
+    if (majorUnitsLeft === 0) {
+      status = 'done'; statusLabel = 'Done'
+      statusColor = '#3B6D11'; statusBg = '#EAF3DE'
+      const gePerSem = geLeft > 0 ? Math.round(geLeft / semesters) : 0
+      advice = gePerSem > 0
+        ? `Major prep complete. ~${gePerSem}u/semester for remaining GE.`
+        : `You're all set for this school.`
+    } else if (perSemester <= 15) {
+      status = 'on-track'; statusLabel = 'On track'
+      statusColor = '#3B6D11'; statusBg = '#EAF3DE'
+      advice = `You're on track. ~${perSemester} units per semester is a comfortable pace.`
+    } else if (perSemester <= 18) {
+      status = 'tight'; statusLabel = 'Tight'
+      statusColor = '#854F0B'; statusBg = '#FAEEDA'
+      advice = `It'll be tight. You'll need ~${perSemester} units every semester — no light terms.`
+    } else {
+      status = 'heavy'; statusLabel = 'Heavy load'
+      statusColor = '#A32D2D'; statusBg = '#FCEBEB'
+      advice = `This is a heavy load (~${perSemester}u/sem). Consider pushing your transfer goal back one term.`
+    }
+
+    const barPct = Math.min(100, Math.round((perSemester / 20) * 100))
+    return { majorUnitsLeft, majorUnitsTotal, majorUnitsDone, geLeft, semesters, perSemester, status, statusLabel, statusColor, statusBg, advice, barPct }
+  }
+
   const summary = computeAttainability()
 
-  // ─── Sidebar ──────────────────────────────────────────────────────────────
+  // ─── Sidebar ─────────────────────────────────────────────────────────────
 
   function renderSidebar() {
     const scheduleUrl = getCCScheduleUrl(ccName)
+    const atCap = geTaken >= GE_TOTAL
+    const termList = includeSummer ? TERMS : TERMS.filter(t => !t.startsWith('Summer'))
+    const startIdx = termList.indexOf(plannerStart)
+    const endIdx = termList.indexOf(plannerEnd)
+    const validTerms = endIdx > startIdx
 
-    // Compute neededRows (pick-group-aware remaining courses)
-    const groupStateForPacing = {}
+    // Compute per-program major units
+    const programMajorUnits = {}
+    for (const label of overlapData.programLabels) {
+      programMajorUnits[label] = { total: 0, done: 0 }
+    }
     for (const row of overlapData.rows) {
-      const gid = row.groupId
-      if (!gid || row.nRequired === null) continue
-      if (!groupStateForPacing[gid]) groupStateForPacing[gid] = { nRequired: row.nRequired, pickType: row.pickType, completedCount: 0, completedUnits: 0 }
-      if (completedCourses.has(row.ccKey)) {
-        groupStateForPacing[gid].completedCount += 1
-        groupStateForPacing[gid].completedUnits += row.primaryCourses.reduce((s, c) => s + (c.units || 3), 0)
+      const isDone = completedCourses.has(row.ccKey)
+      const rowUnits = row.primaryCourses.reduce((s, c) => s + (c.units || 3), 0)
+      for (const pe of row.programEntries) {
+        if (!programMajorUnits[pe.program]) continue
+        programMajorUnits[pe.program].total += rowUnits
+        if (isDone) programMajorUnits[pe.program].done += rowUnits
       }
     }
-    const groupSlotsForPacing = {}
-    for (const [gid, gs] of Object.entries(groupStateForPacing)) {
-      groupSlotsForPacing[gid] = gs.pickType === 'units'
-        ? { unitsNeeded: Math.max(0, gs.nRequired - gs.completedUnits), unitsAdded: 0 }
-        : { slotsLeft: Math.max(0, gs.nRequired - gs.completedCount) }
-    }
-    const neededRows = []
-    for (const row of overlapData.rows) {
-      if (completedCourses.has(row.ccKey)) continue
-      const gid = row.groupId
-      const gd  = gid ? groupSlotsForPacing[gid] : null
-      if (gd) {
-        if (gd.unitsNeeded !== undefined) {
-          const u = row.primaryCourses.reduce((s, c) => s + (c.units || 3), 0)
-          if (gd.unitsNeeded - gd.unitsAdded <= 0) continue
-          gd.unitsAdded += u
-        } else {
-          if (gd.slotsLeft <= 0) continue
-          gd.slotsLeft -= 1
-        }
-      }
-      neededRows.push(row)
-    }
 
-    const pacing = computePacing(neededRows, plannerStart, plannerEnd)
+    const perProgramPacings = overlapData.programLabels.map(label => {
+      const mu = programMajorUnits[label] || { total: 0, done: 0 }
+      const majorLeft = Math.max(0, mu.total - mu.done)
+      return computePacingPerProgram(majorLeft, mu.total, mu.done)
+    })
+
+    // Overall worst status for summary banner
+    const statusRank = { done: 0, 'on-track': 1, tight: 2, heavy: 3 }
+    const worstStatus = perProgramPacings.reduce((worst, p) => {
+      if (!p) return worst
+      return (statusRank[p.status] || 0) > (statusRank[worst] || 0) ? p.status : worst
+    }, 'on-track')
+
+    const bannerMap = {
+      done:       { text: "You're all set — major prep complete for all schools.", label: 'On track', bg: '#EAF3DE', border: '#c5e0a0', color: '#3B6D11' },
+      'on-track': { text: "You're on track for all schools.",                      label: 'On track', bg: '#EAF3DE', border: '#c5e0a0', color: '#3B6D11' },
+      tight:      { text: "It'll be tight for some schools. Check the details below.", label: 'Tight', bg: '#FAEEDA', border: '#f5d49a', color: '#854F0B' },
+      heavy:      { text: "At least one school needs a heavier load than ideal. Check the details below.", label: 'Heavy load', bg: '#FCEBEB', border: '#f5c0c0', color: '#A32D2D' },
+    }
+    const banner = bannerMap[worstStatus] || bannerMap['on-track']
 
     return (
       <>
-        {/* ── Progress bars ── */}
+        {/* ── Progress ── */}
         <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 4 }}>📊 Progress</div>
         <div style={{ fontSize: 11, color: '#888', marginBottom: 12 }}>Check rows to update</div>
 
@@ -878,13 +885,14 @@ export default function Tab2() {
           })
         )}
 
-        {/* ── Pacing card ── */}
+        {/* ── Transfer Pacing ── */}
         <div style={{ marginTop: 20, paddingTop: 20, borderTop: '1px solid #e8e8e4' }}>
           <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 12 }}>🗓 Transfer pacing</div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 14 }}>
+          {/* Term selectors */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
             <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 10, color: '#aaa', marginBottom: 3 }}>Starting</div>
+              <div style={{ fontSize: 10, color: '#aaa', marginBottom: 3 }}>Starting term</div>
               <select value={plannerStart} onChange={e => setPlannerStart(e.target.value)} style={{ fontSize: 12, width: '100%' }}>
                 {TERMS.slice(0, -1).map(t => <option key={t} value={t}>{t}</option>)}
               </select>
@@ -898,49 +906,141 @@ export default function Tab2() {
             </div>
           </div>
 
-          {!pacing ? (
+          {/* Include summer toggle */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+            <div
+              onClick={() => setIncludeSummer(v => !v)}
+              style={{
+                width: 32, height: 18, borderRadius: 9, cursor: 'pointer', flexShrink: 0,
+                background: includeSummer ? '#6C5CE7' : '#ccc',
+                position: 'relative', transition: 'background 0.2s',
+              }}
+            >
+              <div style={{
+                position: 'absolute', top: 2,
+                left: includeSummer ? 16 : 2,
+                width: 14, height: 14, borderRadius: '50%', background: '#fff',
+                transition: 'left 0.2s',
+              }} />
+            </div>
+            <span style={{ fontSize: 12, color: '#666', cursor: 'pointer' }} onClick={() => setIncludeSummer(v => !v)}>
+              Include summer
+            </span>
+          </div>
+
+          {/* GE units taken input */}
+          <div style={{ marginBottom: 14 }}>
+            <div style={{ fontSize: 10, color: '#aaa', marginBottom: 3 }}>GE units completed so far</div>
+            <input
+              type="number" min={0} max={GE_TOTAL}
+              value={geTaken}
+              onChange={e => setGeTaken(Math.min(GE_TOTAL, Math.max(0, Number(e.target.value))))}
+              style={{ fontSize: 13, width: '100%', padding: '6px 8px', border: '1px solid #ddd', borderRadius: 6, boxSizing: 'border-box' }}
+            />
+          </div>
+
+          {/* GE progress bar */}
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#aaa', marginBottom: 4 }}>
+              <span>GE progress (IGETC)</span>
+              <span>{geTaken} of {GE_TOTAL} units</span>
+            </div>
+            <div style={{ background: '#e8e8e4', borderRadius: 6, height: 6, overflow: 'hidden' }}>
+              <div style={{
+                height: '100%', borderRadius: 6,
+                width: `${Math.min(100, Math.round((geTaken / GE_TOTAL) * 100))}%`,
+                background: atCap ? '#4caf50' : geTaken >= 28 ? '#f59e0b' : '#6C5CE7',
+                transition: 'width 0.3s ease',
+              }} />
+            </div>
+            {atCap
+              ? <div style={{ fontSize: 10, color: '#4caf50', marginTop: 3, fontWeight: 600 }}>GE complete ✓</div>
+              : <div style={{ fontSize: 10, color: '#bbb', marginTop: 3 }}>{GE_TOTAL - geTaken} units remaining</div>
+            }
+          </div>
+
+          {!validTerms ? (
             <div style={{ fontSize: 12, color: '#aaa' }}>Set a valid start and transfer term above.</div>
           ) : (
             <>
-              {/* Big number + verdict */}
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                <div style={{ fontSize: 22, fontWeight: 700, color: '#1a1a1a', lineHeight: 1 }}>
-                  ~{pacing.perSemester}u
-                  <span style={{ fontSize: 12, fontWeight: 400, color: '#888', marginLeft: 6 }}>/ semester</span>
+              {/* Overall banner */}
+              <div style={{ background: banner.bg, border: `1px solid ${banner.border}`, borderRadius: 10, padding: '10px 14px', marginBottom: 16 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ fontWeight: 600, fontSize: 12, color: banner.color, flex: 1, marginRight: 8 }}>{banner.text}</div>
+                  <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 20, background: 'rgba(0,0,0,0.07)', color: banner.color, flexShrink: 0 }}>{banner.label}</span>
                 </div>
-                <span style={{ fontSize: 11, fontWeight: 600, padding: '3px 9px', borderRadius: 20, background: pacing.statusBg, color: pacing.statusColor }}>
-                  {pacing.statusLabel}
-                </span>
               </div>
 
-              {/* Single speedometer bar */}
-              <div style={{ background: '#e8e8e4', borderRadius: 6, height: 8, overflow: 'hidden', marginBottom: 5 }}>
-                <div style={{
-                  height: '100%', borderRadius: 6,
-                  width: `${pacing.barPct}%`,
-                  background: pacing.status === 'on-track' ? '#4caf50' : pacing.status === 'tight' ? '#f59e0b' : '#ef4444',
-                  transition: 'width 0.4s ease',
-                }} />
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: '#bbb', marginBottom: 12 }}>
-                <span>light</span>
-                <span>15u comfortable</span>
-                <span>heavy</span>
-              </div>
+              {/* Per-school cards */}
+              <div style={{ fontSize: 11, fontWeight: 700, color: '#aaa', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>Your schools</div>
 
-              {/* Human-readable advice */}
-              <div style={{ fontSize: 12, color: '#555', lineHeight: 1.6, marginBottom: 10 }}>
-                {pacing.advice}
-              </div>
+              {overlapData.programLabels.map((label, i) => {
+                const pacing = perProgramPacings[i]
+                const mu = programMajorUnits[label] || { total: 0, done: 0 }
+                const majorLeft = Math.max(0, mu.total - mu.done)
+                const parts = label.split(' → ')
+                const uniName = parts[0] || label
+                const majorName = parts[1] || ''
+                if (!pacing) return null
 
-              {/* Quiet math breakdown */}
-              <div style={{ fontSize: 11, color: '#aaa', lineHeight: 1.6 }}>
-                {pacing.majorUnitsLeft}u major prep + ~{pacing.geLeft}u GE est. over {pacing.semesters} semester{pacing.semesters !== 1 ? 's' : ''}
-              </div>
+                return (
+                  <div key={label} style={{ border: '1px solid #e8e8e4', borderRadius: 10, marginBottom: 12, padding: '12px 14px', background: '#fff' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
+                      <div>
+                        <div style={{ fontWeight: 700, fontSize: 13, color: '#1a1a1a' }}>{uniName}</div>
+                        <div style={{ fontSize: 11, color: '#888' }}>{majorName}</div>
+                      </div>
+                      <span style={{
+                        fontSize: 11, fontWeight: 600, padding: '3px 9px', borderRadius: 20, flexShrink: 0, marginLeft: 8,
+                        background: pacing.statusBg, color: pacing.statusColor,
+                      }}>{pacing.statusLabel}</span>
+                    </div>
+
+                    {/* Stats row */}
+                    <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+                      <div style={{ flex: 1, background: '#f9f9f7', borderRadius: 8, padding: '8px 10px' }}>
+                        {pacing.status === 'done' ? (
+                          <>
+                            <div style={{ fontSize: 18, fontWeight: 700, color: '#3B6D11' }}>✓ Done</div>
+                            <div style={{ fontSize: 11, color: '#888' }}>major prep</div>
+                            <div style={{ fontSize: 11, color: '#aaa' }}>all {mu.total}u complete</div>
+                          </>
+                        ) : (
+                          <>
+                            <div style={{ fontSize: 18, fontWeight: 700, color: '#1a1a1a' }}>{majorLeft}u</div>
+                            <div style={{ fontSize: 11, color: '#888' }}>major prep left</div>
+                            <div style={{ fontSize: 11, color: '#aaa' }}>{mu.done}u of {mu.total}u done</div>
+                          </>
+                        )}
+                      </div>
+                      <div style={{ flex: 1, background: pacing.statusBg, borderRadius: 8, padding: '8px 10px' }}>
+                        <div style={{ fontSize: 18, fontWeight: 700, color: pacing.statusColor }}>~{pacing.perSemester}u</div>
+                        <div style={{ fontSize: 11, color: pacing.statusColor, opacity: 0.85 }}>per semester</div>
+                        <div style={{ fontSize: 11, color: pacing.statusColor, opacity: 0.7 }}>major + GE combined</div>
+                      </div>
+                    </div>
+
+                    {/* Bar */}
+                    <div style={{ background: '#e8e8e4', borderRadius: 6, height: 6, overflow: 'hidden', marginBottom: 4 }}>
+                      <div style={{
+                        height: '100%', borderRadius: 6,
+                        width: `${pacing.barPct}%`,
+                        background: (pacing.status === 'on-track' || pacing.status === 'done') ? '#4caf50' : pacing.status === 'tight' ? '#f59e0b' : '#ef4444',
+                        transition: 'width 0.4s ease',
+                      }} />
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: '#bbb', marginBottom: 8 }}>
+                      <span>light</span><span>comfortable up to 15u</span><span>heavy</span>
+                    </div>
+
+                    <div style={{ fontSize: 12, color: '#555', lineHeight: 1.5 }}>{pacing.advice}</div>
+                  </div>
+                )
+              })}
 
               {scheduleUrl && (
                 <a href={scheduleUrl} target="_blank" rel="noopener noreferrer"
-                  style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 12, fontSize: 12, color: '#6C5CE7', textDecoration: 'none' }}>
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 4, fontSize: 12, color: '#6C5CE7', textDecoration: 'none' }}>
                   ↗ {ccName} schedule
                 </a>
               )}
@@ -948,7 +1048,7 @@ export default function Tab2() {
           )}
 
           <div style={{ fontSize: 10, color: '#ccc', marginTop: 14, lineHeight: 1.6 }}>
-            GE estimate assumes ~35u total (IGETC). Summer terms excluded. Talk to your counselor about sequencing.
+            Major prep based on unchecked courses in your plan. GE is shared — IGETC satisfies all UC/CSU schools. Per-semester load includes major prep and remaining GE. Summer excluded unless toggled on. Talk to your counselor about sequencing.
           </div>
         </div>
       </>
