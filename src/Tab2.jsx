@@ -345,34 +345,40 @@ function parseAllForProgram(agreement, programLabel) {
 
 // ─── Pacing helper ────────────────────────────────────────────────────────────
 
-function computePacing(neededRows, startTerm, transferTerm, geCompleted, geRequired) {
+function computePacing(neededRows, startTerm, transferTerm) {
   const startIdx = TERMS.indexOf(startTerm)
   const endIdx   = TERMS.indexOf(transferTerm)
   if (endIdx <= startIdx) return null
 
   const semesters = TERMS.slice(startIdx, endIdx).filter(t => !t.startsWith('Summer')).length
-  const semestersWithSummer = TERMS.slice(startIdx, endIdx).length
   if (semesters === 0) return null
 
   const majorUnitsLeft = neededRows.reduce(
     (sum, r) => sum + r.primaryCourses.reduce((s, c) => s + (c.units || 3), 0), 0
   )
-  const majorUnitsDone = programs.reduce((sum, p) => {
-    const prog = overlapData?.rows.filter(r => r.programEntries.some(e => e.program === `${p.uniName} → ${p.majorLabel}`)) || []
-    return sum + prog.filter(r => completedCourses.has(r.ccKey)).reduce((s, r) => s + r.primaryCourses.reduce((c2, c) => c2 + (c.units || 3), 0), 0)
-  }, 0)
 
-  const geLeft = Math.max(0, (geRequired || GE_TOTAL_ESTIMATE) - (geCompleted || 0))
-  const totalDone = (geCompleted || 0) + majorUnitsDone
-  const capLeft = Math.max(0, 70 - totalDone)
-  const capPct = Math.min(100, Math.round((totalDone / 70) * 100))
+  const semestersDone = Math.max(0, startIdx - 1)
+  const geLeft = Math.max(0, GE_TOTAL_ESTIMATE - semestersDone * 5)
+  const perSemester = Math.round((majorUnitsLeft + geLeft) / semesters)
 
-  return {
-    majorUnitsLeft, geLeft, semesters, semestersWithSummer,
-    totalDone, capLeft, capPct,
-    perSemester: Math.round((majorUnitsLeft + geLeft) / semesters),
-    perSemesterWithSummer: Math.round((majorUnitsLeft + geLeft) / semestersWithSummer),
+  let status, statusLabel, statusColor, statusBg, advice
+  if (perSemester <= 15) {
+    status = 'on-track'; statusLabel = 'On track'
+    statusColor = '#3B6D11'; statusBg = '#EAF3DE'
+    advice = "Good pace — you're on track to transfer on time."
+  } else if (perSemester <= 18) {
+    status = 'tight'; statusLabel = 'Tight'
+    statusColor = '#854F0B'; statusBg = '#FAEEDA'
+    advice = "Manageable but busy. Try to stay consistent each semester."
+  } else {
+    status = 'heavy'; statusLabel = 'Heavy load'
+    statusColor = '#A32D2D'; statusBg = '#FCEBEB'
+    advice = "This is a lot. Consider pushing your transfer goal one semester later."
   }
+
+  const barPct = Math.min(100, Math.round((perSemester / 20) * 100))
+
+  return { majorUnitsLeft, geLeft, semesters, perSemester, status, statusLabel, statusColor, statusBg, advice, barPct }
 }
 
 // ─── Utility ─────────────────────────────────────────────────────────────────
@@ -560,9 +566,6 @@ export default function Tab2() {
   const [plannerStart, setPlannerStart] = useState(TERMS[0])
   const [plannerEnd, setPlannerEnd] = useState(TERMS[4])
   const saveTimeoutRef = useRef(null)
-  const [geCompleted, setGeCompleted] = useState(0)
-const [geRequired, setGeRequired] = useState(GE_TOTAL_ESTIMATE)
-const [includeSummer, setIncludeSummer] = useState(false)
 
   useEffect(() => {
     const handler = () => setIsWide(window.innerWidth > 768)
@@ -807,293 +810,150 @@ const [includeSummer, setIncludeSummer] = useState(false)
   // ─── Sidebar ──────────────────────────────────────────────────────────────
 
   function renderSidebar() {
-  const scheduleUrl = getCCScheduleUrl(ccName)
+    const scheduleUrl = getCCScheduleUrl(ccName)
 
-  const groupStateForPacing = {}
-  for (const row of overlapData.rows) {
-    const gid = row.groupId
-    if (!gid || row.nRequired === null) continue
-    if (!groupStateForPacing[gid]) groupStateForPacing[gid] = { nRequired: row.nRequired, pickType: row.pickType, completedCount: 0, completedUnits: 0 }
-    if (completedCourses.has(row.ccKey)) {
-      groupStateForPacing[gid].completedCount += 1
-      groupStateForPacing[gid].completedUnits += row.primaryCourses.reduce((s, c) => s + (c.units || 3), 0)
-    }
-  }
-  const groupSlotsForPacing = {}
-  for (const [gid, gs] of Object.entries(groupStateForPacing)) {
-    groupSlotsForPacing[gid] = gs.pickType === 'units'
-      ? { unitsNeeded: Math.max(0, gs.nRequired - gs.completedUnits), unitsAdded: 0 }
-      : { slotsLeft: Math.max(0, gs.nRequired - gs.completedCount) }
-  }
-  const neededRows = []
-  for (const row of overlapData.rows) {
-    if (completedCourses.has(row.ccKey)) continue
-    const gid = row.groupId
-    const gd  = gid ? groupSlotsForPacing[gid] : null
-    if (gd) {
-      if (gd.unitsNeeded !== undefined) {
-        const u = row.primaryCourses.reduce((s, c) => s + (c.units || 3), 0)
-        if (gd.unitsNeeded - gd.unitsAdded <= 0) continue
-        gd.unitsAdded += u
-      } else {
-        if (gd.slotsLeft <= 0) continue
-        gd.slotsLeft -= 1
+    // Compute neededRows (pick-group-aware remaining courses)
+    const groupStateForPacing = {}
+    for (const row of overlapData.rows) {
+      const gid = row.groupId
+      if (!gid || row.nRequired === null) continue
+      if (!groupStateForPacing[gid]) groupStateForPacing[gid] = { nRequired: row.nRequired, pickType: row.pickType, completedCount: 0, completedUnits: 0 }
+      if (completedCourses.has(row.ccKey)) {
+        groupStateForPacing[gid].completedCount += 1
+        groupStateForPacing[gid].completedUnits += row.primaryCourses.reduce((s, c) => s + (c.units || 3), 0)
       }
     }
-    neededRows.push(row)
-  }
+    const groupSlotsForPacing = {}
+    for (const [gid, gs] of Object.entries(groupStateForPacing)) {
+      groupSlotsForPacing[gid] = gs.pickType === 'units'
+        ? { unitsNeeded: Math.max(0, gs.nRequired - gs.completedUnits), unitsAdded: 0 }
+        : { slotsLeft: Math.max(0, gs.nRequired - gs.completedCount) }
+    }
+    const neededRows = []
+    for (const row of overlapData.rows) {
+      if (completedCourses.has(row.ccKey)) continue
+      const gid = row.groupId
+      const gd  = gid ? groupSlotsForPacing[gid] : null
+      if (gd) {
+        if (gd.unitsNeeded !== undefined) {
+          const u = row.primaryCourses.reduce((s, c) => s + (c.units || 3), 0)
+          if (gd.unitsNeeded - gd.unitsAdded <= 0) continue
+          gd.unitsAdded += u
+        } else {
+          if (gd.slotsLeft <= 0) continue
+          gd.slotsLeft -= 1
+        }
+      }
+      neededRows.push(row)
+    }
 
-  const pacing = computePacing(neededRows, plannerStart, plannerEnd, geCompleted, geRequired)
-  const termWord = includeSummer ? 'term' : 'semester'
-  const perSem = includeSummer ? pacing?.perSemesterWithSummer : pacing?.perSemester
+    const pacing = computePacing(neededRows, plannerStart, plannerEnd)
 
-  const pacingStatus = !perSem ? null
-    : perSem <= 15 ? { label: 'On track', color: '#3B6D11', bg: '#EAF3DE' }
-    : perSem <= 18 ? { label: 'Tight',    color: '#854F0B', bg: '#FAEEDA' }
-    :                { label: 'Heavy load',color: '#A32D2D', bg: '#FCEBEB' }
+    return (
+      <>
+        {/* ── Progress bars ── */}
+        <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 4 }}>📊 Progress</div>
+        <div style={{ fontSize: 11, color: '#888', marginBottom: 12 }}>Check rows to update</div>
 
-  const pacingHeadline = !pacing ? 'Set your terms to see your status'
-    : perSem <= 15 ? "You're on track"
-    : perSem <= 18 ? "It'll be tight"
-    : "You're behind pace"
-
-  const pacingAdvice = !pacing ? ''
-    : perSem <= 15 ? `A comfortable pace — you have room to breathe at ~${perSem}u/${termWord}.`
-    : perSem <= 18 ? `You'll need to stay consistent every ${termWord} — no light terms.`
-    : `~${perSem}u/${termWord} is a heavy load. Consider pushing your transfer goal one ${termWord} later.`
-
-  const capColor = (pacing?.capPct || 0) >= 100 ? '#A32D2D'
-    : (pacing?.capPct || 0) >= 80 ? '#BA7517'
-    : '#639922'
-
-  return (
-    <>
-      {/* ── Progress bars ── */}
-      <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 4 }}>📊 Progress</div>
-      <div style={{ fontSize: 11, color: '#888', marginBottom: 12 }}>Check rows to update</div>
-      {summary.length === 0 ? (
-        <div style={{ fontSize: 12, color: '#aaa' }}>Check off courses to see your progress</div>
-      ) : (
-        summary.map((s, i) => {
-          const pct = s.total === 0 ? 0 : Math.round((s.completed / s.total) * 100)
-          const isTop = i === 0 && summary.length > 1
-          return (
-            <div key={i} style={{ marginBottom: i < summary.length - 1 ? 16 : 0 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                <div style={{ fontSize: 12, fontWeight: isTop ? 600 : 400, color: isTop ? '#1a1a1a' : '#555', flex: 1, marginRight: 8 }}>
-                  {isTop && completedCourses.size > 0 && <span>💜 </span>}{s.label}
-                </div>
-                <div style={{ fontSize: 11, color: '#888', flexShrink: 0 }}>{s.completed}/{s.total}</div>
-              </div>
-              <div style={{ background: '#e0e0e0', borderRadius: 4, height: 6, overflow: 'hidden' }}>
-                <div style={{ background: pct === 100 ? '#4caf50' : '#6C5CE7', height: '100%', width: `${pct}%`, borderRadius: 4, transition: 'width 0.3s ease' }} />
-              </div>
-            </div>
-          )
-        })
-      )}
-
-      {/* ── Transfer pacing ── */}
-      <div style={{ marginTop: 20, paddingTop: 20, borderTop: '1px solid #e8e8e4' }}>
-        <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 12 }}>🗓 Transfer pacing</div>
-
-        {/* Term selectors */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 14 }}>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 10, color: '#aaa', marginBottom: 3 }}>Starting</div>
-            <select value={plannerStart} onChange={e => setPlannerStart(e.target.value)} style={{ fontSize: 12, width: '100%' }}>
-              {TERMS.slice(0, -1).map(t => <option key={t} value={t}>{t}</option>)}
-            </select>
-          </div>
-          <div style={{ color: '#ccc', marginTop: 14, fontSize: 12 }}>→</div>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 10, color: '#aaa', marginBottom: 3 }}>Transfer goal</div>
-            <select value={plannerEnd} onChange={e => setPlannerEnd(e.target.value)} style={{ fontSize: 12, width: '100%' }}>
-              {TERMS.slice(1).map(t => <option key={t} value={t}>{t}</option>)}
-            </select>
-          </div>
-        </div>
-
-        {/* Summer toggle */}
-        <div
-          onClick={() => setIncludeSummer(v => !v)}
-          style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14, cursor: 'pointer', userSelect: 'none' }}
-        >
-          <div style={{
-            width: 28, height: 16, borderRadius: 8, position: 'relative', transition: 'background 0.2s',
-            background: includeSummer ? '#3B6D11' : '#ccc', flexShrink: 0,
-          }}>
-            <div style={{
-              width: 12, height: 12, borderRadius: '50%', background: '#fff',
-              position: 'absolute', top: 2, transition: 'left 0.2s',
-              left: includeSummer ? 14 : 2,
-            }} />
-          </div>
-          <span style={{ fontSize: 12, color: '#555' }}>Include summer terms</span>
-        </div>
-
-        {/* GE inputs */}
-        <div style={{ background: '#f5f5f3', borderRadius: 8, padding: '10px 12px', marginBottom: 14 }}>
-          <div style={{ fontSize: 12, fontWeight: 600, color: '#1a1a1a', marginBottom: 8 }}>
-            GE progress
-            <span style={{ fontWeight: 400, color: '#888', marginLeft: 6 }}>counts once for all schools</span>
-          </div>
-          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-            <div>
-              <div style={{ fontSize: 10, color: '#aaa', marginBottom: 3 }}>Units completed</div>
-              <input
-                type="number" min={0} max={50} step={1}
-                value={geCompleted}
-                onChange={e => setGeCompleted(Math.max(0, parseInt(e.target.value) || 0))}
-                style={{ width: 70, fontSize: 13 }}
-              />
-            </div>
-            <div>
-              <div style={{ fontSize: 10, color: '#aaa', marginBottom: 3 }}>Units required</div>
-              <input
-                type="number" min={1} max={50} step={1}
-                value={geRequired}
-                onChange={e => setGeRequired(Math.max(1, parseInt(e.target.value) || 35))}
-                style={{ width: 70, fontSize: 13 }}
-              />
-            </div>
-          </div>
-          <div style={{ marginTop: 8, background: '#e0e0e0', borderRadius: 3, height: 4, overflow: 'hidden' }}>
-            <div style={{
-              height: '100%', borderRadius: 3, background: '#639922',
-              width: `${Math.min(100, Math.round((geCompleted / geRequired) * 100))}%`,
-              transition: 'width 0.3s ease',
-            }} />
-          </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: '#bbb', marginTop: 3 }}>
-            <span>{geCompleted} of {geRequired} units done</span>
-            <span>{Math.max(0, geRequired - geCompleted)}u left</span>
-          </div>
-        </div>
-
-        {/* Headline verdict */}
-        {!pacing ? (
-          <div style={{ fontSize: 12, color: '#aaa' }}>Set a valid start and transfer term above.</div>
+        {summary.length === 0 ? (
+          <div style={{ fontSize: 12, color: '#aaa' }}>Check off courses to see your progress</div>
         ) : (
-          <>
-            <div style={{ background: '#f9f9f7', border: '1px solid #e8e8e4', borderRadius: 10, padding: '12px 14px', marginBottom: 12 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                <div style={{ fontSize: 15, fontWeight: 600, color: '#1a1a1a' }}>{pacingHeadline}</div>
-                {pacingStatus && (
-                  <span style={{ fontSize: 11, fontWeight: 600, padding: '3px 9px', borderRadius: 20, background: pacingStatus.bg, color: pacingStatus.color }}>
-                    {pacingStatus.label}
-                  </span>
-                )}
-              </div>
-              <div style={{ fontSize: 12, color: '#555', marginBottom: 10 }}>{pacingAdvice}</div>
-
-              {/* Cap bar */}
-              <div style={{ fontSize: 11, color: '#888', display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                <span>Transferable unit cap</span>
-                <span style={{ color: '#1a1a1a', fontWeight: 500 }}>{pacing.totalDone} of 70 used</span>
-              </div>
-              <div style={{ background: '#e0e0e0', borderRadius: 3, height: 5, overflow: 'hidden', marginBottom: 3 }}>
-                <div style={{ height: '100%', borderRadius: 3, background: capColor, width: `${pacing.capPct}%`, transition: 'width 0.3s ease' }} />
-              </div>
-              <div style={{ fontSize: 10, color: '#bbb' }}>{pacing.capLeft} units remaining before cap</div>
-
-              {pacing.capPct >= 100 && (
-                <div style={{ marginTop: 8, background: '#FCEBEB', color: '#A32D2D', borderRadius: 6, padding: '6px 10px', fontSize: 11, lineHeight: 1.5 }}>
-                  You've hit the 70-unit cap. Only take what your schools require.
+          summary.map((s, i) => {
+            const pct = s.total === 0 ? 0 : Math.round((s.completed / s.total) * 100)
+            const isTop = i === 0 && summary.length > 1
+            const showHeart = isTop && completedCourses.size > 0
+            return (
+              <div key={i} style={{ marginBottom: i < summary.length - 1 ? 16 : 0 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                  <div style={{ fontSize: 12, fontWeight: isTop ? 600 : 400, color: isTop ? '#1a1a1a' : '#555', flex: 1, marginRight: 8 }}>
+                    {showHeart && <span>💜 </span>}{s.label}
+                  </div>
+                  <div style={{ fontSize: 11, color: '#888', flexShrink: 0 }}>{s.completed}/{s.total}</div>
                 </div>
-              )}
-              {pacing.capPct >= 80 && pacing.capPct < 100 && (
-                <div style={{ marginTop: 8, background: '#FAEEDA', color: '#854F0B', borderRadius: 6, padding: '6px 10px', fontSize: 11, lineHeight: 1.5 }}>
-                  Getting close to the cap — be selective about what you take next.
+                <div style={{ background: '#e0e0e0', borderRadius: 4, height: 6, overflow: 'hidden' }}>
+                  <div style={{ background: pct === 100 ? '#4caf50' : '#6C5CE7', height: '100%', width: `${pct}%`, borderRadius: 4, transition: 'width 0.3s ease' }} />
                 </div>
-              )}
-            </div>
-
-            {/* Per-school cards */}
-            {programs.map((prog, i) => {
-              const progLabel = `${prog.uniName} → ${prog.majorLabel}`
-              const progRows = overlapData.rows.filter(r => r.programEntries.some(e => e.program === progLabel))
-              const progNeeded = progRows.filter(r => !completedCourses.has(r.ccKey))
-              const progMajorLeft = progNeeded.reduce((s, r) => s + r.primaryCourses.reduce((s2, c) => s2 + (c.units || 3), 0), 0)
-              const progMajorTotal = progRows.reduce((s, r) => s + r.primaryCourses.reduce((s2, c) => s2 + (c.units || 3), 0), 0)
-              const progMajorDone = progMajorTotal - progMajorLeft
-              const progTotal = progMajorLeft + Math.max(0, geRequired - geCompleted)
-              const terms = includeSummer
-                ? TERMS.slice(TERMS.indexOf(plannerStart), TERMS.indexOf(plannerEnd)).length
-                : TERMS.slice(TERMS.indexOf(plannerStart), TERMS.indexOf(plannerEnd)).filter(t => !t.startsWith('Summer')).length
-              const perSemProg = terms > 0 ? Math.round(progTotal / terms) : 0
-              const st = !perSemProg ? { label: '—', color: '#888', bg: '#f0f0f0' }
-                : perSemProg <= 15 ? { label: 'On track', color: '#3B6D11', bg: '#EAF3DE' }
-                : perSemProg <= 18 ? { label: 'Tight',    color: '#854F0B', bg: '#FAEEDA' }
-                :                    { label: 'Heavy load',color: '#A32D2D', bg: '#FCEBEB' }
-              const majorComplete = progMajorLeft === 0
-
-              return (
-                <div key={i} style={{ background: '#fff', border: '1px solid #efefed', borderRadius: 10, padding: '12px 14px', marginBottom: 8 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
-                    <div>
-                      <div style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a' }}>{prog.uniName}</div>
-                      <div style={{ fontSize: 11, color: '#888', marginTop: 1 }}>{prog.majorLabel}</div>
-                    </div>
-                    <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 20, background: st.bg, color: st.color }}>{st.label}</span>
-                  </div>
-
-                  <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
-                    <div style={{ flex: 1, background: '#f5f5f3', borderRadius: 8, padding: '8px 10px' }}>
-                      {majorComplete ? (
-                        <>
-                          <div style={{ fontSize: 14, fontWeight: 600, color: '#3B6D11' }}>✓ Done</div>
-                          <div style={{ fontSize: 11, color: '#888', marginTop: 2 }}>major prep</div>
-                          <div style={{ fontSize: 10, color: '#bbb', marginTop: 2 }}>all {progMajorTotal}u complete</div>
-                        </>
-                      ) : (
-                        <>
-                          <div style={{ fontSize: 16, fontWeight: 600, color: '#1a1a1a' }}>{progMajorLeft}u</div>
-                          <div style={{ fontSize: 11, color: '#888', marginTop: 2 }}>major prep left</div>
-                          <div style={{ fontSize: 10, color: '#bbb', marginTop: 2 }}>{progMajorDone}u of {progMajorTotal}u done</div>
-                        </>
-                      )}
-                    </div>
-                    <div style={{ flex: 1, background: '#f5f5f3', borderRadius: 8, padding: '8px 10px' }}>
-                      <div style={{ fontSize: 16, fontWeight: 600, color: perSemProg > 0 ? st.color : '#1a1a1a' }}>~{perSemProg}u</div>
-                      <div style={{ fontSize: 11, color: '#888', marginTop: 2 }}>per {termWord}</div>
-                      <div style={{ fontSize: 10, color: '#bbb', marginTop: 2 }}>major + GE combined</div>
-                    </div>
-                  </div>
-
-                  <div style={{ background: '#e0e0e0', borderRadius: 3, height: 4, overflow: 'hidden', marginBottom: 3 }}>
-                    <div style={{ height: '100%', borderRadius: 3, background: st.color, width: `${Math.min(100, Math.round((perSemProg / 20) * 100))}%`, transition: 'width 0.3s ease' }} />
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: '#ccc', marginBottom: 8 }}>
-                    <span>light</span><span>comfortable up to 15u</span><span>heavy</span>
-                  </div>
-
-                  <div style={{ fontSize: 12, color: '#666', lineHeight: 1.6 }}>
-                    {perSemProg === 0 ? 'Set valid terms above.' :
-                     perSemProg <= 15 ? `On track — ~${perSemProg}u/${termWord} is a comfortable pace.` :
-                     perSemProg <= 18 ? `Tight — you'll need ~${perSemProg}u every ${termWord} without a break.` :
-                     `Behind pace — ~${perSemProg}u/${termWord} is a heavy load. Consider a later transfer date.`}
-                  </div>
-                </div>
-              )
-            })}
-
-            {scheduleUrl && (
-              <a href={scheduleUrl} target="_blank" rel="noopener noreferrer"
-                style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 10, fontSize: 12, color: '#6C5CE7', textDecoration: 'none' }}>
-                ↗ {ccName} schedule
-              </a>
-            )}
-
-            <div style={{ fontSize: 10, color: '#ccc', marginTop: 12, lineHeight: 1.6 }}>
-              GE is shared across all schools (IGETC). Summer terms {includeSummer ? 'included' : 'excluded'}. Talk to your counselor about sequencing.
-            </div>
-          </>
+              </div>
+            )
+          })
         )}
-      </div>
-    </>
-  )
-}
+
+        {/* ── Pacing card ── */}
+        <div style={{ marginTop: 20, paddingTop: 20, borderTop: '1px solid #e8e8e4' }}>
+          <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 12 }}>🗓 Transfer pacing</div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 14 }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 10, color: '#aaa', marginBottom: 3 }}>Starting</div>
+              <select value={plannerStart} onChange={e => setPlannerStart(e.target.value)} style={{ fontSize: 12, width: '100%' }}>
+                {TERMS.slice(0, -1).map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
+            </div>
+            <div style={{ color: '#ccc', marginTop: 14, fontSize: 12 }}>→</div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 10, color: '#aaa', marginBottom: 3 }}>Transfer goal</div>
+              <select value={plannerEnd} onChange={e => setPlannerEnd(e.target.value)} style={{ fontSize: 12, width: '100%' }}>
+                {TERMS.slice(1).map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
+            </div>
+          </div>
+
+          {!pacing ? (
+            <div style={{ fontSize: 12, color: '#aaa' }}>Set a valid start and transfer term above.</div>
+          ) : (
+            <>
+              {/* Big number + verdict */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                <div style={{ fontSize: 22, fontWeight: 700, color: '#1a1a1a', lineHeight: 1 }}>
+                  ~{pacing.perSemester}u
+                  <span style={{ fontSize: 12, fontWeight: 400, color: '#888', marginLeft: 6 }}>/ semester</span>
+                </div>
+                <span style={{ fontSize: 11, fontWeight: 600, padding: '3px 9px', borderRadius: 20, background: pacing.statusBg, color: pacing.statusColor }}>
+                  {pacing.statusLabel}
+                </span>
+              </div>
+
+              {/* Single speedometer bar */}
+              <div style={{ background: '#e8e8e4', borderRadius: 6, height: 8, overflow: 'hidden', marginBottom: 5 }}>
+                <div style={{
+                  height: '100%', borderRadius: 6,
+                  width: `${pacing.barPct}%`,
+                  background: pacing.status === 'on-track' ? '#4caf50' : pacing.status === 'tight' ? '#f59e0b' : '#ef4444',
+                  transition: 'width 0.4s ease',
+                }} />
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: '#bbb', marginBottom: 12 }}>
+                <span>light</span>
+                <span>15u comfortable</span>
+                <span>heavy</span>
+              </div>
+
+              {/* Human-readable advice */}
+              <div style={{ fontSize: 12, color: '#555', lineHeight: 1.6, marginBottom: 10 }}>
+                {pacing.advice}
+              </div>
+
+              {/* Quiet math breakdown */}
+              <div style={{ fontSize: 11, color: '#aaa', lineHeight: 1.6 }}>
+                {pacing.majorUnitsLeft}u major prep + ~{pacing.geLeft}u GE est. over {pacing.semesters} semester{pacing.semesters !== 1 ? 's' : ''}
+              </div>
+
+              {scheduleUrl && (
+                <a href={scheduleUrl} target="_blank" rel="noopener noreferrer"
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 12, fontSize: 12, color: '#6C5CE7', textDecoration: 'none' }}>
+                  ↗ {ccName} schedule
+                </a>
+              )}
+            </>
+          )}
+
+          <div style={{ fontSize: 10, color: '#ccc', marginTop: 14, lineHeight: 1.6 }}>
+            GE estimate assumes ~35u total (IGETC). Summer terms excluded. Talk to your counselor about sequencing.
+          </div>
+        </div>
+      </>
+    )
+  }
 
   // ─── Course list rendering ────────────────────────────────────────────────
 
