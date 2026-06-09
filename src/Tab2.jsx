@@ -361,25 +361,89 @@ function buildSemesterPlan(rows, completedCourses, startTerm, transferTerm) {
 
   const availableTerms = TERMS.slice(startIdx, endIdx)
 
-  // Get remaining uncompleted courses with their data
+  // ── Pick-group awareness ──
+  // For each groupId, figure out how many more courses/units are still needed
+  // after accounting for already-completed courses in that group.
+  const groupState = {} // groupId → { nRequired, pickType, completedCount, completedUnits, totalCount }
+
+  for (const row of rows) {
+    const gid = row.groupId
+    if (!gid || row.nRequired === null) continue // not a pick group
+    if (!groupState[gid]) {
+      groupState[gid] = {
+        nRequired: row.nRequired,
+        pickType: row.pickType,
+        completedCount: 0,
+        completedUnits: 0,
+        totalCount: 0,
+      }
+    }
+    groupState[gid].totalCount += 1
+    if (completedCourses.has(row.ccKey)) {
+      groupState[gid].completedCount += 1
+      groupState[gid].completedUnits += row.primaryCourses.reduce((s, c) => s + (c.units || 3), 0)
+    }
+  }
+
+  // For each pick group, determine how many more slots are still needed
+  const groupSlotsRemaining = {} // groupId → number of courses still needed from this group
+  for (const [gid, gs] of Object.entries(groupState)) {
+    if (gs.pickType === 'units') {
+      // still need courses until we've hit nRequired units
+      const unitsStillNeeded = Math.max(0, gs.nRequired - gs.completedUnits)
+      groupSlotsRemaining[gid] = unitsStillNeeded > 0 ? Infinity : 0 // will filter by running unit sum below
+    } else {
+      // count-based: need nRequired total, subtract completed
+      groupSlotsRemaining[gid] = Math.max(0, gs.nRequired - gs.completedCount)
+    }
+  }
+
+  // Track how many units we've added per group (for unit-based groups)
+  const groupUnitsAdded = {}
+
   const remaining = []
   for (const row of rows) {
     if (completedCourses.has(row.ccKey)) continue
-    const label = row.primaryCourses.map(c => `${c.prefix} ${c.number}`).join(' + ')
+
+    const gid = row.groupId
+    const gs = groupState[gid]
+
+    if (gid && gs && row.nRequired !== null) {
+      // This row belongs to a pick group
+      if (gs.pickType === 'units') {
+        // Include it — we'll gate by running unit total below
+      } else {
+        // Count-based: skip if group is already satisfied
+        if (groupSlotsRemaining[gid] <= 0) continue
+      }
+    }
+
     const units = row.primaryCourses.reduce((sum, c) => sum + (c.units || 3), 0)
-    remaining.push({ row, label, units })
+    remaining.push({ row, label: row.primaryCourses.map(c => `${c.prefix} ${c.number}`).join(' + '), units })
   }
 
-  // Sort by course number within prefix for logical ordering
   const allCourses = sortCoursesByNumber(
     remaining.map(r => ({ ...r, sortPrefix: r.row.primaryCourses[0]?.prefix || '', sortNum: parseFloat(r.row.primaryCourses[0]?.number) || 0 }))
   )
 
-  // Distribute courses across terms
   const plan = availableTerms.map(term => ({ term, courses: [], totalUnits: 0 }))
 
   for (const course of allCourses) {
-    // Find the term with most room that hasn't hit its target
+    const gid = course.row.groupId
+    const gs = gid ? groupState[gid] : null
+
+    // For unit-based pick groups, check if we've already added enough units from this group
+    if (gid && gs && gs.pickType === 'units') {
+      if (!groupUnitsAdded[gid]) groupUnitsAdded[gid] = 0
+      const unitsStillNeeded = Math.max(0, gs.nRequired - gs.completedUnits - groupUnitsAdded[gid])
+      if (unitsStillNeeded <= 0) continue
+      groupUnitsAdded[gid] += course.units
+    } else if (gid && gs && gs.pickType !== 'units' && gs.nRequired !== null) {
+      // Count-based: decrement the slot
+      if (groupSlotsRemaining[gid] <= 0) continue
+      groupSlotsRemaining[gid] -= 1
+    }
+
     let placed = false
     for (const slot of plan) {
       const termType = slot.term.split(' ')[0]
@@ -391,7 +455,6 @@ function buildSemesterPlan(rows, completedCourses, startTerm, transferTerm) {
         break
       }
     }
-    // If no term has room, add to the least loaded term
     if (!placed) {
       const lightest = plan.reduce((a, b) => a.totalUnits <= b.totalUnits ? a : b)
       lightest.courses.push(course)
@@ -445,10 +508,49 @@ function SemesterPlanner({ rows, completedCourses, onClose }) {
   const [transferTerm, setTransferTerm] = useState(TERMS[4])
 
   const plan = buildSemesterPlan(rows, completedCourses, startTerm, transferTerm)
-  const totalRemaining = rows.filter(r => !completedCourses.has(r.ccKey)).length
-  const totalUnits = rows
-    .filter(r => !completedCourses.has(r.ccKey))
-    .reduce((sum, r) => sum + r.primaryCourses.reduce((s, c) => s + (c.units || 3), 0), 0)
+
+  // Count remaining respecting pick groups
+  const groupStateForDisplay = {}
+  for (const row of rows) {
+    const gid = row.groupId
+    if (!gid || row.nRequired === null) continue
+    if (!groupStateForDisplay[gid]) groupStateForDisplay[gid] = { nRequired: row.nRequired, pickType: row.pickType, completedCount: 0, completedUnits: 0 }
+    if (completedCourses.has(row.ccKey)) {
+      groupStateForDisplay[gid].completedCount += 1
+      groupStateForDisplay[gid].completedUnits += row.primaryCourses.reduce((s, c) => s + (c.units || 3), 0)
+    }
+  }
+  const groupSlotsForDisplay = {}
+  for (const [gid, gs] of Object.entries(groupStateForDisplay)) {
+    groupSlotsForDisplay[gid] = gs.pickType === 'units'
+      ? { unitsNeeded: Math.max(0, gs.nRequired - gs.completedUnits), unitsAdded: 0 }
+      : { slotsLeft: Math.max(0, gs.nRequired - gs.completedCount) }
+  }
+
+  let totalRemaining = 0
+  let totalUnits = 0
+  for (const row of rows) {
+    if (completedCourses.has(row.ccKey)) continue
+    const gid = row.groupId
+    const gd = gid ? groupSlotsForDisplay[gid] : null
+    if (gd) {
+      if (gd.unitsNeeded !== undefined) {
+        const u = row.primaryCourses.reduce((s, c) => s + (c.units || 3), 0)
+        if (gd.unitsNeeded - gd.unitsAdded <= 0) continue
+        gd.unitsAdded += u
+        totalRemaining += 1
+        totalUnits += u
+      } else {
+        if (gd.slotsLeft <= 0) continue
+        gd.slotsLeft -= 1
+        totalRemaining += 1
+        totalUnits += row.primaryCourses.reduce((s, c) => s + (c.units || 3), 0)
+      }
+    } else {
+      totalRemaining += 1
+      totalUnits += row.primaryCourses.reduce((s, c) => s + (c.units || 3), 0)
+    }
+  }
 
   return (
     <div>
@@ -460,21 +562,13 @@ function SemesterPlanner({ rows, completedCourses, onClose }) {
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
         <div>
           <div style={{ fontSize: 11, color: '#888', marginBottom: 4 }}>Start term</div>
-          <select
-            value={startTerm}
-            onChange={e => setStartTerm(e.target.value)}
-            style={{ width: '100%', fontSize: 12 }}
-          >
+          <select value={startTerm} onChange={e => setStartTerm(e.target.value)} style={{ width: '100%', fontSize: 12 }}>
             {TERMS.slice(0, -1).map(t => <option key={t} value={t}>{t}</option>)}
           </select>
         </div>
         <div>
           <div style={{ fontSize: 11, color: '#888', marginBottom: 4 }}>Transfer goal</div>
-          <select
-            value={transferTerm}
-            onChange={e => setTransferTerm(e.target.value)}
-            style={{ width: '100%', fontSize: 12 }}
-          >
+          <select value={transferTerm} onChange={e => setTransferTerm(e.target.value)} style={{ width: '100%', fontSize: 12 }}>
             {TERMS.slice(1).map(t => <option key={t} value={t}>{t}</option>)}
           </select>
         </div>
@@ -493,9 +587,7 @@ function SemesterPlanner({ rows, completedCourses, onClose }) {
 
       {plan.length === 0 ? (
         <div style={{ fontSize: 12, color: '#aaa', textAlign: 'center', padding: '20px 0' }}>
-          {totalRemaining === 0
-            ? '🎉 All courses completed!'
-            : 'Adjust your terms to generate a plan.'}
+          {totalRemaining === 0 ? '🎉 All courses completed!' : 'Adjust your terms to generate a plan.'}
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -507,9 +599,7 @@ function SemesterPlanner({ rows, completedCourses, onClose }) {
               <div key={i} style={{ border: '1px solid #efefed', borderRadius: 8, overflow: 'hidden' }}>
                 <div style={{ padding: '7px 12px', background: '#f9f9f7', borderBottom: '1px solid #efefed', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div style={{ fontSize: 12, fontWeight: 600, color: '#1a1a1a' }}>{slot.term}</div>
-                  <div style={{ fontSize: 11, color: isHeavy ? '#dc2626' : '#888' }}>
-                    {slot.totalUnits} units{isHeavy ? ' ⚠️' : ''}
-                  </div>
+                  <div style={{ fontSize: 11, color: isHeavy ? '#dc2626' : '#888' }}>{slot.totalUnits} units{isHeavy ? ' ⚠️' : ''}</div>
                 </div>
                 <div style={{ padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: 6 }}>
                   {slot.courses.map((c, j) => {
@@ -737,10 +827,12 @@ export default function Tab2() {
         }
       })
 
+      // ── CHANGE 2: Sort by overlap coverage first (ALL PROGRAMS → MULTIPLE → single) ──
       rows.sort((a, b) => {
+        if (b.coverage !== a.coverage) return b.coverage - a.coverage
         if (a._groupPosition !== b._groupPosition) return a._groupPosition - b._groupPosition
         if (a._sectionPosition !== b._sectionPosition) return a._sectionPosition - b._sectionPosition
-        return b.coverage - a.coverage || a.ccKey.localeCompare(b.ccKey)
+        return a.ccKey.localeCompare(b.ccKey)
       })
 
       setOverlapData({
@@ -792,6 +884,27 @@ export default function Tab2() {
     })
   }
 
+  // ── CHANGE 1: Unit budget calculator ──
+  function computeUnitBudget() {
+    if (!overlapData) return null
+    const GE_ESTIMATE = 35
+    const TRANSFER_CAP = 70
+
+    const totalMajorUnits = overlapData.rows.reduce((sum, row) =>
+      sum + row.primaryCourses.reduce((s, c) => s + (c.units || 3), 0), 0)
+
+    const completedMajorUnits = overlapData.rows
+      .filter(r => completedCourses.has(r.ccKey))
+      .reduce((sum, row) =>
+        sum + row.primaryCourses.reduce((s, c) => s + (c.units || 3), 0), 0)
+
+    const plannedTotal = totalMajorUnits + GE_ESTIMATE
+    const isOver = plannedTotal > TRANSFER_CAP
+    const remainingBudget = TRANSFER_CAP - GE_ESTIMATE - completedMajorUnits
+
+    return { totalMajorUnits, completedMajorUnits, plannedTotal, isOver, remainingBudget, GE_ESTIMATE, TRANSFER_CAP }
+  }
+
   function shortLabel(label) {
     const parts = label.split(' → ')
     const uni = parts[0]?.replace('UC ', '').replace('CSU ', '').replace(' State', '').replace(' University', '')
@@ -814,10 +927,63 @@ export default function Tab2() {
       )
     }
 
+    const budget = computeUnitBudget()
+
     return (
       <>
         <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 4 }}>📊 Progress</div>
         <div style={{ fontSize: 11, color: '#888', marginBottom: 12 }}>Check rows to update</div>
+
+        {/* ── CHANGE 1: Unit budget bar ── */}
+        {budget && (
+          <div style={{
+            marginBottom: 20, padding: '12px',
+            background: budget.isOver ? '#fff5f5' : '#f5f4f0',
+            borderRadius: 10,
+            border: `1px solid ${budget.isOver ? '#fecaca' : '#e8e8e4'}`
+          }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: '#1a1a1a', marginBottom: 10 }}>
+              📦 Transfer unit budget
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 10 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11 }}>
+                <span style={{ color: '#666' }}>Major prep</span>
+                <span style={{ fontWeight: 600 }}>{budget.totalMajorUnits}u</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11 }}>
+                <span style={{ color: '#666' }}>GE / IGETC (est.)</span>
+                <span style={{ fontWeight: 600 }}>+{budget.GE_ESTIMATE}u</span>
+              </div>
+              <div style={{
+                borderTop: '1px solid #e0e0e0', marginTop: 4, paddingTop: 4,
+                display: 'flex', justifyContent: 'space-between', fontSize: 12
+              }}>
+                <span style={{ fontWeight: 700 }}>Total</span>
+                <span style={{ fontWeight: 700, color: budget.isOver ? '#dc2626' : '#1a1a1a' }}>
+                  {budget.plannedTotal}u / {budget.TRANSFER_CAP}u
+                </span>
+              </div>
+            </div>
+            <div style={{ background: '#e0e0e0', borderRadius: 4, height: 7, overflow: 'hidden', marginBottom: 8 }}>
+              <div style={{
+                height: '100%', borderRadius: 4,
+                width: `${Math.min(100, Math.round((budget.plannedTotal / budget.TRANSFER_CAP) * 100))}%`,
+                background: budget.isOver ? '#dc2626' : budget.plannedTotal / budget.TRANSFER_CAP > 0.85 ? '#f59e0b' : '#6C5CE7',
+                transition: 'width 0.3s ease'
+              }} />
+            </div>
+            {budget.isOver ? (
+              <div style={{ fontSize: 11, color: '#dc2626', fontWeight: 600 }}>
+                ⚠️ {budget.plannedTotal - budget.TRANSFER_CAP}u over the 70u cap — prioritize ALL PROGRAMS courses first
+              </div>
+            ) : (
+              <div style={{ fontSize: 11, color: '#666' }}>
+                {budget.remainingBudget}u left in your budget after GE — use it on school-specific courses
+              </div>
+            )}
+          </div>
+        )}
+
         {summary.length === 0 ? (
           <div style={{ fontSize: 12, color: '#aaa' }}>Check off courses to see your progress</div>
         ) : (
@@ -868,6 +1034,9 @@ export default function Tab2() {
     const noArtByGroupId = {}
     const noArtByGroupIdFlat = {}
     const inlineRequiredNoArt = []
+
+    // ── CHANGE 1 (cont): compute budget once for school-specific label coloring ──
+    const budget = computeUnitBudget()
 
     for (const na of (overlapData.noArticulation || [])) {
       if (na.partOfPickGroup) {
@@ -1004,6 +1173,8 @@ export default function Tab2() {
               const units = row.primaryCourses.reduce((sum, c) => sum + (c.units || 0), 0)
               const coverageAll = row.coverage === overlapData.totalPrograms
               const coverageMost = row.coverage > 1 && !coverageAll
+              // ── CHANGE 3: school-specific flag ──
+              const isSchoolSpecific = row.coverage === 1 && overlapData.totalPrograms > 1
 
               return (
                 <div key={row.ccKey} style={{ borderTop: rowIdx > 0 ? '1px dashed #f0e6c8' : 'none', background: isDone ? '#f7f4ec' : '#fffdf5', opacity: isDone ? 0.6 : 1 }}>
@@ -1017,6 +1188,13 @@ export default function Tab2() {
                         {label}
                         {coverageAll && <span style={{ fontSize: 10, background: '#ede9ff', color: '#6C5CE7', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>ALL PROGRAMS</span>}
                         {coverageMost && <span style={{ fontSize: 10, background: '#fff3e0', color: '#f57f17', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>MULTIPLE</span>}
+                        {isSchoolSpecific && (
+                          <span style={{
+                            fontSize: 10, borderRadius: 4, padding: '2px 6px', fontWeight: 600,
+                            background: budget?.isOver ? '#fee2e2' : '#f5f4f0',
+                            color: budget?.isOver ? '#dc2626' : '#999',
+                          }}>SCHOOL-SPECIFIC</span>
+                        )}
                       </div>
                       {subtitle && <div style={{ fontSize: 11, color: '#999', marginTop: 1 }}>{subtitle}{units ? ` · ${units} units` : ''}</div>}
                     </div>
@@ -1050,6 +1228,8 @@ export default function Tab2() {
           const units = row.primaryCourses.reduce((sum, c) => sum + (c.units || 0), 0)
           const coverageAll = row.coverage === overlapData.totalPrograms
           const coverageMost = row.coverage > 1 && !coverageAll
+          // ── CHANGE 3: school-specific flag ──
+          const isSchoolSpecific = row.coverage === 1 && overlapData.totalPrograms > 1
 
           rendered.push(
             <div key={row.ccKey} style={{ border: '1px solid #efefed', borderRadius: 8, marginBottom: 6, background: isDone ? '#fafafa' : '#fff', opacity: isDone ? 0.55 : 1, overflow: 'hidden' }}>
@@ -1062,6 +1242,13 @@ export default function Tab2() {
                     {label}
                     {coverageAll && <span style={{ fontSize: 10, background: '#ede9ff', color: '#6C5CE7', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>ALL PROGRAMS</span>}
                     {coverageMost && <span style={{ fontSize: 10, background: '#fff3e0', color: '#f57f17', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>MULTIPLE</span>}
+                    {isSchoolSpecific && (
+                      <span style={{
+                        fontSize: 10, borderRadius: 4, padding: '2px 6px', fontWeight: 600,
+                        background: budget?.isOver ? '#fee2e2' : '#f5f4f0',
+                        color: budget?.isOver ? '#dc2626' : '#999',
+                      }}>SCHOOL-SPECIFIC</span>
+                    )}
                   </div>
                   {subtitle && <div style={{ fontSize: 11, color: '#999', marginTop: 1 }}>{subtitle}{units ? ` · ${units} units` : ''}</div>}
                 </div>
