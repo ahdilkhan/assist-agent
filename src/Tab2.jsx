@@ -388,7 +388,7 @@ function pickGroupLabel(group) {
   const total = group.rows.length
   switch (group.pickType) {
     case 'units':
-      return `Choose courses totaling ${n} unit${n !== 1 ? 's' : ''} from these ${total} options`
+  return `Choose courses totaling ${n} university unit${n !== 1 ? 's' : ''} from these ${total} options`
     case 'range':
       return group.pickMax
         ? `Choose ${group.pickMin}–${group.pickMax} courses from these ${total} options`
