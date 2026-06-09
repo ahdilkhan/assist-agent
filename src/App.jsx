@@ -443,16 +443,19 @@ export default function App() {
     setSavedCCs(prev => { const next = new Set(prev); next.has(ccName) ? next.delete(ccName) : next.add(ccName); return next })
   }
 
-  const regionFiltered = selectedRegions.length > 0
-    ? equivalents.filter(eq => selectedRegions.some(r => ccMatchesRegion(eq.ccName, r))) : equivalents
+  const courseFiltered = equivalents.filter(eq => {
+  if (!courseFilter || courseFilter === 'any') return true
+  const minCourses = Math.min(...eq.options.map(o => o.courses.length))
+  if (courseFilter === 'single') return minCourses <= 1
+  if (courseFilter === 'multi') return minCourses >= 2
+  return true
+})
 
-  const filteredEquivalents = regionFiltered.filter(eq => {
-    if (!courseFilter || courseFilter === 'any') return true
-    const minCourses = Math.min(...eq.options.map(o => o.courses.length))
-    if (courseFilter === 'single') return minCourses <= 1
-    if (courseFilter === 'multi') return minCourses >= 2
-    return true
-  })
+const regionFiltered = selectedRegions.length > 0
+  ? equivalents.filter(eq => selectedRegions.some(r => ccMatchesRegion(eq.ccName, r))) : equivalents
+
+const filteredEquivalents = selectedRegions.length > 0
+  ? courseFiltered.filter(eq => selectedRegions.some(r => ccMatchesRegion(eq.ccName, r))) : courseFiltered
 
   const savedEquivalents = equivalents.filter(eq => savedCCs.has(eq.ccName))
 
@@ -741,7 +744,7 @@ export default function App() {
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                           <div className={`pref-chip${selectedRegions.length === 0 ? ' selected' : ''}`} style={{ padding: '6px 12px', fontSize: 12 }} onClick={() => setSelectedRegions([])}>All regions</div>
                           {Object.keys(REGIONS).map(region => {
-                            const count = equivalents.filter(eq => ccMatchesRegion(eq.ccName, region)).length
+                            const count = courseFiltered.filter(eq => ccMatchesRegion(eq.ccName, region)).length
                             if (count === 0) return null
                             return <div key={region} className={`pref-chip${selectedRegions.includes(region) ? ' selected' : ''}`} style={{ padding: '6px 12px', fontSize: 12 }} onClick={() => toggleRegion(region)}>{region} ({count})</div>
                           })}
