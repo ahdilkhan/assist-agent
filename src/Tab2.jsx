@@ -5,6 +5,16 @@ import { KNOWN_UNIVERSITIES, KNOWN_CCS } from './App'
 const ASSIST_BASE = import.meta.env.VITE_ASSIST_BASE
 const YEAR_ID = import.meta.env.VITE_ACADEMIC_YEAR_ID || 76
 
+const TERMS = [
+  'Fall 2025', 'Spring 2026', 'Summer 2026',
+  'Fall 2026', 'Spring 2027', 'Summer 2027',
+  'Fall 2027', 'Spring 2028',
+]
+
+const TARGET_UNITS_PER_TERM = { Fall: 15, Spring: 15, Summer: 9 }
+
+// ─── ASSIST helpers ───────────────────────────────────────────────────────────
+
 async function assistGet(path) {
   const res = await fetch(`${ASSIST_BASE}${path}`, { headers: { accept: 'application/json' } })
   if (!res.ok) throw new Error(`ASSIST ${res.status}: ${path}`)
@@ -25,7 +35,10 @@ async function getMajorsForUni(uniId, ccId) {
         if (majors.length > 0) return majors
         const departments = reports.filter(r => r.type === 'Department')
         if (departments.length > 0) return departments
-        const others = reports.filter(r => r.type !== 'Major' && r.type !== 'Department' && r.type !== 'AllDepartments' && r.type !== 'SendingDepartment')
+        const others = reports.filter(r =>
+          r.type !== 'Major' && r.type !== 'Department' &&
+          r.type !== 'AllDepartments' && r.type !== 'SendingDepartment'
+        )
         if (others.length > 0) return others
       } catch {}
     }
@@ -37,6 +50,8 @@ async function getAgreement(key) {
   return assistGet(`/articulation/api/Agreements?Key=${encodeURIComponent(key)}`)
 }
 
+// ─── Course parsing ───────────────────────────────────────────────────────────
+
 function extractCourse(c) {
   const prefix = (c.prefix || '').trim()
   const number = (c.courseNumber || c.number || '').trim()
@@ -44,7 +59,7 @@ function extractCourse(c) {
   return {
     prefix, number,
     title: c.courseTitle || c.title || '',
-    units: c.maxUnits || c.minUnits || null,
+    units: c.maxUnits || c.minUnits || 3,
     note: c.attributes?.[0]?.content || null,
   }
 }
@@ -70,21 +85,6 @@ function parseSendingOptions(topItems) {
   return options
 }
 
-// ─── buildCellMap ─────────────────────────────────────────────────────────────
-// Reads templateAssets and builds: cell.id → context
-//
-// Pick-N is signaled by group.instruction.type:
-//   'NFromArea'     → pick N sections OR N courses depending on amount vs section count
-//   'NFollowing'    → pick N individual courses
-//   'NFromUnits'    → pick courses totaling N units
-//   'NToNFollowing' → pick a range
-//   'Following'     → complete ALL — not a pick group
-//   conjunction='Or'→ legacy UC pattern
-//
-// isSectionBundled = true when NFromArea amount < number of sections
-//   e.g. "Complete A, B, C, or D" (pick 1 of 4) → each section is one atomic slot
-//   e.g. "Complete 8 from the following" (pick 8 of 8) → individual course slots
-// ─────────────────────────────────────────────────────────────────────────────
 function buildCellMap(templateAssets) {
   const cellMap = new Map()
   let assets
@@ -107,7 +107,6 @@ function buildCellMap(templateAssets) {
     const dataSections = sections.filter(s => s.type === 'Section')
 
     const instr = group.instruction || {}
-    console.log('GROUP INSTR', group.groupId, JSON.stringify(instr))
     const instrType = instr.type || ''
     const instrConjunction = (instr.conjunction || '').toLowerCase()
 
@@ -119,22 +118,22 @@ function buildCellMap(templateAssets) {
     let isSectionBundled = false
 
     if (instrType === 'NFromArea' || instrType === 'NFromConjunction') {
-  groupIsPickN = true
-  groupNRequired = instr.amount ?? 1
-  const isUnitBased = ['SemesterUnit', 'QuarterUnit', 'Unit'].includes(instr.amountUnitType)
-  groupPickType = isUnitBased ? 'units' : 'count'
-  isSectionBundled = groupPickType === 'count' && (instr.amount ?? 1) < dataSections.length
-} else if (instrType === 'NToNFromConjunction') {
-  groupIsPickN = true
-  groupPickMin = instr.amount ?? 1
-  groupPickMax = instr.toAmount ?? null
-  groupNRequired = groupPickMin
-  groupPickType = 'range'
-} else if (instrType === 'NOrUnits') {
-  groupIsPickN = true
-  groupNRequired = instr.amount ?? 1
-  groupPickType = 'count'
-} else if (instrType === 'NFollowing') {
+      groupIsPickN = true
+      groupNRequired = instr.amount ?? 1
+      const isUnitBased = ['SemesterUnit', 'QuarterUnit', 'Unit'].includes(instr.amountUnitType)
+      groupPickType = isUnitBased ? 'units' : 'count'
+      isSectionBundled = groupPickType === 'count' && (instr.amount ?? 1) < dataSections.length
+    } else if (instrType === 'NToNFromConjunction') {
+      groupIsPickN = true
+      groupPickMin = instr.amount ?? 1
+      groupPickMax = instr.toAmount ?? null
+      groupNRequired = groupPickMin
+      groupPickType = 'range'
+    } else if (instrType === 'NOrUnits') {
+      groupIsPickN = true
+      groupNRequired = instr.amount ?? 1
+      groupPickType = 'count'
+    } else if (instrType === 'NFollowing') {
       groupIsPickN = true
       groupNRequired = instr.amount ?? 1
       groupPickType = 'count'
@@ -149,7 +148,6 @@ function buildCellMap(templateAssets) {
       groupNRequired = groupPickMin
       groupPickType = 'range'
     } else if (instrConjunction === 'or') {
-      // Legacy UC pattern
       groupIsPickN = true
       const groupNAdv = (group.advisements || []).find(a => a.type === 'NFollowing')
       groupNRequired = groupNAdv?.amount ?? 1
@@ -200,13 +198,7 @@ function buildCellMap(templateAssets) {
       }
 
       const ctx = {
-        sectionLabel,
-        groupTitle,
-        nRequired,
-        pickType,
-        pickMin,
-        pickMax,
-        groupId,
+        sectionLabel, groupTitle, nRequired, pickType, pickMin, pickMax, groupId,
         isSectionBundled: groupIsPickN ? isSectionBundled : false,
         sectionPosition: section.position,
         groupPosition: group.position,
@@ -222,7 +214,6 @@ function buildCellMap(templateAssets) {
       }
     }
   }
-
   return cellMap
 }
 
@@ -239,31 +230,16 @@ function parseAllForProgram(agreement, programLabel) {
     for (const item of arts) {
       const art = item.articulation || item
       const templateCellId = item.templateCellId
-
-      const cellContext =
-        cellMap.get(templateCellId) ||
-        cellMap.get(String(templateCellId)) ||
-        {
-          sectionLabel: '',
-          groupTitle: 'MAJOR REQUIREMENTS',
-          nRequired: null,
-          pickType: null,
-          pickMin: null,
-          pickMax: null,
-          groupId: templateCellId || Math.random().toString(),
-          isSectionBundled: false,
-          sectionPosition: 0,
-          groupPosition: 0,
-        }
+      const cellContext = cellMap.get(templateCellId) || cellMap.get(String(templateCellId)) || {
+        sectionLabel: '', groupTitle: 'MAJOR REQUIREMENTS',
+        nRequired: null, pickType: null, pickMin: null, pickMax: null,
+        groupId: templateCellId || Math.random().toString(),
+        isSectionBundled: false, sectionPosition: 0, groupPosition: 0,
+      }
 
       const gid = cellContext.groupId
       if (!groupRegistry[gid]) {
-        groupRegistry[gid] = {
-          nRequired: cellContext.nRequired,
-          pickType: cellContext.pickType,
-          articulated: [],
-          unarticulated: [],
-        }
+        groupRegistry[gid] = { nRequired: cellContext.nRequired, pickType: cellContext.pickType, articulated: [], unarticulated: [] }
       }
 
       let receivingCourses = []
@@ -301,8 +277,7 @@ function parseAllForProgram(agreement, programLabel) {
             units: primary.maxUnits || primary.minUnits || null,
             allCourseLabels,
           },
-          options,
-          ...cellContext,
+          options, ...cellContext,
         })
       }
 
@@ -351,8 +326,7 @@ function parseAllForProgram(agreement, programLabel) {
                 units: course.maxUnits || course.minUnits || null,
                 allCourseLabels: [`${(course.prefix || '').trim()} ${(course.courseNumber || course.number || '').trim()}`],
               },
-              noArticulation: true,
-              reason: null,
+              noArticulation: true, reason: null,
               partOfPickGroup: isPickN,
               coveredByAnotherOption: isPickN && siblingArticulated,
               ...ctx,
@@ -369,6 +343,67 @@ function parseAllForProgram(agreement, programLabel) {
   }
 }
 
+// ─── Semester planner logic ───────────────────────────────────────────────────
+
+function sortCoursesByNumber(courses) {
+  return [...courses].sort((a, b) => {
+    if (a.prefix !== b.prefix) return a.prefix.localeCompare(b.prefix)
+    const numA = parseFloat(a.number) || 0
+    const numB = parseFloat(b.number) || 0
+    return numA - numB
+  })
+}
+
+function buildSemesterPlan(rows, completedCourses, startTerm, transferTerm) {
+  const startIdx = TERMS.indexOf(startTerm)
+  const endIdx = TERMS.indexOf(transferTerm)
+  if (startIdx === -1 || endIdx === -1 || startIdx >= endIdx) return []
+
+  const availableTerms = TERMS.slice(startIdx, endIdx)
+
+  // Get remaining uncompleted courses with their data
+  const remaining = []
+  for (const row of rows) {
+    if (completedCourses.has(row.ccKey)) continue
+    const label = row.primaryCourses.map(c => `${c.prefix} ${c.number}`).join(' + ')
+    const units = row.primaryCourses.reduce((sum, c) => sum + (c.units || 3), 0)
+    remaining.push({ row, label, units })
+  }
+
+  // Sort by course number within prefix for logical ordering
+  const allCourses = sortCoursesByNumber(
+    remaining.map(r => ({ ...r, sortPrefix: r.row.primaryCourses[0]?.prefix || '', sortNum: parseFloat(r.row.primaryCourses[0]?.number) || 0 }))
+  )
+
+  // Distribute courses across terms
+  const plan = availableTerms.map(term => ({ term, courses: [], totalUnits: 0 }))
+
+  for (const course of allCourses) {
+    // Find the term with most room that hasn't hit its target
+    let placed = false
+    for (const slot of plan) {
+      const termType = slot.term.split(' ')[0]
+      const target = TARGET_UNITS_PER_TERM[termType] || 15
+      if (slot.totalUnits + course.units <= target) {
+        slot.courses.push(course)
+        slot.totalUnits += course.units
+        placed = true
+        break
+      }
+    }
+    // If no term has room, add to the least loaded term
+    if (!placed) {
+      const lightest = plan.reduce((a, b) => a.totalUnits <= b.totalUnits ? a : b)
+      lightest.courses.push(course)
+      lightest.totalUnits += course.units
+    }
+  }
+
+  return plan.filter(slot => slot.courses.length > 0)
+}
+
+// ─── Utility ─────────────────────────────────────────────────────────────────
+
 function getPlanSaveKey(programs) {
   return 'tab2_progress_' + programs.map(p => p.majorKey).sort().join('|')
 }
@@ -377,18 +412,13 @@ function isRecommendedSection(label) {
   if (!label) return false
   const lower = label.toLowerCase().trim()
   return (
-    lower === 'recommended courses' ||
-    lower === 'recommended electives' ||
-    lower === 'recommended preparation' ||
-    lower === 'recommended but not required' ||
+    lower === 'recommended courses' || lower === 'recommended electives' ||
+    lower === 'recommended preparation' || lower === 'recommended but not required' ||
     lower === 'recommended to complete prior to transfer' ||
-    lower === 'strongly recommended courses' ||
-    lower === 'highly recommended' ||
+    lower === 'strongly recommended courses' || lower === 'highly recommended' ||
     lower === 'departmental recommendations' ||
-    lower.includes('strongly recommended') ||
-    lower.includes('highly recommended') ||
-    lower.includes('recommended but not required') ||
-    lower.includes('departmental recommendation')
+    lower.includes('strongly recommended') || lower.includes('highly recommended') ||
+    lower.includes('recommended but not required') || lower.includes('departmental recommendation')
   )
 }
 
@@ -396,24 +426,120 @@ function pickGroupLabel(group) {
   const n = group.nRequired
   const total = group.rows.length
   switch (group.pickType) {
-    case 'units':
-  return `Choose courses totaling ${n} unit${n !== 1 ? 's' : ''} from these ${total} options`
-    case 'range':
-      return group.pickMax
-        ? `Choose ${group.pickMin}–${group.pickMax} courses from these ${total} options`
-        : `Choose at least ${n} course${n !== 1 ? 's' : ''} from these ${total} options`
-    case 'areas':
-      return `Choose ${n} course${n !== 1 ? 's' : ''} from different areas (${total} options)`
-    case 'count':
+    case 'units': return `Choose courses totaling ${n} unit${n !== 1 ? 's' : ''} from these ${total} options`
+    case 'range': return group.pickMax
+      ? `Choose ${group.pickMin}–${group.pickMax} courses from these ${total} options`
+      : `Choose at least ${n} course${n !== 1 ? 's' : ''} from these ${total} options`
+    case 'areas': return `Choose ${n} course${n !== 1 ? 's' : ''} from different areas (${total} options)`
     default:
-      if (group.isSectionBundled) {
-        return n === 1
-          ? `Complete 1 of these ${total} options`
-          : `Complete ${n} of these ${total} options`
-      }
-      return `Choose any ${n} of these ${total} options`
+      return group.isSectionBundled
+        ? `Complete ${n === 1 ? '1' : n} of these ${total} options`
+        : `Choose any ${n} of these ${total} options`
   }
 }
+
+// ─── Semester Planner sidebar panel ──────────────────────────────────────────
+
+function SemesterPlanner({ rows, completedCourses, onClose }) {
+  const [startTerm, setStartTerm] = useState(TERMS[0])
+  const [transferTerm, setTransferTerm] = useState(TERMS[4])
+
+  const plan = buildSemesterPlan(rows, completedCourses, startTerm, transferTerm)
+  const totalRemaining = rows.filter(r => !completedCourses.has(r.ccKey)).length
+  const totalUnits = rows
+    .filter(r => !completedCourses.has(r.ccKey))
+    .reduce((sum, r) => sum + r.primaryCourses.reduce((s, c) => s + (c.units || 3), 0), 0)
+
+  return (
+    <div>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+        <div style={{ fontSize: 14, fontWeight: 600, color: '#1a1a1a' }}>Semester plan</div>
+        <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: '#888', padding: 0 }}>← Progress</button>
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
+        <div>
+          <div style={{ fontSize: 11, color: '#888', marginBottom: 4 }}>Start term</div>
+          <select
+            value={startTerm}
+            onChange={e => setStartTerm(e.target.value)}
+            style={{ width: '100%', fontSize: 12 }}
+          >
+            {TERMS.slice(0, -1).map(t => <option key={t} value={t}>{t}</option>)}
+          </select>
+        </div>
+        <div>
+          <div style={{ fontSize: 11, color: '#888', marginBottom: 4 }}>Transfer goal</div>
+          <select
+            value={transferTerm}
+            onChange={e => setTransferTerm(e.target.value)}
+            style={{ width: '100%', fontSize: 12 }}
+          >
+            {TERMS.slice(1).map(t => <option key={t} value={t}>{t}</option>)}
+          </select>
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+        <div style={{ flex: 1, background: '#f5f4f0', borderRadius: 8, padding: '8px 10px' }}>
+          <div style={{ fontSize: 18, fontWeight: 600, color: '#1a1a1a' }}>{totalRemaining}</div>
+          <div style={{ fontSize: 11, color: '#888' }}>courses left</div>
+        </div>
+        <div style={{ flex: 1, background: '#f5f4f0', borderRadius: 8, padding: '8px 10px' }}>
+          <div style={{ fontSize: 18, fontWeight: 600, color: '#1a1a1a' }}>{totalUnits}</div>
+          <div style={{ fontSize: 11, color: '#888' }}>units left</div>
+        </div>
+      </div>
+
+      {plan.length === 0 ? (
+        <div style={{ fontSize: 12, color: '#aaa', textAlign: 'center', padding: '20px 0' }}>
+          {totalRemaining === 0
+            ? '🎉 All courses completed!'
+            : 'Adjust your terms to generate a plan.'}
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {plan.map((slot, i) => {
+            const termType = slot.term.split(' ')[0]
+            const target = TARGET_UNITS_PER_TERM[termType] || 15
+            const isHeavy = slot.totalUnits > target
+            return (
+              <div key={i} style={{ border: '1px solid #efefed', borderRadius: 8, overflow: 'hidden' }}>
+                <div style={{ padding: '7px 12px', background: '#f9f9f7', borderBottom: '1px solid #efefed', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: '#1a1a1a' }}>{slot.term}</div>
+                  <div style={{ fontSize: 11, color: isHeavy ? '#dc2626' : '#888' }}>
+                    {slot.totalUnits} units{isHeavy ? ' ⚠️' : ''}
+                  </div>
+                </div>
+                <div style={{ padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {slot.courses.map((c, j) => {
+                    const label = c.row.primaryCourses.map(x => `${x.prefix} ${x.number}`).join(' + ')
+                    const title = c.row.primaryCourses.map(x => x.title).filter(Boolean).join(' + ')
+                    return (
+                      <div key={j} style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                        <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#6C5CE7', flexShrink: 0, marginTop: 5 }} />
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontSize: 12, fontWeight: 600, color: '#1a1a1a' }}>{label}</div>
+                          {title && <div style={{ fontSize: 11, color: '#999', marginTop: 1 }}>{title}</div>}
+                        </div>
+                        <div style={{ fontSize: 11, color: '#bbb', marginLeft: 'auto', flexShrink: 0 }}>{c.units}u</div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )
+          })}
+          <div style={{ fontSize: 11, color: '#bbb', textAlign: 'center', paddingTop: 4 }}>
+            GE / IGETC courses coming soon
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Main Tab2 component ──────────────────────────────────────────────────────
 
 export default function Tab2() {
   const [ccId, setCcId] = useState('')
@@ -433,6 +559,7 @@ export default function Tab2() {
   const [completedCourses, setCompletedCourses] = useState(new Set())
   const [isWide, setIsWide] = useState(window.innerWidth > 768)
   const [showBanner, setShowBanner] = useState(() => localStorage.getItem('tab2_banner_dismissed') !== '1')
+  const [showPlanner, setShowPlanner] = useState(false)
   const saveTimeoutRef = useRef(null)
 
   useEffect(() => {
@@ -482,8 +609,7 @@ export default function Tab2() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
       await supabase.from('tab2_progress').upsert({
-        plan_key: key,
-        user_id: user.id,
+        plan_key: key, user_id: user.id,
         completed_courses: [...newCompleted],
         updated_at: new Date().toISOString(),
       }, { onConflict: 'plan_key,user_id' })
@@ -494,11 +620,8 @@ export default function Tab2() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
     await supabase.from('tab2_plan').upsert({
-      user_id: user.id,
-      cc_id: newCcId,
-      cc_name: newCcName,
-      programs: newPrograms,
-      updated_at: new Date().toISOString(),
+      user_id: user.id, cc_id: newCcId, cc_name: newCcName,
+      programs: newPrograms, updated_at: new Date().toISOString(),
     }, { onConflict: 'user_id' })
   }
 
@@ -529,7 +652,7 @@ export default function Tab2() {
   async function generateOverlap() {
     if (!ccId || programs.length === 0) { setError('Select a CC and add at least one program.'); return }
     setError(''); setLoading(true); setOverlapData(null); setExpandedRow(null)
-    setCompletedCourses(new Set())
+    setCompletedCourses(new Set()); setShowPlanner(false)
     try {
       const programArts = await Promise.all(programs.map(async prog => {
         setLoadingMsg(`Fetching ${prog.uniName} — ${prog.majorLabel}...`)
@@ -548,24 +671,14 @@ export default function Tab2() {
           const isPickGroup = art.nRequired !== null
           const ccCourseKey = cheapestOpt.courses.map(c => `${c.prefix} ${c.number}`).sort().join('+')
           let ccKey
-          if (isPickGroup && art.isSectionBundled) {
-            ccKey = `${art.groupId}__sec${art.sectionPosition}`
-          } else if (isPickGroup) {
-            ccKey = `${art.groupId}__${ccCourseKey}`
-          } else {
-            ccKey = ccCourseKey
-          }
+          if (isPickGroup && art.isSectionBundled) ccKey = `${art.groupId}__sec${art.sectionPosition}`
+          else if (isPickGroup) ccKey = `${art.groupId}__${ccCourseKey}`
+          else ccKey = ccCourseKey
 
           if (!reqMap[ccKey]) {
-            reqMap[ccKey] = {
-              ccKey,
-              primaryCourses: [...cheapestOpt.courses],
-              programEntries: [],
-              isSectionBundled: art.isSectionBundled || false,
-            }
+            reqMap[ccKey] = { ccKey, primaryCourses: [...cheapestOpt.courses], programEntries: [], isSectionBundled: art.isSectionBundled || false }
           }
 
-          // For section-bundled slots accumulate all CC courses in this section
           if (art.isSectionBundled) {
             cheapestOpt.courses.forEach(c => {
               if (!reqMap[ccKey].primaryCourses.some(e => e.prefix === c.prefix && e.number === c.number))
@@ -578,18 +691,12 @@ export default function Tab2() {
             reqMap[ccKey].programEntries.push({
               _entryKey: entryKey,
               program: `${prog.uniName} → ${prog.majorLabel}`,
-              uniReq: art.uniRequirement,
-              options: art.options,
-              groupTitle: art.groupTitle,
-              sectionLabel: art.sectionLabel,
-              nRequired: art.nRequired,
-              pickType: art.pickType,
-              pickMin: art.pickMin,
-              pickMax: art.pickMax,
-              groupId: art.groupId,
-              isSectionBundled: art.isSectionBundled || false,
-              groupPosition: art.groupPosition,
-              sectionPosition: art.sectionPosition,
+              uniReq: art.uniRequirement, options: art.options,
+              groupTitle: art.groupTitle, sectionLabel: art.sectionLabel,
+              nRequired: art.nRequired, pickType: art.pickType,
+              pickMin: art.pickMin, pickMax: art.pickMax,
+              groupId: art.groupId, isSectionBundled: art.isSectionBundled || false,
+              groupPosition: art.groupPosition, sectionPosition: art.sectionPosition,
             })
           }
         }
@@ -599,18 +706,13 @@ export default function Tab2() {
           if (!noArtMap[naKey]) {
             noArtMap[naKey] = {
               program: `${prog.uniName} → ${prog.majorLabel}`,
-              uniReq: na.uniRequirement,
-              reason: na.reason,
-              groupTitle: na.groupTitle,
-              sectionLabel: na.sectionLabel,
-              groupId: na.groupId,
-              nRequired: na.nRequired ?? null,
-              pickType: na.pickType ?? null,
-              isSectionBundled: na.isSectionBundled || false,
+              uniReq: na.uniRequirement, reason: na.reason,
+              groupTitle: na.groupTitle, sectionLabel: na.sectionLabel,
+              groupId: na.groupId, nRequired: na.nRequired ?? null,
+              pickType: na.pickType ?? null, isSectionBundled: na.isSectionBundled || false,
               partOfPickGroup: na.partOfPickGroup || false,
               coveredByAnotherOption: na.coveredByAnotherOption || false,
-              groupPosition: na.groupPosition ?? 999,
-              sectionPosition: na.sectionPosition ?? 999,
+              groupPosition: na.groupPosition ?? 999, sectionPosition: na.sectionPosition ?? 999,
             }
           }
         }
@@ -618,13 +720,10 @@ export default function Tab2() {
 
       const rows = Object.values(reqMap).map(entry => {
         const coverage = new Set(entry.programEntries.map(e => e.program)).size
-        const requiredEntry = entry.programEntries.find(
-          pe => !isRecommendedSection(pe.groupTitle) && !isRecommendedSection(pe.sectionLabel)
-        )
+        const requiredEntry = entry.programEntries.find(pe => !isRecommendedSection(pe.groupTitle) && !isRecommendedSection(pe.sectionLabel))
         const canonicalEntry = requiredEntry || entry.programEntries[0]
         return {
-          ...entry,
-          coverage,
+          ...entry, coverage,
           groupTitle: canonicalEntry?.groupTitle,
           sectionLabel: canonicalEntry?.sectionLabel,
           groupId: canonicalEntry?.groupId,
@@ -645,8 +744,7 @@ export default function Tab2() {
       })
 
       setOverlapData({
-        rows,
-        totalPrograms,
+        rows, totalPrograms,
         programLabels: programs.map(p => `${p.uniName} → ${p.majorLabel}`),
         noArticulation: Object.values(noArtMap),
       })
@@ -702,6 +800,395 @@ export default function Tab2() {
   }
 
   const summary = computeAttainability()
+
+  // ─── Sidebar panel ───────────────────────────────────────────────────────────
+
+  function renderSidebar() {
+    if (showPlanner) {
+      return (
+        <SemesterPlanner
+          rows={overlapData.rows}
+          completedCourses={completedCourses}
+          onClose={() => setShowPlanner(false)}
+        />
+      )
+    }
+
+    return (
+      <>
+        <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 4 }}>📊 Progress</div>
+        <div style={{ fontSize: 11, color: '#888', marginBottom: 12 }}>Check rows to update</div>
+        {summary.length === 0 ? (
+          <div style={{ fontSize: 12, color: '#aaa' }}>Check off courses to see your progress</div>
+        ) : (
+          <>
+            {summary.map((s, i) => {
+              const pct = s.total === 0 ? 0 : Math.round((s.completed / s.total) * 100)
+              const isTop = i === 0 && summary.length > 1
+              const showHeart = isTop && completedCourses.size > 0
+              return (
+                <div key={i} style={{ marginBottom: i < summary.length - 1 ? 16 : 0 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                    <div style={{ fontSize: 12, fontWeight: isTop ? 600 : 400, color: isTop ? '#1a1a1a' : '#555', flex: 1, marginRight: 8 }}>
+                      {showHeart && <span>💜 </span>}{s.label}
+                    </div>
+                    <div style={{ fontSize: 11, color: '#888', flexShrink: 0 }}>{s.completed}/{s.total}</div>
+                  </div>
+                  <div style={{ background: '#e0e0e0', borderRadius: 4, height: 6, overflow: 'hidden' }}>
+                    <div style={{ background: pct === 100 ? '#4caf50' : '#6C5CE7', height: '100%', width: `${pct}%`, borderRadius: 4, transition: 'width 0.3s ease' }} />
+                  </div>
+                </div>
+              )
+            })}
+
+            {completedCourses.size > 0 && (
+              <button
+                onClick={() => setShowPlanner(true)}
+                style={{
+                  width: '100%', marginTop: 16,
+                  padding: '9px 0', fontSize: 13, fontWeight: 500,
+                  background: '#1a1a1a', color: '#fff',
+                  border: 'none', borderRadius: 8, cursor: 'pointer',
+                }}
+              >
+                Build my plan →
+              </button>
+            )}
+          </>
+        )}
+      </>
+    )
+  }
+
+  // ─── Course list rendering ────────────────────────────────────────────────
+
+  function renderCourseList() {
+    const groups = []
+    const groupIdToGroup = {}
+    const noArtByGroupId = {}
+    const noArtByGroupIdFlat = {}
+    const inlineRequiredNoArt = []
+
+    for (const na of (overlapData.noArticulation || [])) {
+      if (na.partOfPickGroup) {
+        if (!noArtByGroupId[na.groupId]) noArtByGroupId[na.groupId] = {}
+        const secKey = na.sectionPosition ?? 'unknown'
+        if (!noArtByGroupId[na.groupId][secKey]) {
+          noArtByGroupId[na.groupId][secKey] = { courses: [], reason: na.reason, sectionPosition: na.sectionPosition }
+        }
+        const slot = noArtByGroupId[na.groupId][secKey]
+        if (!slot.courses.some(x => x.prefix === na.uniReq.prefix && x.number === na.uniReq.number))
+          slot.courses.push({ prefix: na.uniReq.prefix, number: na.uniReq.number, title: na.uniReq.title, units: na.uniReq.units })
+        if (na.reason && !slot.reason) slot.reason = na.reason
+        if (!noArtByGroupIdFlat[na.groupId]) noArtByGroupIdFlat[na.groupId] = []
+        if (!noArtByGroupIdFlat[na.groupId].some(x => x.uniReq.prefix === na.uniReq.prefix && x.uniReq.number === na.uniReq.number))
+          noArtByGroupIdFlat[na.groupId].push(na)
+      } else if (!na.coveredByAnotherOption) {
+        inlineRequiredNoArt.push(na)
+      }
+    }
+
+    for (const row of overlapData.rows) {
+      const groupId = row.groupId ?? `singleton_${row.ccKey}`
+      if (!groupIdToGroup[groupId]) {
+        const g = {
+          groupId, groupTitle: row.groupTitle || 'MAJOR REQUIREMENTS',
+          sectionLabel: row.sectionLabel || '',
+          nRequired: row.nRequired ?? null, pickType: row.pickType ?? null,
+          pickMin: row.pickMin ?? null, pickMax: row.pickMax ?? null,
+          isSectionBundled: row.isSectionBundled || false, rows: [],
+        }
+        groupIdToGroup[groupId] = g
+        groups.push(g)
+      }
+      groupIdToGroup[groupId].rows.push(row)
+    }
+
+    for (const na of inlineRequiredNoArt) {
+      const groupId = na.groupId ?? `noart_${na.uniReq.prefix}_${na.uniReq.number}`
+      if (!groupIdToGroup[groupId]) {
+        const g = {
+          groupId, groupTitle: na.groupTitle || 'MAJOR REQUIREMENTS',
+          sectionLabel: na.sectionLabel || '',
+          nRequired: null, pickType: null, pickMin: null, pickMax: null,
+          isSectionBundled: false, rows: [], noArtRows: [],
+          _groupPosition: na.groupPosition ?? 999, _sectionPosition: na.sectionPosition ?? 999,
+        }
+        groupIdToGroup[groupId] = g
+        groups.push(g)
+      }
+      if (!groupIdToGroup[groupId].noArtRows) groupIdToGroup[groupId].noArtRows = []
+      groupIdToGroup[groupId].noArtRows.push(na)
+    }
+
+    const isRecommendedGroup = g => isRecommendedSection(g.groupTitle) || isRecommendedSection(g.sectionLabel)
+    const sectionTier = g => {
+      if (isRecommendedGroup(g)) return 2
+      const label = (g.sectionLabel || g.groupTitle || '').toLowerCase()
+      if (label.includes('required')) return 0
+      return 1
+    }
+    groups.sort((a, b) => {
+      const aTier = sectionTier(a), bTier = sectionTier(b)
+      if (aTier !== bTier) return aTier - bTier
+      const aPos = a.rows[0]?._groupPosition ?? a._groupPosition ?? 999
+      const bPos = b.rows[0]?._groupPosition ?? b._groupPosition ?? 999
+      return aPos - bPos
+    })
+
+    let lastDisplayLabel = null
+    const rendered = []
+
+    for (const group of groups) {
+      const isPickN = group.nRequired !== null
+      const noArtSiblingSlots = Object.keys(noArtByGroupId[group.groupId] || {}).length
+      const noArtSiblingsFlat = (noArtByGroupIdFlat[group.groupId] || []).length
+      const isEffectivelyRequired = isPickN && group.rows.length <= 1 && noArtSiblingSlots === 0 && noArtSiblingsFlat === 0
+      const displayLabel = group.sectionLabel || group.groupTitle || 'REQUIREMENTS'
+
+      if (displayLabel !== lastDisplayLabel) {
+        lastDisplayLabel = displayLabel
+        rendered.push(
+          <div key={`sec-${displayLabel}-${group.groupId}`} style={{ marginTop: rendered.length === 0 ? 0 : 32, marginBottom: 10, paddingBottom: 8, borderBottom: '2px solid #e8e8e4' }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: '#aaa', textTransform: 'uppercase', letterSpacing: '0.1em' }}>{displayLabel}</div>
+          </div>
+        )
+      }
+
+      if (isPickN && !isEffectivelyRequired) {
+        rendered.push(
+          <div key={`group-${group.groupId}`} style={{ border: '1.5px solid #ffe082', borderRadius: 10, marginBottom: 12, overflow: 'hidden', background: '#fffdf5' }}>
+            <div style={{ padding: '9px 14px', borderBottom: '1px solid #ffe082', background: '#fff8e1' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: 14 }}>↓</span>
+                <span style={{ fontSize: 12, fontWeight: 700, color: '#b45309' }}>{pickGroupLabel(group)}</span>
+                <span style={{ fontSize: 11, color: '#999', marginLeft: 4 }}>— you don't need all of them</span>
+              </div>
+              {group.pickType === 'units' && (
+                <div style={{ fontSize: 11, color: '#92400e', marginTop: 6, padding: '4px 8px', background: '#fef3c7', borderRadius: 4, display: 'inline-block' }}>
+                  ⚠️ Unit counts refer to the <strong>university's course units</strong>, not your CC's — tap any row to see details
+                </div>
+              )}
+            </div>
+
+            {[...group.rows, ...Object.values(noArtByGroupId[group.groupId] || {}).map(slot => ({ _isNoArt: true, slot }))].map((rowOrNa, rowIdx) => {
+              if (rowOrNa._isNoArt) {
+                const { slot } = rowOrNa
+                const label = slot.courses.map(c => `${c.prefix} ${c.number}`).join(' + ')
+                const subtitle = slot.courses.map(c => c.title).filter(Boolean).join(' + ')
+                const units = slot.courses.reduce((sum, c) => sum + (c.units || 0), 0)
+                return (
+                  <div key={`noart-${label}`} style={{ borderTop: '1px dashed #fecaca', background: '#fff5f5' }}>
+                    <div style={{ textAlign: 'center', fontSize: 11, fontWeight: 700, color: '#fca5a5', padding: '4px 0', letterSpacing: '0.05em' }}>OR</div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px' }}>
+                      <span style={{ color: '#fca5a5', fontSize: 14, flexShrink: 0 }}>✕</span>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontWeight: 600, fontSize: 13, color: '#991b1b', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                          {label}
+                          <span style={{ fontSize: 10, background: '#fee2e2', color: '#dc2626', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>No equivalent at {ccName}</span>
+                        </div>
+                        {subtitle && <div style={{ fontSize: 11, color: '#f87171', marginTop: 1 }}>{subtitle}{units ? ` · ${units} units` : ''}</div>}
+                        {slot.reason && <div style={{ fontSize: 11, color: '#dc2626', marginTop: 2 }}>{slot.reason}</div>}
+                        <div style={{ fontSize: 11, color: '#b91c1c', marginTop: 4, fontStyle: 'italic' }}>Choose a different option from this group instead</div>
+                      </div>
+                    </div>
+                  </div>
+                )
+              }
+
+              const row = rowOrNa
+              const isDone = completedCourses.has(row.ccKey)
+              const isExpanded = expandedRow === row.ccKey
+              const label = row.primaryCourses.map(c => `${c.prefix} ${c.number}`).join(' + ')
+              const subtitle = row.primaryCourses.map(c => c.title).filter(Boolean).join(' + ')
+              const units = row.primaryCourses.reduce((sum, c) => sum + (c.units || 0), 0)
+              const coverageAll = row.coverage === overlapData.totalPrograms
+              const coverageMost = row.coverage > 1 && !coverageAll
+
+              return (
+                <div key={row.ccKey} style={{ borderTop: rowIdx > 0 ? '1px dashed #f0e6c8' : 'none', background: isDone ? '#f7f4ec' : '#fffdf5', opacity: isDone ? 0.6 : 1 }}>
+                  {rowIdx > 0 && <div style={{ textAlign: 'center', fontSize: 11, fontWeight: 700, color: '#ccc', padding: '4px 0', letterSpacing: '0.05em' }}>OR</div>}
+                  <div onClick={() => setExpandedRow(isExpanded ? null : row.ccKey)} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', cursor: 'pointer' }}>
+                    <div onClick={e => e.stopPropagation()}>
+                      <input type="checkbox" checked={isDone} onChange={() => toggleCourse(row.ccKey)} style={{ width: 15, height: 15, cursor: 'pointer', accentColor: '#b45309' }} />
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontWeight: 600, fontSize: 13, textDecoration: isDone ? 'line-through' : 'none', color: isDone ? '#aaa' : '#1a1a1a', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                        {label}
+                        {coverageAll && <span style={{ fontSize: 10, background: '#ede9ff', color: '#6C5CE7', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>ALL PROGRAMS</span>}
+                        {coverageMost && <span style={{ fontSize: 10, background: '#fff3e0', color: '#f57f17', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>MULTIPLE</span>}
+                      </div>
+                      {subtitle && <div style={{ fontSize: 11, color: '#999', marginTop: 1 }}>{subtitle}{units ? ` · ${units} units` : ''}</div>}
+                    </div>
+                    <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                      {overlapData.programLabels.map((progLabel, pi) => {
+                        const has = row.programEntries.some(pe => pe.program === progLabel)
+                        return (
+                          <div key={pi} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+                            {overlapData.programLabels.length > 1 && <div style={{ fontSize: 9, color: '#bbb', textAlign: 'center', maxWidth: 48, lineHeight: 1.2 }}>{shortLabel(progLabel).split('\n')[0]}</div>}
+                            <span style={{ color: has ? '#6C5CE7' : '#e0e0e0', fontSize: 16, lineHeight: 1 }}>●</span>
+                          </div>
+                        )
+                      })}
+                    </div>
+                    <div style={{ fontSize: 11, color: '#ccc' }}>{isExpanded ? '▲' : '▼'}</div>
+                  </div>
+                  {isExpanded && renderExpandedRow(row)}
+                </div>
+              )
+            })}
+          </div>
+        )
+      } else {
+        const effectiveNoArtRows = isEffectivelyRequired ? (noArtByGroupIdFlat[group.groupId] || []) : (group.noArtRows || [])
+
+        group.rows.forEach(row => {
+          const isDone = completedCourses.has(row.ccKey)
+          const isExpanded = expandedRow === row.ccKey
+          const label = row.primaryCourses.map(c => `${c.prefix} ${c.number}`).join(' + ')
+          const subtitle = row.primaryCourses.map(c => c.title).filter(Boolean).join(' + ')
+          const units = row.primaryCourses.reduce((sum, c) => sum + (c.units || 0), 0)
+          const coverageAll = row.coverage === overlapData.totalPrograms
+          const coverageMost = row.coverage > 1 && !coverageAll
+
+          rendered.push(
+            <div key={row.ccKey} style={{ border: '1px solid #efefed', borderRadius: 8, marginBottom: 6, background: isDone ? '#fafafa' : '#fff', opacity: isDone ? 0.55 : 1, overflow: 'hidden' }}>
+              <div onClick={() => setExpandedRow(isExpanded ? null : row.ccKey)} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', cursor: 'pointer' }}>
+                <div onClick={e => e.stopPropagation()}>
+                  <input type="checkbox" checked={isDone} onChange={() => toggleCourse(row.ccKey)} style={{ width: 15, height: 15, cursor: 'pointer', accentColor: '#1a1a1a' }} />
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 600, fontSize: 13, textDecoration: isDone ? 'line-through' : 'none', color: isDone ? '#aaa' : '#1a1a1a', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                    {label}
+                    {coverageAll && <span style={{ fontSize: 10, background: '#ede9ff', color: '#6C5CE7', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>ALL PROGRAMS</span>}
+                    {coverageMost && <span style={{ fontSize: 10, background: '#fff3e0', color: '#f57f17', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>MULTIPLE</span>}
+                  </div>
+                  {subtitle && <div style={{ fontSize: 11, color: '#999', marginTop: 1 }}>{subtitle}{units ? ` · ${units} units` : ''}</div>}
+                </div>
+                <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                  {overlapData.programLabels.map((progLabel, pi) => {
+                    const has = row.programEntries.some(pe => pe.program === progLabel)
+                    return (
+                      <div key={pi} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+                        {overlapData.programLabels.length > 1 && <div style={{ fontSize: 9, color: '#bbb', textAlign: 'center', maxWidth: 48, lineHeight: 1.2 }}>{shortLabel(progLabel).split('\n')[0]}</div>}
+                        <span style={{ color: has ? '#6C5CE7' : '#e0e0e0', fontSize: 16, lineHeight: 1 }}>●</span>
+                      </div>
+                    )
+                  })}
+                </div>
+                <div style={{ fontSize: 11, color: '#ccc' }}>{isExpanded ? '▲' : '▼'}</div>
+              </div>
+              {isExpanded && renderExpandedRow(row, isEffectivelyRequired)}
+            </div>
+          )
+        })
+
+        effectiveNoArtRows.forEach(na => {
+          rendered.push(
+            <div key={`noart-inline-${na.uniReq.prefix}-${na.uniReq.number}-${na.program}`} style={{ border: '1px solid #fecaca', borderRadius: 8, marginBottom: 6, background: '#fff5f5', overflow: 'hidden' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px' }}>
+                <span style={{ color: '#fca5a5', fontSize: 14, flexShrink: 0 }}>✕</span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 600, fontSize: 13, color: '#991b1b', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                    {na.uniReq.prefix} {na.uniReq.number}
+                    {na.uniReq.title && <span style={{ fontWeight: 400, color: '#b91c1c' }}>— {na.uniReq.title}</span>}
+                  </div>
+                  {na.uniReq.units && <div style={{ fontSize: 11, color: '#f87171', marginTop: 1 }}>{na.uniReq.units} units · {na.program}</div>}
+                  {na.reason && <div style={{ fontSize: 11, color: '#dc2626', marginTop: 2 }}>{na.reason}</div>}
+                </div>
+                <span style={{ fontSize: 11, background: '#fee2e2', color: '#dc2626', borderRadius: 4, padding: '2px 8px', fontWeight: 600, flexShrink: 0 }}>No equivalent at {ccName}</span>
+              </div>
+            </div>
+          )
+        })
+      }
+    }
+
+    for (const g of groups) {
+      if ((g.noArtRows || []).length > 0 && g.rows.length === 0) {
+        const displayLabel = g.sectionLabel || g.groupTitle || 'REQUIREMENTS'
+        if (displayLabel !== lastDisplayLabel) {
+          lastDisplayLabel = displayLabel
+          rendered.push(
+            <div key={`sec-noart-${displayLabel}-${g.groupId}`} style={{ marginTop: rendered.length === 0 ? 0 : 32, marginBottom: 10, paddingBottom: 8, borderBottom: '2px solid #e8e8e4' }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: '#aaa', textTransform: 'uppercase', letterSpacing: '0.1em' }}>{displayLabel}</div>
+            </div>
+          )
+        }
+        for (const na of g.noArtRows) {
+          rendered.push(
+            <div key={`noart-req-${na.uniReq.prefix}-${na.uniReq.number}-${na.program}`} style={{ border: '1px solid #fecaca', borderRadius: 8, marginBottom: 6, background: '#fff5f5', overflow: 'hidden' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px' }}>
+                <span style={{ color: '#fca5a5', fontSize: 14, flexShrink: 0 }}>✕</span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 600, fontSize: 13, color: '#991b1b', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                    {na.uniReq.prefix} {na.uniReq.number}
+                    {na.uniReq.title && <span style={{ fontWeight: 400, color: '#b91c1c' }}>— {na.uniReq.title}</span>}
+                  </div>
+                  {na.uniReq.units && <div style={{ fontSize: 11, color: '#f87171', marginTop: 1 }}>{na.uniReq.units} units · {na.program}</div>}
+                  {na.reason && <div style={{ fontSize: 11, color: '#dc2626', marginTop: 2 }}>{na.reason}</div>}
+                </div>
+                <span style={{ fontSize: 11, background: '#fee2e2', color: '#dc2626', borderRadius: 4, padding: '2px 8px', fontWeight: 600, flexShrink: 0 }}>No equivalent at {ccName}</span>
+              </div>
+            </div>
+          )
+        }
+      }
+    }
+
+    return rendered
+  }
+
+  function renderExpandedRow(row, isEffectivelyRequired = false) {
+    return (
+      <div style={{ borderTop: '1px solid #f0f0f0', background: '#fafafa', padding: '12px 14px 14px 38px' }}>
+        {isEffectivelyRequired && (
+          <div style={{ fontSize: 12, color: '#888', background: '#f0f0f0', borderRadius: 6, padding: '7px 10px', marginBottom: 12 }}>
+            ℹ️ The university offers multiple ways to satisfy this requirement, but this is the only one with an equivalent at {ccName}.
+          </div>
+        )}
+        {row.programEntries.map((pe, i) => (
+          <div key={i} style={{ marginBottom: i < row.programEntries.length - 1 ? 14 : 0, paddingBottom: i < row.programEntries.length - 1 ? 14 : 0, borderBottom: i < row.programEntries.length - 1 ? '1px solid #eee' : 'none' }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: '#555', marginBottom: 4 }}>{pe.program}</div>
+            {(() => {
+              const isRec = isRecommendedSection(pe.groupTitle) || isRecommendedSection(pe.sectionLabel)
+              return (
+                <div style={{ fontSize: 11, marginBottom: 6, display: 'inline-flex', alignItems: 'center', gap: 4, background: isRec ? '#fff8e1' : '#f0fdf4', borderRadius: 4, padding: '2px 8px', color: isRec ? '#b45309' : '#166534', fontWeight: 600 }}>
+                  {isRec ? '★ Recommended by this program' : '✓ Required by this program'}
+                </div>
+              )
+            })()}
+            <div style={{ fontSize: 12, color: '#888', marginBottom: 8 }}>
+              Satisfies: <span style={{ fontWeight: 500, color: '#1a1a1a' }}>{pe.uniReq.prefix} {pe.uniReq.number} — {pe.uniReq.title}</span>
+              {pe.uniReq.units ? ` (${pe.uniReq.units} uni units)` : ''}
+            </div>
+            {pe.uniReq.allCourseLabels?.length > 1 && (
+              <div style={{ fontSize: 11, color: '#888', marginBottom: 8 }}>Also counts toward: {pe.uniReq.allCourseLabels.slice(1).join(', ')}</div>
+            )}
+            {pe.options.map((opt, j) => (
+              <div key={j}>
+                {j > 0 && <div style={{ fontSize: 11, color: '#bbb', padding: '6px 0', borderTop: '1px dashed #eee', marginTop: 6, marginBottom: 2 }}>or instead:</div>}
+                {opt.courses.length > 1 && <div style={{ fontSize: 11, color: '#888', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>Take all together</div>}
+                {opt.groupNote && <div style={{ fontSize: 11, color: '#f57f17', marginBottom: 4 }}>⚠️ {opt.groupNote}</div>}
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                  {opt.courses.map((c, k) => (
+                    <div key={k} style={{ background: '#efefed', borderRadius: 6, padding: '4px 10px', fontSize: 12 }}>
+                      <span style={{ fontFamily: 'monospace', fontWeight: 600 }}>{c.prefix} {c.number}</span>
+                      {c.title && <span style={{ color: '#666', marginLeft: 6 }}>{c.title}</span>}
+                      {c.units && <span style={{ color: '#999', marginLeft: 6 }}>{c.units}u</span>}
+                      {c.note && <div style={{ fontSize: 11, color: '#f57f17', marginTop: 4 }}>⚠️ {c.note}</div>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+    )
+  }
+
+  // ─── Render ───────────────────────────────────────────────────────────────
 
   return (
     <div>
@@ -793,7 +1280,7 @@ export default function Tab2() {
               <h2>Your course plan — {ccName}</h2>
               <p>{programs.map(p => `${p.uniName} → ${p.majorLabel}`).join(' · ')}</p>
             </div>
-            <button className="btn-secondary" onClick={() => { setOverlapData(null); setExpandedRow(null) }}>← Edit</button>
+            <button className="btn-secondary" onClick={() => { setOverlapData(null); setExpandedRow(null); setShowPlanner(false) }}>← Edit</button>
           </div>
 
           {showBanner && (
@@ -802,11 +1289,11 @@ export default function Tab2() {
                 <strong style={{ display: 'block', marginBottom: 8, fontSize: 13, color: '#1a1a1a' }}>How to read this</strong>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                   <div><span style={{ color: '#6C5CE7', fontWeight: 700 }}>●</span> purple = that program requires this course &nbsp;·&nbsp; <span style={{ color: '#ccc', fontWeight: 700 }}>●</span> grey = not required</div>
-                  <div><span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 2, background: '#ffe082', verticalAlign: 'middle', marginRight: 4 }}/>yellow-bordered card = choose from the group — you don't need all of them</div>
-                  <div>🔴 red row = no equivalent at your CC — if inside a yellow card, choose a different option; if standalone, you may need to take it after transferring</div>
+                  <div><span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 2, background: '#ffe082', verticalAlign: 'middle', marginRight: 4 }} />yellow-bordered card = choose from the group — you don't need all of them</div>
+                  <div>🔴 red row = no equivalent at your CC</div>
                   <div>▼ tap any row to see which university requirement it satisfies</div>
                   <div>☑ check it off once you've taken it — progress saves automatically</div>
-                  <div>⚠️ for unit-based groups, unit counts refer to the <strong>university course units</strong> — tap any row to see the university course details</div>
+                  <div>⚠️ for unit-based groups, unit counts refer to <strong>university course units</strong></div>
                 </div>
               </div>
               <button onClick={() => { setShowBanner(false); localStorage.setItem('tab2_banner_dismissed', '1') }}
@@ -816,368 +1303,7 @@ export default function Tab2() {
 
           <div style={{ display: isWide ? 'grid' : 'block', gridTemplateColumns: isWide ? '1fr 300px' : undefined, gap: isWide ? 24 : 0, alignItems: 'start' }}>
             <div>
-              {(() => {
-                const groups = []
-                const groupIdToGroup = {}
-                const noArtByGroupId = {}
-                const noArtByGroupIdFlat = {}
-                const inlineRequiredNoArt = []
-
-                for (const na of (overlapData.noArticulation || [])) {
-                  if (na.partOfPickGroup) {
-                    if (!noArtByGroupId[na.groupId]) noArtByGroupId[na.groupId] = {}
-                    const secKey = na.sectionPosition ?? 'unknown'
-                    if (!noArtByGroupId[na.groupId][secKey]) {
-                      noArtByGroupId[na.groupId][secKey] = { courses: [], reason: na.reason, sectionPosition: na.sectionPosition }
-                    }
-                    const slot = noArtByGroupId[na.groupId][secKey]
-                    if (!slot.courses.some(x => x.prefix === na.uniReq.prefix && x.number === na.uniReq.number))
-                      slot.courses.push({ prefix: na.uniReq.prefix, number: na.uniReq.number, title: na.uniReq.title, units: na.uniReq.units })
-                    if (na.reason && !slot.reason) slot.reason = na.reason
-                    if (!noArtByGroupIdFlat[na.groupId]) noArtByGroupIdFlat[na.groupId] = []
-                    if (!noArtByGroupIdFlat[na.groupId].some(x => x.uniReq.prefix === na.uniReq.prefix && x.uniReq.number === na.uniReq.number))
-                      noArtByGroupIdFlat[na.groupId].push(na)
-                  } else if (!na.coveredByAnotherOption) {
-                    inlineRequiredNoArt.push(na)
-                  }
-                }
-
-                for (const row of overlapData.rows) {
-                  const groupId = row.groupId ?? `singleton_${row.ccKey}`
-                  if (!groupIdToGroup[groupId]) {
-                    const g = {
-                      groupId,
-                      groupTitle: row.groupTitle || 'MAJOR REQUIREMENTS',
-                      sectionLabel: row.sectionLabel || '',
-                      nRequired: row.nRequired ?? null,
-                      pickType: row.pickType ?? null,
-                      pickMin: row.pickMin ?? null,
-                      pickMax: row.pickMax ?? null,
-                      isSectionBundled: row.isSectionBundled || false,
-                      rows: [],
-                    }
-                    groupIdToGroup[groupId] = g
-                    groups.push(g)
-                  }
-                  groupIdToGroup[groupId].rows.push(row)
-                }
-
-                for (const na of inlineRequiredNoArt) {
-                  const groupId = na.groupId ?? `noart_${na.uniReq.prefix}_${na.uniReq.number}`
-                  if (!groupIdToGroup[groupId]) {
-                    const g = {
-                      groupId,
-                      groupTitle: na.groupTitle || 'MAJOR REQUIREMENTS',
-                      sectionLabel: na.sectionLabel || '',
-                      nRequired: null, pickType: null, pickMin: null, pickMax: null,
-                      isSectionBundled: false,
-                      rows: [], noArtRows: [],
-                      _groupPosition: na.groupPosition ?? 999,
-                      _sectionPosition: na.sectionPosition ?? 999,
-                    }
-                    groupIdToGroup[groupId] = g
-                    groups.push(g)
-                  }
-                  if (!groupIdToGroup[groupId].noArtRows) groupIdToGroup[groupId].noArtRows = []
-                  groupIdToGroup[groupId].noArtRows.push(na)
-                }
-
-                const isRecommendedGroup = g => isRecommendedSection(g.groupTitle) || isRecommendedSection(g.sectionLabel)
-                const sectionTier = g => {
-                  if (isRecommendedGroup(g)) return 2
-                  const label = (g.sectionLabel || g.groupTitle || '').toLowerCase()
-                  if (label.includes('required')) return 0
-                  return 1
-                }
-                groups.sort((a, b) => {
-                  const aTier = sectionTier(a), bTier = sectionTier(b)
-                  if (aTier !== bTier) return aTier - bTier
-                  const aPos = a.rows[0]?._groupPosition ?? a._groupPosition ?? 999
-                  const bPos = b.rows[0]?._groupPosition ?? b._groupPosition ?? 999
-                  return aPos - bPos
-                })
-
-                let lastDisplayLabel = null
-                const rendered = []
-
-                for (const group of groups) {
-                  const isPickN = group.nRequired !== null
-                  const noArtSiblingSlots = Object.keys(noArtByGroupId[group.groupId] || {}).length
-                  const noArtSiblingsFlat = (noArtByGroupIdFlat[group.groupId] || []).length
-                  const isEffectivelyRequired = isPickN && group.rows.length <= 1 && noArtSiblingSlots === 0 && noArtSiblingsFlat === 0
-                  const displayLabel = group.sectionLabel || group.groupTitle || 'REQUIREMENTS'
-
-                  if (displayLabel !== lastDisplayLabel) {
-                    lastDisplayLabel = displayLabel
-                    rendered.push(
-                      <div key={`sec-${displayLabel}-${group.groupId}`} style={{ marginTop: rendered.length === 0 ? 0 : 32, marginBottom: 10, paddingBottom: 8, borderBottom: '2px solid #e8e8e4' }}>
-                        <div style={{ fontSize: 11, fontWeight: 700, color: '#aaa', textTransform: 'uppercase', letterSpacing: '0.1em' }}>{displayLabel}</div>
-                      </div>
-                    )
-                  }
-
-                  if (isPickN && !isEffectivelyRequired) {
-                    rendered.push(
-                      <div key={`group-${group.groupId}`} style={{ border: '1.5px solid #ffe082', borderRadius: 10, marginBottom: 12, overflow: 'hidden', background: '#fffdf5' }}>
-                        <div style={{ padding: '9px 14px', borderBottom: '1px solid #ffe082', background: '#fff8e1' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                            <span style={{ fontSize: 14 }}>↓</span>
-                            <span style={{ fontSize: 12, fontWeight: 700, color: '#b45309' }}>{pickGroupLabel(group)}</span>
-                            <span style={{ fontSize: 11, color: '#999', marginLeft: 4 }}>— you don't need all of them</span>
-                          </div>
-                          {/* Units note — unit counts refer to university course units, not CC units */}
-                          {group.pickType === 'units' && (
-                            <div style={{ fontSize: 11, color: '#92400e', marginTop: 6, padding: '4px 8px', background: '#fef3c7', borderRadius: 4, display: 'inline-block' }}>
-                              ⚠️ Unit counts refer to the <strong>university's course units</strong>, not your CC's — tap any row to see university course details
-                            </div>
-                          )}
-                        </div>
-
-                        {[...group.rows, ...Object.values(noArtByGroupId[group.groupId] || {}).map(slot => ({ _isNoArt: true, slot }))].map((rowOrNa, rowIdx) => {
-                          if (rowOrNa._isNoArt) {
-                            const { slot } = rowOrNa
-                            const label = slot.courses.map(c => `${c.prefix} ${c.number}`).join(' + ')
-                            const subtitle = slot.courses.map(c => c.title).filter(Boolean).join(' + ')
-                            const units = slot.courses.reduce((sum, c) => sum + (c.units || 0), 0)
-                            return (
-                              <div key={`noart-${label}`} style={{ borderTop: '1px dashed #fecaca', background: '#fff5f5' }}>
-                                <div style={{ textAlign: 'center', fontSize: 11, fontWeight: 700, color: '#fca5a5', padding: '4px 0', letterSpacing: '0.05em' }}>OR</div>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px' }}>
-                                  <span style={{ color: '#fca5a5', fontSize: 14, flexShrink: 0 }}>✕</span>
-                                  <div style={{ flex: 1, minWidth: 0 }}>
-                                    <div style={{ fontWeight: 600, fontSize: 13, color: '#991b1b', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                                      {label}
-                                      <span style={{ fontSize: 10, background: '#fee2e2', color: '#dc2626', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>No equivalent at {ccName}</span>
-                                    </div>
-                                    {subtitle && <div style={{ fontSize: 11, color: '#f87171', marginTop: 1 }}>{subtitle}{units ? ` · ${units} units` : ''}</div>}
-                                    {slot.reason && <div style={{ fontSize: 11, color: '#dc2626', marginTop: 2 }}>{slot.reason}</div>}
-                                    <div style={{ fontSize: 11, color: '#b91c1c', marginTop: 4, fontStyle: 'italic' }}>Choose a different option from this group instead</div>
-                                  </div>
-                                </div>
-                              </div>
-                            )
-                          }
-
-                          const row = rowOrNa
-                          const isDone = completedCourses.has(row.ccKey)
-                          const isExpanded = expandedRow === row.ccKey
-                          const label = row.primaryCourses.map(c => `${c.prefix} ${c.number}`).join(' + ')
-                          const subtitle = row.primaryCourses.map(c => c.title).filter(Boolean).join(' + ')
-                          const units = row.primaryCourses.reduce((sum, c) => sum + (c.units || 0), 0)
-                          const coverageAll = row.coverage === overlapData.totalPrograms
-                          const coverageMost = row.coverage > 1 && !coverageAll
-
-                          return (
-                            <div key={row.ccKey} style={{ borderTop: rowIdx > 0 ? '1px dashed #f0e6c8' : 'none', background: isDone ? '#f7f4ec' : '#fffdf5', opacity: isDone ? 0.6 : 1 }}>
-                              {rowIdx > 0 && <div style={{ textAlign: 'center', fontSize: 11, fontWeight: 700, color: '#ccc', padding: '4px 0', letterSpacing: '0.05em' }}>OR</div>}
-                              <div onClick={() => setExpandedRow(isExpanded ? null : row.ccKey)} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', cursor: 'pointer' }}>
-                                <div onClick={e => e.stopPropagation()}>
-                                  <input type="checkbox" checked={isDone} onChange={() => toggleCourse(row.ccKey)} style={{ width: 15, height: 15, cursor: 'pointer', accentColor: '#b45309' }} />
-                                </div>
-                                <div style={{ flex: 1, minWidth: 0 }}>
-                                  <div style={{ fontWeight: 600, fontSize: 13, textDecoration: isDone ? 'line-through' : 'none', color: isDone ? '#aaa' : '#1a1a1a', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                                    {label}
-                                    {coverageAll && <span style={{ fontSize: 10, background: '#ede9ff', color: '#6C5CE7', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>ALL PROGRAMS</span>}
-                                    {coverageMost && <span style={{ fontSize: 10, background: '#fff3e0', color: '#f57f17', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>MULTIPLE</span>}
-                                  </div>
-                                  {subtitle && <div style={{ fontSize: 11, color: '#999', marginTop: 1 }}>{subtitle}{units ? ` · ${units} units` : ''}</div>}
-                                </div>
-                                <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-                                  {overlapData.programLabels.map((progLabel, pi) => {
-                                    const has = row.programEntries.some(pe => pe.program === progLabel)
-                                    return (
-                                      <div key={pi} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-                                        {overlapData.programLabels.length > 1 && <div style={{ fontSize: 9, color: '#bbb', textAlign: 'center', maxWidth: 48, lineHeight: 1.2 }}>{shortLabel(progLabel).split('\n')[0]}</div>}
-                                        <span style={{ color: has ? '#6C5CE7' : '#e0e0e0', fontSize: 16, lineHeight: 1 }}>●</span>
-                                      </div>
-                                    )
-                                  })}
-                                </div>
-                                <div style={{ fontSize: 11, color: '#ccc' }}>{isExpanded ? '▲' : '▼'}</div>
-                              </div>
-                              {isExpanded && (
-                                <div style={{ borderTop: '1px solid #f0e6c8', background: '#faf5e8', padding: '12px 14px 14px 38px' }}>
-                                  {row.programEntries.map((pe, i) => (
-                                    <div key={i} style={{ marginBottom: i < row.programEntries.length - 1 ? 14 : 0, paddingBottom: i < row.programEntries.length - 1 ? 14 : 0, borderBottom: i < row.programEntries.length - 1 ? '1px solid #eee' : 'none' }}>
-                                      <div style={{ fontSize: 12, fontWeight: 600, color: '#555', marginBottom: 4 }}>{pe.program}</div>
-                                      {(() => {
-                                        const isRec = isRecommendedSection(pe.groupTitle) || isRecommendedSection(pe.sectionLabel)
-                                        return <span style={{ fontSize: 11, color: isRec ? '#b45309' : '#166534', marginBottom: 4, display: 'block' }}>{isRec ? '★ Recommended by this program' : '✓ Required by this program'}</span>
-                                      })()}
-                                      <div style={{ fontSize: 12, color: '#888', marginBottom: 8 }}>
-                                        Satisfies: <span style={{ fontWeight: 500, color: '#1a1a1a' }}>{pe.uniReq.prefix} {pe.uniReq.number} — {pe.uniReq.title}</span>
-                                        {pe.uniReq.units ? ` (${pe.uniReq.units} uni units)` : ''}
-                                      </div>
-                                      {pe.uniReq.allCourseLabels?.length > 1 && <div style={{ fontSize: 11, color: '#888', marginBottom: 8 }}>Also counts toward: {pe.uniReq.allCourseLabels.slice(1).join(', ')}</div>}
-                                      {pe.options.map((opt, j) => (
-                                        <div key={j}>
-                                          {j > 0 && <div style={{ fontSize: 11, color: '#bbb', padding: '6px 0', borderTop: '1px dashed #eee', marginTop: 6, marginBottom: 2 }}>or instead:</div>}
-                                          {opt.courses.length > 1 && <div style={{ fontSize: 11, color: '#999', marginBottom: 4 }}>Take all of these together:</div>}
-                                          {opt.groupNote && <div style={{ fontSize: 11, color: '#f57f17', marginBottom: 4 }}>⚠️ {opt.groupNote}</div>}
-                                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                                            {opt.courses.map((c, k) => (
-                                              <div key={k} style={{ background: '#efefed', borderRadius: 6, padding: '4px 10px', fontSize: 12 }}>
-                                                <span style={{ fontFamily: 'monospace', fontWeight: 600 }}>{c.prefix} {c.number}</span>
-                                                {c.title && <span style={{ color: '#666', marginLeft: 6 }}>{c.title}</span>}
-                                                {c.units && <span style={{ color: '#999', marginLeft: 6 }}>{c.units}u</span>}
-                                                {c.note && <div style={{ fontSize: 11, color: '#f57f17', marginTop: 4 }}>⚠️ {c.note}</div>}
-                                              </div>
-                                            ))}
-                                          </div>
-                                        </div>
-                                      ))}
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
-                            </div>
-                          )
-                        })}
-                      </div>
-                    )
-                  } else {
-                    const effectiveNoArtRows = isEffectivelyRequired ? (noArtByGroupIdFlat[group.groupId] || []) : (group.noArtRows || [])
-
-                    group.rows.forEach(row => {
-                      const isDone = completedCourses.has(row.ccKey)
-                      const isExpanded = expandedRow === row.ccKey
-                      const label = row.primaryCourses.map(c => `${c.prefix} ${c.number}`).join(' + ')
-                      const subtitle = row.primaryCourses.map(c => c.title).filter(Boolean).join(' + ')
-                      const units = row.primaryCourses.reduce((sum, c) => sum + (c.units || 0), 0)
-                      const coverageAll = row.coverage === overlapData.totalPrograms
-                      const coverageMost = row.coverage > 1 && !coverageAll
-
-                      rendered.push(
-                        <div key={row.ccKey} style={{ border: '1px solid #efefed', borderRadius: 8, marginBottom: 6, background: isDone ? '#fafafa' : '#fff', opacity: isDone ? 0.55 : 1, overflow: 'hidden' }}>
-                          <div onClick={() => setExpandedRow(isExpanded ? null : row.ccKey)} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', cursor: 'pointer' }}>
-                            <div onClick={e => e.stopPropagation()}>
-                              <input type="checkbox" checked={isDone} onChange={() => toggleCourse(row.ccKey)} style={{ width: 15, height: 15, cursor: 'pointer', accentColor: '#1a1a1a' }} />
-                            </div>
-                            <div style={{ flex: 1, minWidth: 0 }}>
-                              <div style={{ fontWeight: 600, fontSize: 13, textDecoration: isDone ? 'line-through' : 'none', color: isDone ? '#aaa' : '#1a1a1a', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                                {label}
-                                {coverageAll && <span style={{ fontSize: 10, background: '#ede9ff', color: '#6C5CE7', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>ALL PROGRAMS</span>}
-                                {coverageMost && <span style={{ fontSize: 10, background: '#fff3e0', color: '#f57f17', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>MULTIPLE</span>}
-                              </div>
-                              {subtitle && <div style={{ fontSize: 11, color: '#999', marginTop: 1 }}>{subtitle}{units ? ` · ${units} units` : ''}</div>}
-                            </div>
-                            <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-                              {overlapData.programLabels.map((progLabel, pi) => {
-                                const has = row.programEntries.some(pe => pe.program === progLabel)
-                                return (
-                                  <div key={pi} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-                                    {overlapData.programLabels.length > 1 && <div style={{ fontSize: 9, color: '#bbb', textAlign: 'center', maxWidth: 48, lineHeight: 1.2 }}>{shortLabel(progLabel).split('\n')[0]}</div>}
-                                    <span style={{ color: has ? '#6C5CE7' : '#e0e0e0', fontSize: 16, lineHeight: 1 }}>●</span>
-                                  </div>
-                                )
-                              })}
-                            </div>
-                            <div style={{ fontSize: 11, color: '#ccc' }}>{isExpanded ? '▲' : '▼'}</div>
-                          </div>
-                          {isExpanded && (
-                            <div style={{ borderTop: '1px solid #f0f0f0', background: '#fafafa', padding: '12px 14px 14px 38px' }}>
-                              {isEffectivelyRequired && (
-                                <div style={{ fontSize: 12, color: '#888', background: '#f0f0f0', borderRadius: 6, padding: '7px 10px', marginBottom: 12 }}>
-                                  ℹ️ The university offers multiple ways to satisfy this requirement, but this is the only one with an equivalent at {ccName}.
-                                </div>
-                              )}
-                              {row.programEntries.map((pe, i) => (
-                                <div key={i} style={{ marginBottom: i < row.programEntries.length - 1 ? 14 : 0, paddingBottom: i < row.programEntries.length - 1 ? 14 : 0, borderBottom: i < row.programEntries.length - 1 ? '1px solid #eee' : 'none' }}>
-                                  <div style={{ fontSize: 12, fontWeight: 600, color: '#555', marginBottom: 4 }}>{pe.program}</div>
-                                  {(() => {
-                                    const isRec = isRecommendedSection(pe.groupTitle) || isRecommendedSection(pe.sectionLabel)
-                                    return (
-                                      <div style={{ fontSize: 11, marginBottom: 6, display: 'inline-flex', alignItems: 'center', gap: 4, background: isRec ? '#fff8e1' : '#f0fdf4', borderRadius: 4, padding: '2px 8px', color: isRec ? '#b45309' : '#166534', fontWeight: 600 }}>
-                                        {isRec ? '★ Recommended by this program' : '✓ Required by this program'}
-                                      </div>
-                                    )
-                                  })()}
-                                  <div style={{ fontSize: 12, color: '#888', marginBottom: 8 }}>
-                                    Satisfies: <span style={{ fontWeight: 500, color: '#1a1a1a' }}>{pe.uniReq.prefix} {pe.uniReq.number} — {pe.uniReq.title}</span>
-                                    {pe.uniReq.units ? ` (${pe.uniReq.units} uni units)` : ''}
-                                  </div>
-                                  {pe.uniReq.allCourseLabels?.length > 1 && <div style={{ fontSize: 11, color: '#888', marginBottom: 8 }}>Also counts toward: {pe.uniReq.allCourseLabels.slice(1).join(', ')}</div>}
-                                  {pe.options.map((opt, j) => (
-                                    <div key={j}>
-                                      {j > 0 && <div style={{ fontSize: 11, color: '#bbb', padding: '6px 0', borderTop: '1px dashed #eee', marginTop: 6, marginBottom: 2 }}>or instead:</div>}
-                                      {opt.courses.length > 1 && <div style={{ fontSize: 11, color: '#888', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>Take all together</div>}
-                                      {opt.groupNote && <div style={{ fontSize: 11, color: '#f57f17', marginBottom: 4 }}>⚠️ {opt.groupNote}</div>}
-                                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                                        {opt.courses.map((c, k) => (
-                                          <div key={k} style={{ background: '#efefed', borderRadius: 6, padding: '4px 10px', fontSize: 12 }}>
-                                            <span style={{ fontFamily: 'monospace', fontWeight: 600 }}>{c.prefix} {c.number}</span>
-                                            {c.title && <span style={{ color: '#666', marginLeft: 6 }}>{c.title}</span>}
-                                            {c.units && <span style={{ color: '#999', marginLeft: 6 }}>{c.units}u</span>}
-                                            {c.note && <div style={{ fontSize: 11, color: '#f57f17', marginTop: 4 }}>⚠️ {c.note}</div>}
-                                          </div>
-                                        ))}
-                                      </div>
-                                    </div>
-                                  ))}
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      )
-                    })
-
-                    effectiveNoArtRows.forEach(na => {
-                      rendered.push(
-                        <div key={`noart-inline-${na.uniReq.prefix}-${na.uniReq.number}-${na.program}`} style={{ border: '1px solid #fecaca', borderRadius: 8, marginBottom: 6, background: '#fff5f5', overflow: 'hidden' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px' }}>
-                            <span style={{ color: '#fca5a5', fontSize: 14, flexShrink: 0 }}>✕</span>
-                            <div style={{ flex: 1, minWidth: 0 }}>
-                              <div style={{ fontWeight: 600, fontSize: 13, color: '#991b1b', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                                {na.uniReq.prefix} {na.uniReq.number}
-                                {na.uniReq.title && <span style={{ fontWeight: 400, color: '#b91c1c' }}>— {na.uniReq.title}</span>}
-                              </div>
-                              {na.uniReq.units && <div style={{ fontSize: 11, color: '#f87171', marginTop: 1 }}>{na.uniReq.units} units · {na.program}</div>}
-                              {na.reason && <div style={{ fontSize: 11, color: '#dc2626', marginTop: 2 }}>{na.reason}</div>}
-                            </div>
-                            <span style={{ fontSize: 11, background: '#fee2e2', color: '#dc2626', borderRadius: 4, padding: '2px 8px', fontWeight: 600, flexShrink: 0 }}>No equivalent at {ccName}</span>
-                          </div>
-                        </div>
-                      )
-                    })
-                  }
-                }
-
-                for (const g of groups) {
-                  if ((g.noArtRows || []).length > 0 && g.rows.length === 0) {
-                    const displayLabel = g.sectionLabel || g.groupTitle || 'REQUIREMENTS'
-                    if (displayLabel !== lastDisplayLabel) {
-                      lastDisplayLabel = displayLabel
-                      rendered.push(
-                        <div key={`sec-noart-${displayLabel}-${g.groupId}`} style={{ marginTop: rendered.length === 0 ? 0 : 32, marginBottom: 10, paddingBottom: 8, borderBottom: '2px solid #e8e8e4' }}>
-                          <div style={{ fontSize: 11, fontWeight: 700, color: '#aaa', textTransform: 'uppercase', letterSpacing: '0.1em' }}>{displayLabel}</div>
-                        </div>
-                      )
-                    }
-                    for (const na of g.noArtRows) {
-                      rendered.push(
-                        <div key={`noart-req-${na.uniReq.prefix}-${na.uniReq.number}-${na.program}`} style={{ border: '1px solid #fecaca', borderRadius: 8, marginBottom: 6, background: '#fff5f5', overflow: 'hidden' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px' }}>
-                            <span style={{ color: '#fca5a5', fontSize: 14, flexShrink: 0 }}>✕</span>
-                            <div style={{ flex: 1, minWidth: 0 }}>
-                              <div style={{ fontWeight: 600, fontSize: 13, color: '#991b1b', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                                {na.uniReq.prefix} {na.uniReq.number}
-                                {na.uniReq.title && <span style={{ fontWeight: 400, color: '#b91c1c' }}>— {na.uniReq.title}</span>}
-                              </div>
-                              {na.uniReq.units && <div style={{ fontSize: 11, color: '#f87171', marginTop: 1 }}>{na.uniReq.units} units · {na.program}</div>}
-                              {na.reason && <div style={{ fontSize: 11, color: '#dc2626', marginTop: 2 }}>{na.reason}</div>}
-                            </div>
-                            <span style={{ fontSize: 11, background: '#fee2e2', color: '#dc2626', borderRadius: 4, padding: '2px 8px', fontWeight: 600, flexShrink: 0 }}>No equivalent at {ccName}</span>
-                          </div>
-                        </div>
-                      )
-                    }
-                  }
-                }
-
-                return rendered
-              })()}
-
+              {renderCourseList()}
               {overlapData.rows.length === 0 && (
                 <div className="key-note">No articulated courses found. Try different programs or check ASSIST.org directly.</div>
               )}
@@ -1185,30 +1311,7 @@ export default function Tab2() {
 
             <div style={{ position: isWide ? 'sticky' : 'static', top: 20 }}>
               <div className="card" style={{ background: '#f9f9f7', border: '1px solid #e8e8e4' }}>
-                <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 4 }}>📊 Progress</div>
-                <div style={{ fontSize: 11, color: '#888', marginBottom: 12 }}>Check rows to update</div>
-                {summary.length === 0 ? (
-                  <div style={{ fontSize: 12, color: '#aaa' }}>Check off courses to see your progress</div>
-                ) : (
-                  summary.map((s, i) => {
-                    const pct = s.total === 0 ? 0 : Math.round((s.completed / s.total) * 100)
-                    const isTop = i === 0 && summary.length > 1
-                    const showHeart = isTop && completedCourses.size > 0
-                    return (
-                      <div key={i} style={{ marginBottom: i < summary.length - 1 ? 16 : 0 }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                          <div style={{ fontSize: 12, fontWeight: isTop ? 600 : 400, color: isTop ? '#1a1a1a' : '#555', flex: 1, marginRight: 8 }}>
-                            {showHeart && <span>💜 </span>}{s.label}
-                          </div>
-                          <div style={{ fontSize: 11, color: '#888', flexShrink: 0 }}>{s.completed}/{s.total}</div>
-                        </div>
-                        <div style={{ background: '#e0e0e0', borderRadius: 4, height: 6, overflow: 'hidden' }}>
-                          <div style={{ background: pct === 100 ? '#4caf50' : '#6C5CE7', height: '100%', width: `${pct}%`, borderRadius: 4, transition: 'width 0.3s ease' }} />
-                        </div>
-                      </div>
-                    )
-                  })
-                )}
+                {renderSidebar()}
               </div>
             </div>
           </div>
