@@ -118,15 +118,23 @@ function buildCellMap(templateAssets) {
     let groupPickMax = null
     let isSectionBundled = false
 
-    if (instrType === 'NFromArea') {
-      groupIsPickN = true
-      groupNRequired = instr.amount ?? 1
-      groupPickType = 'count'
-      // Only bundle sections when picking FEWER sections than exist
-      // e.g. pick 1 of 4 sections (A/B/C/D) → bundled
-      // e.g. pick 8 of 8 courses → individual, not bundled
-      isSectionBundled = (instr.amount ?? 1) < dataSections.length
-    } else if (instrType === 'NFollowing') {
+    if (instrType === 'NFromArea' || instrType === 'NFromConjunction') {
+  groupIsPickN = true
+  groupNRequired = instr.amount ?? 1
+  const isUnitBased = ['SemesterUnit', 'QuarterUnit', 'Unit'].includes(instr.amountUnitType)
+  groupPickType = isUnitBased ? 'units' : 'count'
+  isSectionBundled = groupPickType === 'count' && (instr.amount ?? 1) < dataSections.length
+} else if (instrType === 'NToNFromConjunction') {
+  groupIsPickN = true
+  groupPickMin = instr.amount ?? 1
+  groupPickMax = instr.toAmount ?? null
+  groupNRequired = groupPickMin
+  groupPickType = 'range'
+} else if (instrType === 'NOrUnits') {
+  groupIsPickN = true
+  groupNRequired = instr.amount ?? 1
+  groupPickType = 'count'
+} else if (instrType === 'NFollowing') {
       groupIsPickN = true
       groupNRequired = instr.amount ?? 1
       groupPickType = 'count'
@@ -389,7 +397,7 @@ function pickGroupLabel(group) {
   const total = group.rows.length
   switch (group.pickType) {
     case 'units':
-  return `Choose courses totaling ${n} university unit${n !== 1 ? 's' : ''} from these ${total} options`
+  return `Choose courses totaling ${n} unit${n !== 1 ? 's' : ''} from these ${total} options`
     case 'range':
       return group.pickMax
         ? `Choose ${group.pickMin}–${group.pickMax} courses from these ${total} options`
