@@ -11,7 +11,7 @@ const TERMS = [
   'Fall 2027', 'Spring 2028',
 ]
 
-const TARGET_UNITS_PER_TERM = { Fall: 15, Spring: 15, Summer: 9 }
+const GE_TOTAL_ESTIMATE = 35
 
 // ─── ASSIST helpers ───────────────────────────────────────────────────────────
 
@@ -343,126 +343,42 @@ function parseAllForProgram(agreement, programLabel) {
   }
 }
 
-// ─── Semester planner logic ───────────────────────────────────────────────────
+// ─── Pacing helper ────────────────────────────────────────────────────────────
 
-function sortCoursesByNumber(courses) {
-  return [...courses].sort((a, b) => {
-    if (a.prefix !== b.prefix) return a.prefix.localeCompare(b.prefix)
-    const numA = parseFloat(a.number) || 0
-    const numB = parseFloat(b.number) || 0
-    return numA - numB
-  })
-}
-
-function buildSemesterPlan(rows, completedCourses, startTerm, transferTerm) {
+function computePacing(neededRows, startTerm, transferTerm) {
   const startIdx = TERMS.indexOf(startTerm)
-  const endIdx = TERMS.indexOf(transferTerm)
-  if (startIdx === -1 || endIdx === -1 || startIdx >= endIdx) return []
+  const endIdx   = TERMS.indexOf(transferTerm)
+  if (endIdx <= startIdx) return null
 
-  const availableTerms = TERMS.slice(startIdx, endIdx)
+  const semesters = TERMS.slice(startIdx, endIdx).filter(t => !t.startsWith('Summer')).length
+  if (semesters === 0) return null
 
-  // ── Pick-group awareness ──
-  // For each groupId, figure out how many more courses/units are still needed
-  // after accounting for already-completed courses in that group.
-  const groupState = {} // groupId → { nRequired, pickType, completedCount, completedUnits, totalCount }
-
-  for (const row of rows) {
-    const gid = row.groupId
-    if (!gid || row.nRequired === null) continue // not a pick group
-    if (!groupState[gid]) {
-      groupState[gid] = {
-        nRequired: row.nRequired,
-        pickType: row.pickType,
-        completedCount: 0,
-        completedUnits: 0,
-        totalCount: 0,
-      }
-    }
-    groupState[gid].totalCount += 1
-    if (completedCourses.has(row.ccKey)) {
-      groupState[gid].completedCount += 1
-      groupState[gid].completedUnits += row.primaryCourses.reduce((s, c) => s + (c.units || 3), 0)
-    }
-  }
-
-  // For each pick group, determine how many more slots are still needed
-  const groupSlotsRemaining = {} // groupId → number of courses still needed from this group
-  for (const [gid, gs] of Object.entries(groupState)) {
-    if (gs.pickType === 'units') {
-      // still need courses until we've hit nRequired units
-      const unitsStillNeeded = Math.max(0, gs.nRequired - gs.completedUnits)
-      groupSlotsRemaining[gid] = unitsStillNeeded > 0 ? Infinity : 0 // will filter by running unit sum below
-    } else {
-      // count-based: need nRequired total, subtract completed
-      groupSlotsRemaining[gid] = Math.max(0, gs.nRequired - gs.completedCount)
-    }
-  }
-
-  // Track how many units we've added per group (for unit-based groups)
-  const groupUnitsAdded = {}
-
-  const remaining = []
-  for (const row of rows) {
-    if (completedCourses.has(row.ccKey)) continue
-
-    const gid = row.groupId
-    const gs = groupState[gid]
-
-    if (gid && gs && row.nRequired !== null) {
-      // This row belongs to a pick group
-      if (gs.pickType === 'units') {
-        // Include it — we'll gate by running unit total below
-      } else {
-        // Count-based: skip if group is already satisfied
-        if (groupSlotsRemaining[gid] <= 0) continue
-      }
-    }
-
-    const units = row.primaryCourses.reduce((sum, c) => sum + (c.units || 3), 0)
-    remaining.push({ row, label: row.primaryCourses.map(c => `${c.prefix} ${c.number}`).join(' + '), units })
-  }
-
-  const allCourses = sortCoursesByNumber(
-    remaining.map(r => ({ ...r, sortPrefix: r.row.primaryCourses[0]?.prefix || '', sortNum: parseFloat(r.row.primaryCourses[0]?.number) || 0 }))
+  const majorUnitsLeft = neededRows.reduce(
+    (sum, r) => sum + r.primaryCourses.reduce((s, c) => s + (c.units || 3), 0), 0
   )
 
-  const plan = availableTerms.map(term => ({ term, courses: [], totalUnits: 0 }))
+  const semestersDone = Math.max(0, startIdx - 1)
+  const geLeft = Math.max(0, GE_TOTAL_ESTIMATE - semestersDone * 5)
+  const perSemester = Math.round((majorUnitsLeft + geLeft) / semesters)
 
-  for (const course of allCourses) {
-    const gid = course.row.groupId
-    const gs = gid ? groupState[gid] : null
-
-    // For unit-based pick groups, check if we've already added enough units from this group
-    if (gid && gs && gs.pickType === 'units') {
-      if (!groupUnitsAdded[gid]) groupUnitsAdded[gid] = 0
-      const unitsStillNeeded = Math.max(0, gs.nRequired - gs.completedUnits - groupUnitsAdded[gid])
-      if (unitsStillNeeded <= 0) continue
-      groupUnitsAdded[gid] += course.units
-    } else if (gid && gs && gs.pickType !== 'units' && gs.nRequired !== null) {
-      // Count-based: decrement the slot
-      if (groupSlotsRemaining[gid] <= 0) continue
-      groupSlotsRemaining[gid] -= 1
-    }
-
-    let placed = false
-    for (const slot of plan) {
-      const termType = slot.term.split(' ')[0]
-      const target = TARGET_UNITS_PER_TERM[termType] || 15
-      if (slot.totalUnits + course.units <= target) {
-        slot.courses.push(course)
-        slot.totalUnits += course.units
-        placed = true
-        break
-      }
-    }
-    if (!placed) {
-      const lightest = plan.reduce((a, b) => a.totalUnits <= b.totalUnits ? a : b)
-      lightest.courses.push(course)
-      lightest.totalUnits += course.units
-    }
+  let status, statusLabel, statusColor, statusBg, advice
+  if (perSemester <= 15) {
+    status = 'on-track'; statusLabel = 'On track'
+    statusColor = '#3B6D11'; statusBg = '#EAF3DE'
+    advice = "Good pace — you're on track to transfer on time."
+  } else if (perSemester <= 18) {
+    status = 'tight'; statusLabel = 'Tight'
+    statusColor = '#854F0B'; statusBg = '#FAEEDA'
+    advice = "Manageable but busy. Try to stay consistent each semester."
+  } else {
+    status = 'heavy'; statusLabel = 'Heavy load'
+    statusColor = '#A32D2D'; statusBg = '#FCEBEB'
+    advice = "This is a lot. Consider pushing your transfer goal one semester later."
   }
 
-  return plan.filter(slot => slot.courses.length > 0)
+  const barPct = Math.min(100, Math.round((perSemester / 20) * 100))
+
+  return { majorUnitsLeft, geLeft, semesters, perSemester, status, statusLabel, statusColor, statusBg, advice, barPct }
 }
 
 // ─── Utility ─────────────────────────────────────────────────────────────────
@@ -627,291 +543,6 @@ function getCCScheduleUrl(ccName) {
   return key ? CC_SCHEDULE_URLS[key] : null
 }
 
-// ─── Semester Planner full-page component ────────────────────────────────────
-
-function SemesterPlanner({ rows, completedCourses, onClose, ccName }) {
-  const [startTerm, setStartTerm] = useState(TERMS[0])
-  const [transferTerm, setTransferTerm] = useState(TERMS[4])
-  const [includeSummer, setIncludeSummer] = useState(true)
-  const [termCourses, setTermCourses] = useState({})
-  const [dragKey, setDragKey] = useState(null)
-  const [dragOver, setDragOver] = useState(null)
-
-  const scheduleUrl = getCCScheduleUrl(ccName)
-
-  // Build pick-group-aware needed rows
-  const groupStateForDisplay = {}
-  for (const row of rows) {
-    const gid = row.groupId
-    if (!gid || row.nRequired === null) continue
-    if (!groupStateForDisplay[gid]) groupStateForDisplay[gid] = { nRequired: row.nRequired, pickType: row.pickType, completedCount: 0, completedUnits: 0 }
-    if (completedCourses.has(row.ccKey)) {
-      groupStateForDisplay[gid].completedCount += 1
-      groupStateForDisplay[gid].completedUnits += row.primaryCourses.reduce((s, c) => s + (c.units || 3), 0)
-    }
-  }
-  const groupSlotsForDisplay = {}
-  for (const [gid, gs] of Object.entries(groupStateForDisplay)) {
-    groupSlotsForDisplay[gid] = gs.pickType === 'units'
-      ? { unitsNeeded: Math.max(0, gs.nRequired - gs.completedUnits), unitsAdded: 0 }
-      : { slotsLeft: Math.max(0, gs.nRequired - gs.completedCount) }
-  }
-  const neededRows = []
-  for (const row of rows) {
-    if (completedCourses.has(row.ccKey)) continue
-    const gid = row.groupId
-    const gd = gid ? groupSlotsForDisplay[gid] : null
-    if (gd) {
-      if (gd.unitsNeeded !== undefined) {
-        const u = row.primaryCourses.reduce((s, c) => s + (c.units || 3), 0)
-        if (gd.unitsNeeded - gd.unitsAdded <= 0) continue
-        gd.unitsAdded += u
-      } else {
-        if (gd.slotsLeft <= 0) continue
-        gd.slotsLeft -= 1
-      }
-    }
-    neededRows.push(row)
-  }
-
-  const totalRemaining = neededRows.length
-  const totalUnits = neededRows.reduce((sum, r) => sum + r.primaryCourses.reduce((s, c) => s + (c.units || 3), 0), 0)
-
-  const startIdx = TERMS.indexOf(startTerm)
-  const endIdx = TERMS.indexOf(transferTerm)
-  const availableTerms = startIdx !== -1 && endIdx !== -1 && startIdx < endIdx
-    ? TERMS.slice(startIdx, endIdx).filter(t => includeSummer || !t.startsWith('Summer'))
-    : []
-
-  const allPlacedKeys = new Set(Object.values(termCourses).flat())
-  const unplacedRows = neededRows.filter(r => !allPlacedKeys.has(r.ccKey))
-
-  const placedUnits = neededRows
-    .filter(r => allPlacedKeys.has(r.ccKey))
-    .reduce((sum, r) => sum + r.primaryCourses.reduce((s, c) => s + (c.units || 3), 0), 0)
-  const isOverCap = placedUnits > 35
-
-  function getTermRows(term) {
-    return (termCourses[term] || []).map(key => neededRows.find(r => r.ccKey === key)).filter(Boolean)
-  }
-  function getTermUnits(term) {
-    return getTermRows(term).reduce((sum, r) => sum + r.primaryCourses.reduce((s, c) => s + (c.units || 3), 0), 0)
-  }
-
-  function handleDragStart(ccKey) { setDragKey(ccKey) }
-  function handleDragEnd() { setDragKey(null); setDragOver(null) }
-  function handleDropOnTerm(term) {
-    if (!dragKey) return
-    setTermCourses(prev => {
-      const next = { ...prev }
-      for (const t of Object.keys(next)) next[t] = (next[t] || []).filter(k => k !== dragKey)
-      next[term] = [...(next[term] || []), dragKey]
-      return next
-    })
-    setDragKey(null); setDragOver(null)
-  }
-  function handleDropOnPool() {
-    if (!dragKey) return
-    setTermCourses(prev => {
-      const next = { ...prev }
-      for (const t of Object.keys(next)) next[t] = (next[t] || []).filter(k => k !== dragKey)
-      return next
-    })
-    setDragKey(null); setDragOver(null)
-  }
-  function removeCourseFromTerm(term, ccKey) {
-    setTermCourses(prev => ({ ...prev, [term]: (prev[term] || []).filter(k => k !== ccKey) }))
-  }
-
-  function CourseChip({ row, onRemove }) {
-    const label = row.primaryCourses.map(c => `${c.prefix} ${c.number}`).join(' + ')
-    const title = row.primaryCourses.map(c => c.title).filter(Boolean).join(' + ')
-    const units = row.primaryCourses.reduce((s, c) => s + (c.units || 3), 0)
-    const isDragging = dragKey === row.ccKey
-    const coverageAll = row.coverage === row.programEntries.length && row.programEntries.length > 1
-    const coverageSome = row.coverage > 1 && !coverageAll
-    const isSchoolSpecific = row.coverage === 1
-    const schoolName = isSchoolSpecific ? row.programEntries[0]?.program?.split(' → ')[0] : null
-
-    return (
-      <div
-        draggable
-        onDragStart={() => handleDragStart(row.ccKey)}
-        onDragEnd={handleDragEnd}
-        style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          padding: '8px 10px', border: '1px solid #efefed', borderRadius: 8,
-          background: isDragging ? '#f0edff' : '#fff',
-          cursor: 'grab', opacity: isDragging ? 0.4 : 1, marginBottom: 6,
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
-          <span style={{ color: '#ddd', fontSize: 14, flexShrink: 0 }}>⠿</span>
-          <div style={{ minWidth: 0 }}>
-            <div style={{ fontSize: 12, fontWeight: 600, color: '#1a1a1a', display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
-              {label}
-              {coverageAll && <span style={{ fontSize: 9, background: '#ede9ff', color: '#6C5CE7', borderRadius: 3, padding: '1px 5px', fontWeight: 700 }}>ALL PROGRAMS</span>}
-              {coverageSome && <span style={{ fontSize: 9, background: '#fff3e0', color: '#f57f17', borderRadius: 3, padding: '1px 5px', fontWeight: 700 }}>MULTIPLE</span>}
-              {isSchoolSpecific && <span style={{ fontSize: 9, background: '#f5f4f0', color: '#999', borderRadius: 3, padding: '1px 5px', fontWeight: 700 }}>{schoolName || 'SCHOOL-SPECIFIC'}</span>}
-            </div>
-            {title && <div style={{ fontSize: 11, color: '#aaa', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{title}</div>}
-          </div>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0, marginLeft: 8 }}>
-          <span style={{ fontSize: 11, color: '#bbb' }}>{units}u</span>
-          {onRemove && <span onClick={onRemove} style={{ fontSize: 16, color: '#ddd', cursor: 'pointer', lineHeight: 1 }}>×</span>}
-        </div>
-      </div>
-    )
-  }
-
-  return (
-    <div>
-      {/* Top bar */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
-        <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, color: '#888', padding: 0, display: 'flex', alignItems: 'center', gap: 4 }}>
-          ← Back to courses
-        </button>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          {scheduleUrl && (
-            <a href={scheduleUrl} target="_blank" rel="noopener noreferrer"
-              style={{ fontSize: 12, color: '#6C5CE7', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 4 }}>
-              ↗ {ccName} schedule
-            </a>
-          )}
-          <div style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a' }}>Semester plan</div>
-        </div>
-      </div>
-
-      {/* Controls row */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <div>
-            <div style={{ fontSize: 10, color: '#aaa', marginBottom: 2 }}>Start term</div>
-            <select value={startTerm} onChange={e => setStartTerm(e.target.value)} style={{ fontSize: 12 }}>
-              {TERMS.slice(0, -1).map(t => <option key={t} value={t}>{t}</option>)}
-            </select>
-          </div>
-          <div style={{ color: '#ccc', marginTop: 14 }}>→</div>
-          <div>
-            <div style={{ fontSize: 10, color: '#aaa', marginBottom: 2 }}>Transfer goal</div>
-            <select value={transferTerm} onChange={e => setTransferTerm(e.target.value)} style={{ fontSize: 12 }}>
-              {TERMS.slice(1).map(t => <option key={t} value={t}>{t}</option>)}
-            </select>
-          </div>
-        </div>
-
-        <div onClick={() => setIncludeSummer(v => !v)}
-          style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', userSelect: 'none', marginLeft: 'auto' }}>
-          <div style={{ width: 28, height: 16, borderRadius: 8, background: includeSummer ? '#6C5CE7' : '#ddd', position: 'relative', transition: 'background 0.2s', flexShrink: 0 }}>
-            <div style={{ width: 12, height: 12, borderRadius: '50%', background: '#fff', position: 'absolute', top: 2, left: includeSummer ? 14 : 2, transition: 'left 0.2s' }} />
-          </div>
-          <span style={{ fontSize: 12, color: '#666' }}>Include summer</span>
-        </div>
-      </div>
-
-      {/* Stats row */}
-      <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
-        <div style={{ background: '#f5f4f0', borderRadius: 8, padding: '8px 14px', flex: 1, minWidth: 80 }}>
-          <div style={{ fontSize: 18, fontWeight: 600, color: '#1a1a1a' }}>{totalRemaining}</div>
-          <div style={{ fontSize: 11, color: '#888' }}>courses left</div>
-        </div>
-        <div style={{ background: '#f5f4f0', borderRadius: 8, padding: '8px 14px', flex: 1, minWidth: 80 }}>
-          <div style={{ fontSize: 18, fontWeight: 600, color: '#1a1a1a' }}>{totalUnits}u</div>
-          <div style={{ fontSize: 11, color: '#888' }}>major prep left</div>
-        </div>
-        <div style={{ background: isOverCap ? '#fff5f5' : '#f5f4f0', borderRadius: 8, padding: '8px 14px', flex: 1, minWidth: 80, border: isOverCap ? '1px solid #fecaca' : 'none' }}>
-          <div style={{ fontSize: 18, fontWeight: 600, color: isOverCap ? '#dc2626' : '#1a1a1a' }}>{placedUnits}u</div>
-          <div style={{ fontSize: 11, color: isOverCap ? '#dc2626' : '#888' }}>placed{isOverCap ? ' ⚠️' : ''}</div>
-        </div>
-      </div>
-
-      {isOverCap && (
-        <div style={{ fontSize: 11, color: '#b45309', background: '#fff8e1', border: '1px solid #ffe082', borderRadius: 8, padding: '8px 12px', marginBottom: 14, lineHeight: 1.5 }}>
-          ⚠️ Major prep placed ({placedUnits}u) exceeds 35u. When combined with GE (~35u), you may go over the 70u transfer cap — talk to your counselor.
-        </div>
-      )}
-
-      {totalRemaining === 0 ? (
-        <div style={{ fontSize: 13, color: '#aaa', textAlign: 'center', padding: '40px 0' }}>🎉 All courses completed!</div>
-      ) : availableTerms.length === 0 ? (
-        <div style={{ fontSize: 12, color: '#aaa', textAlign: 'center', padding: '20px 0' }}>Adjust your terms above.</div>
-      ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 280px', gap: 20, alignItems: 'start' }}>
-
-          {/* Left — term slots */}
-          <div>
-            <div style={{ fontSize: 11, fontWeight: 700, color: '#aaa', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>
-              Your plan — drag courses from the right
-            </div>
-            {availableTerms.map(term => {
-              const termRows = getTermRows(term)
-              const termUnits = getTermUnits(term)
-              const isDragTarget = dragOver === term
-              return (
-                <div
-                  key={term}
-                  onDragOver={e => { e.preventDefault(); setDragOver(term) }}
-                  onDragLeave={() => setDragOver(null)}
-                  onDrop={() => handleDropOnTerm(term)}
-                  style={{
-                    border: isDragTarget ? '1.5px dashed #6C5CE7' : '1px solid #efefed',
-                    borderRadius: 10, marginBottom: 10, overflow: 'hidden',
-                    background: isDragTarget ? '#faf8ff' : '#fff',
-                  }}
-                >
-                  <div style={{ padding: '8px 14px', background: '#f9f9f7', borderBottom: '1px solid #efefed', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a' }}>{term}</div>
-                    <div style={{ fontSize: 11, color: '#aaa' }}>
-                      {termUnits > 0 ? `${termUnits}u major prep` : 'empty'}
-                    </div>
-                  </div>
-                  <div style={{ padding: termRows.length === 0 ? '14px' : '10px 10px 4px' }}>
-                    {termRows.length === 0 ? (
-                      <div style={{ fontSize: 12, color: '#ccc', fontStyle: 'italic', textAlign: 'center' }}>Drop courses here</div>
-                    ) : (
-                      termRows.map(row => (
-                        <CourseChip key={row.ccKey} row={row} onRemove={() => removeCourseFromTerm(term, row.ccKey)} />
-                      ))
-                    )}
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-
-          {/* Right — unplaced pool */}
-          <div
-            onDragOver={e => { e.preventDefault(); setDragOver('pool') }}
-            onDragLeave={() => setDragOver(null)}
-            onDrop={handleDropOnPool}
-            style={{ position: 'sticky', top: 20 }}
-          >
-            <div style={{ fontSize: 11, fontWeight: 700, color: '#aaa', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>
-              Courses to place
-            </div>
-            {unplacedRows.length === 0 ? (
-              <div style={{ fontSize: 12, color: '#aaa', textAlign: 'center', padding: '20px 0', border: '1px solid #efefed', borderRadius: 10 }}>
-                All placed ✓
-              </div>
-            ) : (
-              <div style={{ border: '1px solid #efefed', borderRadius: 10, padding: '10px 10px 4px', background: '#fafaf8' }}>
-                {unplacedRows.map(row => (
-                  <CourseChip key={row.ccKey} row={row} />
-                ))}
-              </div>
-            )}
-            <div style={{ fontSize: 11, color: '#ccc', textAlign: 'center', marginTop: 14, lineHeight: 1.6 }}>
-              GE / IGETC not shown<br />Talk to your counselor
-            </div>
-          </div>
-
-        </div>
-      )}
-    </div>
-  )
-}
-
 // ─── Main Tab2 component ──────────────────────────────────────────────────────
 
 export default function Tab2() {
@@ -932,7 +563,8 @@ export default function Tab2() {
   const [completedCourses, setCompletedCourses] = useState(new Set())
   const [isWide, setIsWide] = useState(window.innerWidth > 768)
   const [showBanner, setShowBanner] = useState(() => localStorage.getItem('tab2_banner_dismissed') !== '1')
-  const [showPlanner, setShowPlanner] = useState(false)
+  const [plannerStart, setPlannerStart] = useState(TERMS[0])
+  const [plannerEnd, setPlannerEnd] = useState(TERMS[4])
   const saveTimeoutRef = useRef(null)
 
   useEffect(() => {
@@ -1025,7 +657,7 @@ export default function Tab2() {
   async function generateOverlap() {
     if (!ccId || programs.length === 0) { setError('Select a CC and add at least one program.'); return }
     setError(''); setLoading(true); setOverlapData(null); setExpandedRow(null)
-    setCompletedCourses(new Set()); setShowPlanner(false)
+    setCompletedCourses(new Set())
     try {
       const programArts = await Promise.all(programs.map(async prog => {
         setLoadingMsg(`Fetching ${prog.uniName} — ${prog.majorLabel}...`)
@@ -1110,7 +742,6 @@ export default function Tab2() {
         }
       })
 
-      // ── CHANGE 2: Sort by overlap coverage first (ALL PROGRAMS → MULTIPLE → single) ──
       rows.sort((a, b) => {
         if (b.coverage !== a.coverage) return b.coverage - a.coverage
         if (a._groupPosition !== b._groupPosition) return a._groupPosition - b._groupPosition
@@ -1176,73 +807,150 @@ export default function Tab2() {
 
   const summary = computeAttainability()
 
-  // ─── Sidebar panel ───────────────────────────────────────────────────────────
+  // ─── Sidebar ──────────────────────────────────────────────────────────────
 
   function renderSidebar() {
-    if (showPlanner) {
-      return (
-        <SemesterPlanner
-          rows={overlapData.rows}
-          completedCourses={completedCourses}
-          onClose={() => setShowPlanner(false)}
-          ccName={ccName}
-        />
-      )
+    const scheduleUrl = getCCScheduleUrl(ccName)
+
+    // Compute neededRows (pick-group-aware remaining courses)
+    const groupStateForPacing = {}
+    for (const row of overlapData.rows) {
+      const gid = row.groupId
+      if (!gid || row.nRequired === null) continue
+      if (!groupStateForPacing[gid]) groupStateForPacing[gid] = { nRequired: row.nRequired, pickType: row.pickType, completedCount: 0, completedUnits: 0 }
+      if (completedCourses.has(row.ccKey)) {
+        groupStateForPacing[gid].completedCount += 1
+        groupStateForPacing[gid].completedUnits += row.primaryCourses.reduce((s, c) => s + (c.units || 3), 0)
+      }
+    }
+    const groupSlotsForPacing = {}
+    for (const [gid, gs] of Object.entries(groupStateForPacing)) {
+      groupSlotsForPacing[gid] = gs.pickType === 'units'
+        ? { unitsNeeded: Math.max(0, gs.nRequired - gs.completedUnits), unitsAdded: 0 }
+        : { slotsLeft: Math.max(0, gs.nRequired - gs.completedCount) }
+    }
+    const neededRows = []
+    for (const row of overlapData.rows) {
+      if (completedCourses.has(row.ccKey)) continue
+      const gid = row.groupId
+      const gd  = gid ? groupSlotsForPacing[gid] : null
+      if (gd) {
+        if (gd.unitsNeeded !== undefined) {
+          const u = row.primaryCourses.reduce((s, c) => s + (c.units || 3), 0)
+          if (gd.unitsNeeded - gd.unitsAdded <= 0) continue
+          gd.unitsAdded += u
+        } else {
+          if (gd.slotsLeft <= 0) continue
+          gd.slotsLeft -= 1
+        }
+      }
+      neededRows.push(row)
     }
 
-    const totalMajorUnits = overlapData.rows.reduce((sum, row) =>
-      sum + row.primaryCourses.reduce((s, c) => s + (c.units || 3), 0), 0)
-    const isOverCap = totalMajorUnits > 35
+    const pacing = computePacing(neededRows, plannerStart, plannerEnd)
 
     return (
       <>
+        {/* ── Progress bars ── */}
         <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 4 }}>📊 Progress</div>
         <div style={{ fontSize: 11, color: '#888', marginBottom: 12 }}>Check rows to update</div>
-
-        {isOverCap && (
-          <div style={{ fontSize: 11, color: '#b45309', background: '#fff8e1', border: '1px solid #ffe082', borderRadius: 8, padding: '8px 10px', marginBottom: 12 }}>
-            ⚠️ Your major prep may exceed the 70u transfer cap when combined with GE — talk to your counselor.
-          </div>
-        )}
 
         {summary.length === 0 ? (
           <div style={{ fontSize: 12, color: '#aaa' }}>Check off courses to see your progress</div>
         ) : (
-          <>
-            {summary.map((s, i) => {
-              const pct = s.total === 0 ? 0 : Math.round((s.completed / s.total) * 100)
-              const isTop = i === 0 && summary.length > 1
-              const showHeart = isTop && completedCourses.size > 0
-              return (
-                <div key={i} style={{ marginBottom: i < summary.length - 1 ? 16 : 0 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                    <div style={{ fontSize: 12, fontWeight: isTop ? 600 : 400, color: isTop ? '#1a1a1a' : '#555', flex: 1, marginRight: 8 }}>
-                      {showHeart && <span>💜 </span>}{s.label}
-                    </div>
-                    <div style={{ fontSize: 11, color: '#888', flexShrink: 0 }}>{s.completed}/{s.total}</div>
+          summary.map((s, i) => {
+            const pct = s.total === 0 ? 0 : Math.round((s.completed / s.total) * 100)
+            const isTop = i === 0 && summary.length > 1
+            const showHeart = isTop && completedCourses.size > 0
+            return (
+              <div key={i} style={{ marginBottom: i < summary.length - 1 ? 16 : 0 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                  <div style={{ fontSize: 12, fontWeight: isTop ? 600 : 400, color: isTop ? '#1a1a1a' : '#555', flex: 1, marginRight: 8 }}>
+                    {showHeart && <span>💜 </span>}{s.label}
                   </div>
-                  <div style={{ background: '#e0e0e0', borderRadius: 4, height: 6, overflow: 'hidden' }}>
-                    <div style={{ background: pct === 100 ? '#4caf50' : '#6C5CE7', height: '100%', width: `${pct}%`, borderRadius: 4, transition: 'width 0.3s ease' }} />
-                  </div>
+                  <div style={{ fontSize: 11, color: '#888', flexShrink: 0 }}>{s.completed}/{s.total}</div>
                 </div>
-              )
-            })}
-
-            {completedCourses.size > 0 && (
-              <button
-                onClick={() => setShowPlanner(true)}
-                style={{
-                  width: '100%', marginTop: 16,
-                  padding: '9px 0', fontSize: 13, fontWeight: 500,
-                  background: '#1a1a1a', color: '#fff',
-                  border: 'none', borderRadius: 8, cursor: 'pointer',
-                }}
-              >
-                Build my plan →
-              </button>
-            )}
-          </>
+                <div style={{ background: '#e0e0e0', borderRadius: 4, height: 6, overflow: 'hidden' }}>
+                  <div style={{ background: pct === 100 ? '#4caf50' : '#6C5CE7', height: '100%', width: `${pct}%`, borderRadius: 4, transition: 'width 0.3s ease' }} />
+                </div>
+              </div>
+            )
+          })
         )}
+
+        {/* ── Pacing card ── */}
+        <div style={{ marginTop: 20, paddingTop: 20, borderTop: '1px solid #e8e8e4' }}>
+          <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 12 }}>🗓 Transfer pacing</div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 14 }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 10, color: '#aaa', marginBottom: 3 }}>Starting</div>
+              <select value={plannerStart} onChange={e => setPlannerStart(e.target.value)} style={{ fontSize: 12, width: '100%' }}>
+                {TERMS.slice(0, -1).map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
+            </div>
+            <div style={{ color: '#ccc', marginTop: 14, fontSize: 12 }}>→</div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 10, color: '#aaa', marginBottom: 3 }}>Transfer goal</div>
+              <select value={plannerEnd} onChange={e => setPlannerEnd(e.target.value)} style={{ fontSize: 12, width: '100%' }}>
+                {TERMS.slice(1).map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
+            </div>
+          </div>
+
+          {!pacing ? (
+            <div style={{ fontSize: 12, color: '#aaa' }}>Set a valid start and transfer term above.</div>
+          ) : (
+            <>
+              {/* Big number + verdict */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                <div style={{ fontSize: 22, fontWeight: 700, color: '#1a1a1a', lineHeight: 1 }}>
+                  ~{pacing.perSemester}u
+                  <span style={{ fontSize: 12, fontWeight: 400, color: '#888', marginLeft: 6 }}>/ semester</span>
+                </div>
+                <span style={{ fontSize: 11, fontWeight: 600, padding: '3px 9px', borderRadius: 20, background: pacing.statusBg, color: pacing.statusColor }}>
+                  {pacing.statusLabel}
+                </span>
+              </div>
+
+              {/* Single speedometer bar */}
+              <div style={{ background: '#e8e8e4', borderRadius: 6, height: 8, overflow: 'hidden', marginBottom: 5 }}>
+                <div style={{
+                  height: '100%', borderRadius: 6,
+                  width: `${pacing.barPct}%`,
+                  background: pacing.status === 'on-track' ? '#4caf50' : pacing.status === 'tight' ? '#f59e0b' : '#ef4444',
+                  transition: 'width 0.4s ease',
+                }} />
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: '#bbb', marginBottom: 12 }}>
+                <span>light</span>
+                <span>15u comfortable</span>
+                <span>heavy</span>
+              </div>
+
+              {/* Human-readable advice */}
+              <div style={{ fontSize: 12, color: '#555', lineHeight: 1.6, marginBottom: 10 }}>
+                {pacing.advice}
+              </div>
+
+              {/* Quiet math breakdown */}
+              <div style={{ fontSize: 11, color: '#aaa', lineHeight: 1.6 }}>
+                {pacing.majorUnitsLeft}u major prep + ~{pacing.geLeft}u GE est. over {pacing.semesters} semester{pacing.semesters !== 1 ? 's' : ''}
+              </div>
+
+              {scheduleUrl && (
+                <a href={scheduleUrl} target="_blank" rel="noopener noreferrer"
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 12, fontSize: 12, color: '#6C5CE7', textDecoration: 'none' }}>
+                  ↗ {ccName} schedule
+                </a>
+              )}
+            </>
+          )}
+
+          <div style={{ fontSize: 10, color: '#ccc', marginTop: 14, lineHeight: 1.6 }}>
+            GE estimate assumes ~35u total (IGETC). Summer terms excluded. Talk to your counselor about sequencing.
+          </div>
+        </div>
       </>
     )
   }
@@ -1255,8 +963,6 @@ export default function Tab2() {
     const noArtByGroupId = {}
     const noArtByGroupIdFlat = {}
     const inlineRequiredNoArt = []
-
-    // ── CHANGE 3 uses isSchoolSpecific flag below ──
 
     for (const na of (overlapData.noArticulation || [])) {
       if (na.partOfPickGroup) {
@@ -1393,7 +1099,6 @@ export default function Tab2() {
               const units = row.primaryCourses.reduce((sum, c) => sum + (c.units || 0), 0)
               const coverageAll = row.coverage === overlapData.totalPrograms
               const coverageMost = row.coverage > 1 && !coverageAll
-              // ── CHANGE 3: school-specific flag ──
               const isSchoolSpecific = row.coverage === 1 && overlapData.totalPrograms > 1
 
               return (
@@ -1408,13 +1113,7 @@ export default function Tab2() {
                         {label}
                         {coverageAll && <span style={{ fontSize: 10, background: '#ede9ff', color: '#6C5CE7', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>ALL PROGRAMS</span>}
                         {coverageMost && <span style={{ fontSize: 10, background: '#fff3e0', color: '#f57f17', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>MULTIPLE</span>}
-                        {isSchoolSpecific && (
-                          <span style={{
-                            fontSize: 10, borderRadius: 4, padding: '2px 6px', fontWeight: 600,
-                            background: '#f5f4f0',
-                            color: '#999',
-                          }}>SCHOOL-SPECIFIC</span>
-                        )}
+                        {isSchoolSpecific && <span style={{ fontSize: 10, borderRadius: 4, padding: '2px 6px', fontWeight: 600, background: '#f5f4f0', color: '#999' }}>SCHOOL-SPECIFIC</span>}
                       </div>
                       {subtitle && <div style={{ fontSize: 11, color: '#999', marginTop: 1 }}>{subtitle}{units ? ` · ${units} units` : ''}</div>}
                     </div>
@@ -1448,7 +1147,6 @@ export default function Tab2() {
           const units = row.primaryCourses.reduce((sum, c) => sum + (c.units || 0), 0)
           const coverageAll = row.coverage === overlapData.totalPrograms
           const coverageMost = row.coverage > 1 && !coverageAll
-          // ── CHANGE 3: school-specific flag ──
           const isSchoolSpecific = row.coverage === 1 && overlapData.totalPrograms > 1
 
           rendered.push(
@@ -1462,13 +1160,7 @@ export default function Tab2() {
                     {label}
                     {coverageAll && <span style={{ fontSize: 10, background: '#ede9ff', color: '#6C5CE7', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>ALL PROGRAMS</span>}
                     {coverageMost && <span style={{ fontSize: 10, background: '#fff3e0', color: '#f57f17', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>MULTIPLE</span>}
-                    {isSchoolSpecific && (
-                      <span style={{
-                        fontSize: 10, borderRadius: 4, padding: '2px 6px', fontWeight: 600,
-                        background: '#f5f4f0',
-                        color: '#999',
-                      }}>SCHOOL-SPECIFIC</span>
-                    )}
+                    {isSchoolSpecific && <span style={{ fontSize: 10, borderRadius: 4, padding: '2px 6px', fontWeight: 600, background: '#f5f4f0', color: '#999' }}>SCHOOL-SPECIFIC</span>}
                   </div>
                   {subtitle && <div style={{ fontSize: 11, color: '#999', marginTop: 1 }}>{subtitle}{units ? ` · ${units} units` : ''}</div>}
                 </div>
@@ -1687,7 +1379,7 @@ export default function Tab2() {
               <h2>Your course plan — {ccName}</h2>
               <p>{programs.map(p => `${p.uniName} → ${p.majorLabel}`).join(' · ')}</p>
             </div>
-            <button className="btn-secondary" onClick={() => { setOverlapData(null); setExpandedRow(null); setShowPlanner(false) }}>← Edit</button>
+            <button className="btn-secondary" onClick={() => { setOverlapData(null); setExpandedRow(null) }}>← Edit</button>
           </div>
 
           {showBanner && (
