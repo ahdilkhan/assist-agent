@@ -501,15 +501,147 @@ function pickGroupLabel(group) {
   }
 }
 
+// ─── CC schedule URL lookup ───────────────────────────────────────────────────
+
+const CC_SCHEDULE_URLS = {
+  'Diablo Valley': 'https://webapps.4cd.edu/apps/courseschedulesearch/search-course.aspx?search=dvc',
+  'Los Medanos': 'https://webapps.4cd.edu/apps/courseschedulesearch/search-course.aspx?search=lmc',
+  'Contra Costa': 'https://webapps.4cd.edu/apps/courseschedulesearch/search-course.aspx',
+  'De Anza': 'https://www.deanza.edu/schedule/',
+  'Allan Hancock': 'https://www.hancockcollege.edu/apply/register.php',
+  'American River': 'https://arc.losrios.edu/admissions/get-started-and-apply',
+  'Antelope Valley': 'https://www.avc.edu/schedule',
+  'Bakersfield': 'https://reg-prod.ec.kccd.edu/StudentRegistrationSsb/ssb/term/termSelection?mode=search',
+  'Porterville': 'https://reg-prod.ec.kccd.edu/StudentRegistrationSsb/ssb/term/termSelection?mode=search',
+  'Copper Mountain': 'https://reg-prod.ec.kccd.edu/StudentRegistrationSsb/ssb/term/termSelection?mode=search',
+  'Cerro Coso': 'https://reg-prod.ec.kccd.edu/StudentRegistrationSsb/ssb/term/termSelection?mode=search',
+  'Barstow': 'https://ssbprod2.barstow.edu:8443/StudentRegistrationSsb/ssb/term/termSelection?mode=search',
+  'Butte': 'https://selfservice.butte.edu/Student/Courses',
+  'Cabrillo': 'https://cabrillo-ss.colleague.elluciancloud.com/Student/Courses',
+  'Canada College': 'https://phx-ban-apps.smccd.edu/StudentRegistrationSsb/ssb/term/termSelection?mode=search',
+  'Skyline': 'https://phx-ban-apps.smccd.edu/StudentRegistrationSsb/ssb/term/termSelection?mode=search',
+  'College of San Mateo': 'https://phx-ban-apps.smccd.edu/StudentRegistrationSsb/ssb/term/termSelection?mode=search',
+  'Cerritos': 'https://secure.cerritos.edu/schedule/',
+  'Las Positas': 'https://banssprod.clpccd.cc.ca.us/StudentRegistrationSsb/ssb/term/termSelection?mode=search',
+  'Chabot': 'https://banssprod.clpccd.cc.ca.us/StudentRegistrationSsb/ssb/term/termSelection?mode=search',
+  'Chaffey': 'https://colss-prod.ec.chaffey.edu/Student/Courses/Search',
+  'Citrus': 'https://apps.citruscollege.edu/live-class-schedule',
+  'City College of San Francisco': 'https://www.ccsf.edu/courses',
+  'Clovis': 'https://selfservice.scccd.edu/Student/Courses/Search',
+  'Fresno City': 'https://selfservice.scccd.edu/Student/Courses',
+  'Reedley': 'https://selfservice.scccd.edu/Student/Courses',
+  'Madera': 'https://selfservice.scccd.edu/Student/Courses',
+  'Coalinga': 'https://coalingacollege.edu/schedule/',
+  'Lemoore': 'https://lemoorecollege.edu/schedule/',
+  'Golden West': 'https://ssb-prod.ec.cccd.edu/PROD/pw_pub_sched.p_search?Term=202650&college=GW',
+  'Orange Coast': 'https://ssb-prod.ec.cccd.edu/PROD/pw_pub_sched.p_search?Term=202650&college=OC',
+  'Coastline': 'https://ssb-prod.ec.cccd.edu/PROD/pw_pub_sched.p_search',
+  'College of Alameda': 'https://alameda.edu/coa-online-schedule?campus=Alameda',
+  'Merritt': 'https://merritt.edu/online-schedule?campus=Merritt',
+  'Laney': 'https://laney.edu/class-scheduling?campus=Laney',
+  'College of Marin': 'https://netapps.marin.edu/Apps/Directory/ScheduleSearch.aspx',
+  'College of the Canyons': 'https://selfservice.canyons.edu/Student/Courses',
+  'College of the Desert': 'https://ss.collegeofthedesert.edu/Student/Courses',
+  'College of the Redwoods': 'https://webadvisor.redwoods.edu/WAPROD/WebAdvisor?TOKENIDX=574086532&SS=1&APP=ST&CONSTITUENCY=WBST',
+  'College of the Sequoias': 'https://banweb.cos.edu/prod/hzsched.p_search',
+  'College of the Siskiyous': 'https://reg-prod.cloud.siskiyous.edu/StudentRegistrationSsb/ssb/term/termSelection?mode=search',
+  'Columbia': 'https://myapps.yosemite.edu/ccclasssearch/',
+  'Modesto': 'https://myapps.yosemite.edu/mjcclasssearch/',
+  'Compton': 'https://cmptn-prod-pxes02.banner.elluciancloud.com:8090/StudentRegistrationSsb/ssb/term/termSelection?mode=search',
+  'Cosumnes River': 'https://crc.losrios.edu/academics/search-class-schedules',
+  'Crafton Hills': 'https://www.craftonhills.edu/eschedule/',
+  'Cuesta': 'https://ssb2.cuesta.edu/StudentRegistrationSsb/ssb/term/termSelection?mode=search',
+  'Cuyamaca': 'https://selfservice.gcccd.edu/Student/Courses',
+  'Grossmont': 'https://selfservice.gcccd.edu/Student/Courses',
+  'Cypress': 'https://schedule.nocccd.edu/?college=1',
+  'Fullerton College': 'https://schedule.nocccd.edu/?college=2',
+  'East Los Angeles': 'https://www.elac.edu/academics/calendar-schedules/schedules',
+  'El Camino': 'https://selfservice.elcamino.edu/student/courses/',
+  'Evergreen Valley': 'https://colss-prod.ec.sjeccd.edu/Student/Courses',
+  'San Jose City': 'https://colss-prod.ec.sjeccd.edu/Student/Courses',
+  'Folsom Lake': 'https://flc.losrios.edu/academics/search-class-schedules',
+  'Foothill': 'https://foothill.edu/schedule/index.html',
+  'Gavilan': 'https://reg-prod.ec.gavilan.edu/StudentRegistrationSsb/ssb/term/termSelection?mode=search',
+  'Glendale': 'https://psprd.glendale.edu/psc/guest/EMPLOYEE/HRMS/c/COMMUNITY_ACCESS.CLASS_SEARCH.GBL',
+  'Hartnell': 'https://stuserv.hartnell.edu/Student/Courses/',
+  'Imperial Valley': 'https://imperial.courses.civitaslearning.com/',
+  'Irvine Valley': 'https://classes.socccd.edu/smartscheduleweb/index/1/I/202670/MarketingCode',
+  'Saddleback': 'https://classes.socccd.edu/smartscheduleweb/index/1/S/202670/MarketingCode',
+  'Lake Tahoe': 'https://ss.ltcc.edu:8183/Student/Courses/Search',
+  'Lassen': 'https://webadvisor.lassencollege.edu:8171/student/courses',
+  'Long Beach City': 'https://www.cs.lbcc.edu/psc/guest/EMPLOYEE/SA/c/NUI_FRAMEWORK.PT_AGSTARTPAGE_NUI.GBL',
+  'Mendocino': 'https://service.mendocino.edu/Student/Courses',
+  'Merced College': 'https://ss-prod.mccd.edu/Student/Courses',
+  'MiraCosta': 'https://surf.miracosta.edu/psc/ps/EMPLOYEE/SA/c/MCC_CUSTOM_FL.MZ_CLASS_LIST_FL.GBL',
+  'Mission College': 'https://schedule.wvm.edu/?college=mc',
+  'West Valley': 'https://schedule.wvm.edu/?college=wv',
+  'Monterey Peninsula': 'https://reg-prod.mpc.elluciancloud.com:8103/StudentRegistrationSsb/ssb/term/termSelection?mode=search',
+  'Moorpark': 'https://schedule.vcccd.edu/',
+  'Ventura College': 'https://schedule.vcccd.edu/',
+  'Oxnard': 'https://schedule.vcccd.edu/',
+  'Moreno Valley': 'https://www.mvc.edu/class-finder/index.php',
+  'Mount San Antonio': 'https://prodrg.mtsac.edu/StudentRegistrationSsb/ssb/term/termSelection?mode=search',
+  'Mt. San Jacinto': 'https://selfservice.msjc.edu/css/courses',
+  'Napa Valley': 'https://colss-prod.ec.napavalley.edu/Student/Courses',
+  'Norco': 'https://norcocollege.edu/scheduleapp/index.html',
+  'Ohlone': 'https://selfservice.ohlone.edu:8443/Student/Courses',
+  'Palo Verde': 'https://prod-selfserv.paloverde.edu/Student/Courses/Search',
+  'Palomar': 'https://my.palomar.edu/psp/palc9prd_1/EMPLOYEE/SA/s/WEBLIB_HCX_CM.H_CLASS_SEARCH.FieldFormula.IScript_Main',
+  'Pasadena': 'https://findclasses.pasadena.edu/',
+  'Santiago Canyon': 'https://colss-prod.cloud.rsccd.edu/Student/Courses/Search',
+  'Santa Ana': 'https://colss-prod.cloud.rsccd.edu/Student/Courses/Search',
+  'Rio Hondo': 'https://ssb.riohondo.edu:8443/prodssb/pw_pub_sched.p_search',
+  'Riverside City': 'https://rcc.edu/academics/class-finder.html',
+  'Sacramento City': 'https://scc.losrios.edu/academics/search-class-schedules',
+  'San Bernardino Valley': 'https://www.valleycollege.edu/eschedule/',
+  'San Diego City': 'https://www.sdccd.edu/students/class-search/search.html',
+  'San Diego Mesa': 'https://www.sdccd.edu/students/class-search/search.html',
+  'San Diego Miramar': 'https://www.sdccd.edu/students/class-search/search.html',
+  'San Joaquin Delta': 'https://deltacollege.search.collegescheduler.com/search?term=2265',
+  'Santa Barbara City': 'https://banner.sbcc.edu/ords/ssb/pw_pub_sched.p_search?term=202710',
+  'Santa Monica': 'https://smccis.smc.edu/smcweb/f?p=373:1::::::',
+  'Santa Rosa': 'https://reg-prod.santarosajc.elluciancloud.com:8103/StudentRegistrationSsb/ssb/term/termSelection?mode=search',
+  'Shasta': 'https://mysc.shastacollege.edu/Student/Courses',
+  'Sierra College': 'https://ss.oci.sierracollege.edu/StudentRegistrationSsb/ssb/term/termSelection?mode=search',
+  'Solano': 'https://ssb.solano.edu/StudentRegistrationSsb/ssb/term/termSelection?mode=search',
+  'Southwestern': 'https://collselfserv.swccd.edu/Student/Courses',
+  'Taft': 'https://ct-prod-bsr.taftcollege.edu:8443/StudentRegistrationSsb/ssb/term/termSelection?mode=search',
+  'Victor Valley': 'https://vvc-ss.colleague.elluciancloud.com/Student/Courses',
+  'Woodland': 'https://wcc-self-service.yccd.edu/Student/Courses/Search',
+  'Yuba': 'https://yc.yccd.edu/admissions/courses/',
+  'Feather River': 'https://www.frc.edu/admissions/registration',
+  'Los Angeles City': 'https://www.lacitycollege.edu/Academics/class-schedule',
+  'Los Angeles Valley': 'https://mycollege-guest.laccd.edu/psc/classsearchguest/EMPLOYEE/HRMS/c/COMMUNITY_ACCESS.CLASS_SEARCH.GBL',
+  'Los Angeles Pierce': 'https://mycollege-guest.laccd.edu/psc/classsearchguest/EMPLOYEE/HRMS/c/COMMUNITY_ACCESS.CLASS_SEARCH.GBL',
+  'Los Angeles Harbor': 'https://mycollege-guest.laccd.edu/psc/classsearchguest/EMPLOYEE/HRMS/c/COMMUNITY_ACCESS.CLASS_SEARCH.GBL',
+  'Los Angeles Mission': 'https://mycollege-guest.laccd.edu/psc/classsearchguest/EMPLOYEE/HRMS/c/COMMUNITY_ACCESS.CLASS_SEARCH.GBL',
+  'Los Angeles Trade': 'https://mycollege-guest.laccd.edu/psc/classsearchguest/EMPLOYEE/HRMS/c/COMMUNITY_ACCESS.CLASS_SEARCH.GBL',
+  'Los Angeles Southwest': 'https://mycollege-guest.laccd.edu/psc/classsearchguest/EMPLOYEE/HRMS/c/COMMUNITY_ACCESS.CLASS_SEARCH.GBL',
+  'West Los Angeles': 'https://mycollege-guest.laccd.edu/psc/classsearchguest/EMPLOYEE/HRMS/c/COMMUNITY_ACCESS.CLASS_SEARCH.GBL',
+  'Kings River': 'https://selfservice.scccd.edu/Student/Courses',
+}
+
+function getCCScheduleUrl(ccName) {
+  if (!ccName) return null
+  const key = Object.keys(CC_SCHEDULE_URLS).find(k => ccName.includes(k))
+  return key ? CC_SCHEDULE_URLS[key] : null
+}
+
 // ─── Semester Planner sidebar panel ──────────────────────────────────────────
 
-function SemesterPlanner({ rows, completedCourses, onClose }) {
+const MAJOR_PREP_TARGET = { Fall: 9, Spring: 9, Summer: 6 }
+
+function SemesterPlanner({ rows, completedCourses, onClose, ccName }) {
   const [startTerm, setStartTerm] = useState(TERMS[0])
   const [transferTerm, setTransferTerm] = useState(TERMS[4])
+  const [includeSummer, setIncludeSummer] = useState(true)
+  const [termCourses, setTermCourses] = useState({}) // termName → [ccKey, ...]
+  const [dragKey, setDragKey] = useState(null)
+  const [dragOver, setDragOver] = useState(null)
 
-  const plan = buildSemesterPlan(rows, completedCourses, startTerm, transferTerm)
+  const scheduleUrl = getCCScheduleUrl(ccName)
 
-  // Count remaining respecting pick groups
+  // Build the list of courses that still need to be taken (pick-group aware)
   const groupStateForDisplay = {}
   for (const row of rows) {
     const gid = row.groupId
@@ -527,8 +659,7 @@ function SemesterPlanner({ rows, completedCourses, onClose }) {
       : { slotsLeft: Math.max(0, gs.nRequired - gs.completedCount) }
   }
 
-  let totalRemaining = 0
-  let totalUnits = 0
+  const neededRows = []
   for (const row of rows) {
     if (completedCourses.has(row.ccKey)) continue
     const gid = row.groupId
@@ -538,92 +669,310 @@ function SemesterPlanner({ rows, completedCourses, onClose }) {
         const u = row.primaryCourses.reduce((s, c) => s + (c.units || 3), 0)
         if (gd.unitsNeeded - gd.unitsAdded <= 0) continue
         gd.unitsAdded += u
-        totalRemaining += 1
-        totalUnits += u
       } else {
         if (gd.slotsLeft <= 0) continue
         gd.slotsLeft -= 1
-        totalRemaining += 1
-        totalUnits += row.primaryCourses.reduce((s, c) => s + (c.units || 3), 0)
       }
-    } else {
-      totalRemaining += 1
-      totalUnits += row.primaryCourses.reduce((s, c) => s + (c.units || 3), 0)
     }
+    neededRows.push(row)
   }
+
+  const totalRemaining = neededRows.length
+  const totalUnits = neededRows.reduce((sum, r) => sum + r.primaryCourses.reduce((s, c) => s + (c.units || 3), 0), 0)
+
+  // Build available terms
+  const startIdx = TERMS.indexOf(startTerm)
+  const endIdx = TERMS.indexOf(transferTerm)
+  const availableTerms = startIdx !== -1 && endIdx !== -1 && startIdx < endIdx
+    ? TERMS.slice(startIdx, endIdx).filter(t => includeSummer || !t.startsWith('Summer'))
+    : []
+
+  // All placed ccKeys across all terms
+  const allPlacedKeys = new Set(Object.values(termCourses).flat())
+
+  // Unplaced = needed but not yet placed in any term
+  const unplacedRows = neededRows.filter(r => !allPlacedKeys.has(r.ccKey))
+
+  // Per-term course data
+  function getTermRows(term) {
+    return (termCourses[term] || [])
+      .map(key => neededRows.find(r => r.ccKey === key))
+      .filter(Boolean)
+  }
+
+  function getTermUnits(term) {
+    return getTermRows(term).reduce((sum, r) => sum + r.primaryCourses.reduce((s, c) => s + (c.units || 3), 0), 0)
+  }
+
+  // Drag handlers
+  function handleDragStart(ccKey) { setDragKey(ccKey) }
+  function handleDragEnd() { setDragKey(null); setDragOver(null) }
+
+  function handleDropOnTerm(term) {
+    if (!dragKey) return
+    setTermCourses(prev => {
+      const next = { ...prev }
+      // Remove from wherever it currently lives
+      for (const t of Object.keys(next)) {
+        next[t] = (next[t] || []).filter(k => k !== dragKey)
+      }
+      next[term] = [...(next[term] || []), dragKey]
+      return next
+    })
+    setDragKey(null)
+    setDragOver(null)
+  }
+
+  function handleDropOnPool() {
+    if (!dragKey) return
+    setTermCourses(prev => {
+      const next = { ...prev }
+      for (const t of Object.keys(next)) {
+        next[t] = (next[t] || []).filter(k => k !== dragKey)
+      }
+      return next
+    })
+    setDragKey(null)
+    setDragOver(null)
+  }
+
+  function removeCourseFromTerm(term, ccKey) {
+    setTermCourses(prev => ({ ...prev, [term]: (prev[term] || []).filter(k => k !== ccKey) }))
+  }
+
+  const chipStyle = (isDragging) => ({
+    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+    padding: '7px 10px', border: '1px solid #efefed', borderRadius: 8,
+    background: isDragging ? '#f0edff' : '#fff',
+    cursor: 'grab', opacity: isDragging ? 0.5 : 1, marginBottom: 5,
+  })
 
   return (
     <div>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
         <div style={{ fontSize: 14, fontWeight: 600, color: '#1a1a1a' }}>Semester plan</div>
         <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: '#888', padding: 0 }}>← Progress</button>
       </div>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
+      {/* Term selectors */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10 }}>
         <div>
-          <div style={{ fontSize: 11, color: '#888', marginBottom: 4 }}>Start term</div>
+          <div style={{ fontSize: 11, color: '#888', marginBottom: 3 }}>Start term</div>
           <select value={startTerm} onChange={e => setStartTerm(e.target.value)} style={{ width: '100%', fontSize: 12 }}>
             {TERMS.slice(0, -1).map(t => <option key={t} value={t}>{t}</option>)}
           </select>
         </div>
         <div>
-          <div style={{ fontSize: 11, color: '#888', marginBottom: 4 }}>Transfer goal</div>
+          <div style={{ fontSize: 11, color: '#888', marginBottom: 3 }}>Transfer goal</div>
           <select value={transferTerm} onChange={e => setTransferTerm(e.target.value)} style={{ width: '100%', fontSize: 12 }}>
             {TERMS.slice(1).map(t => <option key={t} value={t}>{t}</option>)}
           </select>
         </div>
       </div>
 
-      <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
-        <div style={{ flex: 1, background: '#f5f4f0', borderRadius: 8, padding: '8px 10px' }}>
+      {/* Summer toggle */}
+      <div
+        onClick={() => setIncludeSummer(v => !v)}
+        style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14, cursor: 'pointer', userSelect: 'none' }}
+      >
+        <div style={{
+          width: 30, height: 17, borderRadius: 9, background: includeSummer ? '#6C5CE7' : '#ddd',
+          position: 'relative', transition: 'background 0.2s', flexShrink: 0,
+        }}>
+          <div style={{
+            width: 13, height: 13, borderRadius: '50%', background: '#fff',
+            position: 'absolute', top: 2, left: includeSummer ? 15 : 2, transition: 'left 0.2s',
+          }} />
+        </div>
+        <span style={{ fontSize: 12, color: '#555' }}>Include summer terms</span>
+      </div>
+
+      {/* Stats */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 12 }}>
+        <div style={{ background: '#f5f4f0', borderRadius: 8, padding: '8px 10px' }}>
           <div style={{ fontSize: 18, fontWeight: 600, color: '#1a1a1a' }}>{totalRemaining}</div>
           <div style={{ fontSize: 11, color: '#888' }}>courses left</div>
         </div>
-        <div style={{ flex: 1, background: '#f5f4f0', borderRadius: 8, padding: '8px 10px' }}>
-          <div style={{ fontSize: 18, fontWeight: 600, color: '#1a1a1a' }}>{totalUnits}</div>
-          <div style={{ fontSize: 11, color: '#888' }}>units left</div>
+        <div style={{ background: '#f5f4f0', borderRadius: 8, padding: '8px 10px' }}>
+          <div style={{ fontSize: 18, fontWeight: 600, color: '#1a1a1a' }}>{totalUnits}u</div>
+          <div style={{ fontSize: 11, color: '#888' }}>major prep left</div>
         </div>
       </div>
 
-      {plan.length === 0 ? (
-        <div style={{ fontSize: 12, color: '#aaa', textAlign: 'center', padding: '20px 0' }}>
-          {totalRemaining === 0 ? '🎉 All courses completed!' : 'Adjust your terms to generate a plan.'}
-        </div>
+      {/* CC schedule link */}
+      {scheduleUrl && (
+        <a
+          href={scheduleUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{
+            display: 'flex', alignItems: 'center', gap: 6,
+            fontSize: 12, color: '#6C5CE7', textDecoration: 'none',
+            background: '#f0edff', borderRadius: 8, padding: '8px 12px',
+            marginBottom: 10, fontWeight: 500,
+          }}
+        >
+          <span style={{ fontSize: 14 }}>↗</span>
+          Check schedule &amp; prerequisites at {ccName}
+        </a>
+      )}
+
+      {/* GE note */}
+      <div style={{
+        fontSize: 11, color: '#666', background: '#f9f9f7',
+        border: '1px solid #efefed', borderRadius: 8,
+        padding: '8px 10px', marginBottom: 14, lineHeight: 1.5,
+      }}>
+        💡 Each term is typically <strong>15 units total</strong>. Aim for <strong>6–9u of major prep</strong> per term — the rest is GE. Drag courses into the terms that work for you.
+      </div>
+
+      {totalRemaining === 0 ? (
+        <div style={{ fontSize: 13, color: '#aaa', textAlign: 'center', padding: '20px 0' }}>🎉 All courses completed!</div>
+      ) : availableTerms.length === 0 ? (
+        <div style={{ fontSize: 12, color: '#aaa', textAlign: 'center', padding: '12px 0' }}>Adjust your terms above.</div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {plan.map((slot, i) => {
-            const termType = slot.term.split(' ')[0]
-            const target = TARGET_UNITS_PER_TERM[termType] || 15
-            const isHeavy = slot.totalUnits > target
+        <>
+          {/* Term slots */}
+          <div style={{ fontSize: 11, fontWeight: 700, color: '#aaa', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>
+            Your plan
+          </div>
+          {availableTerms.map(term => {
+            const termRows = getTermRows(term)
+            const termUnits = getTermUnits(term)
+            const termType = term.split(' ')[0]
+            const target = MAJOR_PREP_TARGET[termType] || 9
+            const isOver = termUnits > target
+            const isDragTarget = dragOver === term
+
             return (
-              <div key={i} style={{ border: '1px solid #efefed', borderRadius: 8, overflow: 'hidden' }}>
-                <div style={{ padding: '7px 12px', background: '#f9f9f7', borderBottom: '1px solid #efefed', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div style={{ fontSize: 12, fontWeight: 600, color: '#1a1a1a' }}>{slot.term}</div>
-                  <div style={{ fontSize: 11, color: isHeavy ? '#dc2626' : '#888' }}>{slot.totalUnits} units{isHeavy ? ' ⚠️' : ''}</div>
+              <div
+                key={term}
+                onDragOver={e => { e.preventDefault(); setDragOver(term) }}
+                onDragLeave={() => setDragOver(null)}
+                onDrop={() => handleDropOnTerm(term)}
+                style={{
+                  border: isDragTarget ? '1.5px dashed #6C5CE7' : '1px solid #efefed',
+                  borderRadius: 8, marginBottom: 8, overflow: 'hidden',
+                  background: isDragTarget ? '#faf8ff' : '#fff',
+                }}
+              >
+                <div style={{
+                  padding: '7px 12px', background: '#f9f9f7',
+                  borderBottom: '1px solid #efefed',
+                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: '#1a1a1a' }}>{term}</div>
+                  <div style={{ fontSize: 11, color: isOver ? '#dc2626' : '#aaa' }}>
+                    {termUnits}u major prep{isOver ? ' ⚠️' : ` · ~${(termType === 'Summer' ? 9 : 15) - termUnits}u for GE`}
+                  </div>
                 </div>
-                <div style={{ padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  {slot.courses.map((c, j) => {
-                    const label = c.row.primaryCourses.map(x => `${x.prefix} ${x.number}`).join(' + ')
-                    const title = c.row.primaryCourses.map(x => x.title).filter(Boolean).join(' + ')
-                    return (
-                      <div key={j} style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
-                        <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#6C5CE7', flexShrink: 0, marginTop: 5 }} />
-                        <div style={{ minWidth: 0 }}>
-                          <div style={{ fontSize: 12, fontWeight: 600, color: '#1a1a1a' }}>{label}</div>
-                          {title && <div style={{ fontSize: 11, color: '#999', marginTop: 1 }}>{title}</div>}
+                <div style={{ padding: termRows.length === 0 ? '10px 12px' : '8px 12px' }}>
+                  {termRows.length === 0 ? (
+                    <div style={{ fontSize: 11, color: '#ccc', fontStyle: 'italic' }}>Drag courses here</div>
+                  ) : (
+                    termRows.map(row => {
+                      const label = row.primaryCourses.map(c => `${c.prefix} ${c.number}`).join(' + ')
+                      const title = row.primaryCourses.map(c => c.title).filter(Boolean).join(' + ')
+                      const units = row.primaryCourses.reduce((s, c) => s + (c.units || 3), 0)
+                      const isDragging = dragKey === row.ccKey
+                      const coverageAll = row.coverage === row.programEntries.length && row.programEntries.length > 1
+                      const coverageSome = row.coverage > 1 && !coverageAll
+                      const isSchoolSpecific = row.coverage === 1
+                      const schoolName = isSchoolSpecific ? row.programEntries[0]?.program?.split(' → ')[0] : null
+                      return (
+                        <div
+                          key={row.ccKey}
+                          draggable
+                          onDragStart={() => handleDragStart(row.ccKey)}
+                          onDragEnd={handleDragEnd}
+                          style={chipStyle(isDragging)}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                            <span style={{ color: '#ccc', fontSize: 13, flexShrink: 0 }}>⠿</span>
+                            <div style={{ minWidth: 0 }}>
+                              <div style={{ fontSize: 12, fontWeight: 600, color: '#1a1a1a', display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
+                                {label}
+                                {coverageAll && <span style={{ fontSize: 9, background: '#ede9ff', color: '#6C5CE7', borderRadius: 3, padding: '1px 5px', fontWeight: 700 }}>ALL PROGRAMS</span>}
+                                {coverageSome && <span style={{ fontSize: 9, background: '#fff3e0', color: '#f57f17', borderRadius: 3, padding: '1px 5px', fontWeight: 700 }}>MULTIPLE</span>}
+                                {isSchoolSpecific && <span style={{ fontSize: 9, background: '#f5f4f0', color: '#999', borderRadius: 3, padding: '1px 5px', fontWeight: 700 }}>{schoolName || 'SCHOOL-SPECIFIC'}</span>}
+                              </div>
+                              {title && <div style={{ fontSize: 11, color: '#999', marginTop: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{title}</div>}
+                            </div>
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                            <span style={{ fontSize: 11, color: '#bbb' }}>{units}u</span>
+                            <span
+                              onClick={() => removeCourseFromTerm(term, row.ccKey)}
+                              style={{ fontSize: 14, color: '#ccc', cursor: 'pointer', lineHeight: 1 }}
+                            >×</span>
+                          </div>
                         </div>
-                        <div style={{ fontSize: 11, color: '#bbb', marginLeft: 'auto', flexShrink: 0 }}>{c.units}u</div>
-                      </div>
-                    )
-                  })}
+                      )
+                    })
+                  )}
                 </div>
               </div>
             )
           })}
-          <div style={{ fontSize: 11, color: '#bbb', textAlign: 'center', paddingTop: 4 }}>
-            GE / IGETC courses coming soon
+
+          {/* Unplaced pool */}
+          {unplacedRows.length > 0 && (
+            <div
+              onDragOver={e => { e.preventDefault(); setDragOver('pool') }}
+              onDragLeave={() => setDragOver(null)}
+              onDrop={handleDropOnPool}
+              style={{ marginTop: 16 }}
+            >
+              <div style={{ fontSize: 11, fontWeight: 700, color: '#aaa', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>
+                Not placed yet — drag into a term above
+              </div>
+              {unplacedRows.map(row => {
+                const label = row.primaryCourses.map(c => `${c.prefix} ${c.number}`).join(' + ')
+                const title = row.primaryCourses.map(c => c.title).filter(Boolean).join(' + ')
+                const units = row.primaryCourses.reduce((s, c) => s + (c.units || 3), 0)
+                const isDragging = dragKey === row.ccKey
+                const coverageAll = row.coverage === row.programEntries.length && row.programEntries.length > 1
+                const coverageSome = row.coverage > 1 && !coverageAll
+                const isSchoolSpecific = row.coverage === 1
+                const schoolName = isSchoolSpecific ? row.programEntries[0]?.program?.split(' → ')[0] : null
+                return (
+                  <div
+                    key={row.ccKey}
+                    draggable
+                    onDragStart={() => handleDragStart(row.ccKey)}
+                    onDragEnd={handleDragEnd}
+                    style={chipStyle(isDragging)}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                      <span style={{ color: '#ccc', fontSize: 13, flexShrink: 0 }}>⠿</span>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontSize: 12, fontWeight: 600, color: '#1a1a1a', display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
+                          {label}
+                          {coverageAll && <span style={{ fontSize: 9, background: '#ede9ff', color: '#6C5CE7', borderRadius: 3, padding: '1px 5px', fontWeight: 700 }}>ALL PROGRAMS</span>}
+                          {coverageSome && <span style={{ fontSize: 9, background: '#fff3e0', color: '#f57f17', borderRadius: 3, padding: '1px 5px', fontWeight: 700 }}>MULTIPLE</span>}
+                          {isSchoolSpecific && <span style={{ fontSize: 9, background: '#f5f4f0', color: '#999', borderRadius: 3, padding: '1px 5px', fontWeight: 700 }}>{schoolName || 'SCHOOL-SPECIFIC'}</span>}
+                        </div>
+                        {title && <div style={{ fontSize: 11, color: '#999', marginTop: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{title}</div>}
+                      </div>
+                    </div>
+                    <span style={{ fontSize: 11, color: '#bbb', flexShrink: 0 }}>{units}u</span>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+
+          {unplacedRows.length === 0 && (
+            <div style={{ fontSize: 11, color: '#aaa', textAlign: 'center', marginTop: 12 }}>
+              All courses placed ✓
+            </div>
+          )}
+
+          <div style={{ fontSize: 11, color: '#ccc', textAlign: 'center', marginTop: 16, lineHeight: 1.5 }}>
+            GE / IGETC courses not shown — talk to your counselor
           </div>
-        </div>
+        </>
       )}
     </div>
   )
@@ -884,27 +1233,6 @@ export default function Tab2() {
     })
   }
 
-  // ── CHANGE 1: Unit budget calculator ──
-  function computeUnitBudget() {
-    if (!overlapData) return null
-    const GE_ESTIMATE = 35
-    const TRANSFER_CAP = 70
-
-    const totalMajorUnits = overlapData.rows.reduce((sum, row) =>
-      sum + row.primaryCourses.reduce((s, c) => s + (c.units || 3), 0), 0)
-
-    const completedMajorUnits = overlapData.rows
-      .filter(r => completedCourses.has(r.ccKey))
-      .reduce((sum, row) =>
-        sum + row.primaryCourses.reduce((s, c) => s + (c.units || 3), 0), 0)
-
-    const plannedTotal = totalMajorUnits + GE_ESTIMATE
-    const isOver = plannedTotal > TRANSFER_CAP
-    const remainingBudget = TRANSFER_CAP - GE_ESTIMATE - completedMajorUnits
-
-    return { totalMajorUnits, completedMajorUnits, plannedTotal, isOver, remainingBudget, GE_ESTIMATE, TRANSFER_CAP }
-  }
-
   function shortLabel(label) {
     const parts = label.split(' → ')
     const uni = parts[0]?.replace('UC ', '').replace('CSU ', '').replace(' State', '').replace(' University', '')
@@ -923,74 +1251,25 @@ export default function Tab2() {
           rows={overlapData.rows}
           completedCourses={completedCourses}
           onClose={() => setShowPlanner(false)}
+          ccName={ccName}
         />
       )
     }
 
-    const budget = computeUnitBudget()
+    const totalMajorUnits = overlapData.rows.reduce((sum, row) =>
+      sum + row.primaryCourses.reduce((s, c) => s + (c.units || 3), 0), 0)
+    const isOverCap = totalMajorUnits > 35
 
     return (
       <>
         <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 4 }}>📊 Progress</div>
         <div style={{ fontSize: 11, color: '#888', marginBottom: 12 }}>Check rows to update</div>
 
-        {/* ── CHANGE 1: Unit budget bar ── */}
-        {budget && (() => {
-  const majorBudget = budget.TRANSFER_CAP - budget.GE_ESTIMATE  // 35u
-  const majorUsed = budget.totalMajorUnits
-  const spare = majorBudget - majorUsed
-  const isOver = spare < 0
-  const pct = Math.min(100, Math.round((majorUsed / majorBudget) * 100))
-
-  return (
-    <div style={{
-      marginBottom: 20, padding: '12px',
-      background: isOver ? '#fff5f5' : '#f5f4f0',
-      borderRadius: 10,
-      border: `1px solid ${isOver ? '#fecaca' : '#e8e8e4'}`
-    }}>
-      <div style={{ fontSize: 12, fontWeight: 700, color: '#1a1a1a', marginBottom: 10 }}>
-        📦 Major prep budget
-      </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 10 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11 }}>
-          <span style={{ color: '#666' }}>Available after GE (~35u)</span>
-          <span style={{ fontWeight: 600 }}>{majorBudget}u</span>
-        </div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11 }}>
-          <span style={{ color: '#666' }}>Your major prep</span>
-          <span style={{ fontWeight: 600 }}>{majorUsed}u</span>
-        </div>
-        <div style={{
-          borderTop: '1px solid #e0e0e0', marginTop: 4, paddingTop: 4,
-          display: 'flex', justifyContent: 'space-between', fontSize: 12
-        }}>
-          <span style={{ fontWeight: 700 }}>{isOver ? 'Over by' : 'Spare'}</span>
-          <span style={{ fontWeight: 700, color: isOver ? '#dc2626' : spare <= 5 ? '#f59e0b' : '#166534' }}>
-            {Math.abs(spare)}u
-          </span>
-        </div>
-      </div>
-      <div style={{ background: '#e0e0e0', borderRadius: 4, height: 7, overflow: 'hidden', marginBottom: 8 }}>
-        <div style={{
-          height: '100%', borderRadius: 4,
-          width: `${pct}%`,
-          background: isOver ? '#dc2626' : pct > 90 ? '#f59e0b' : '#6C5CE7',
-          transition: 'width 0.3s ease'
-        }} />
-      </div>
-      {isOver ? (
-        <div style={{ fontSize: 11, color: '#dc2626', fontWeight: 600 }}>
-          ⚠️ {Math.abs(spare)}u over your major prep budget — prioritize ALL PROGRAMS courses and drop school-specific ones
-        </div>
-      ) : (
-        <div style={{ fontSize: 11, color: '#666' }}>
-          {spare}u of spare capacity — use it on school-specific courses you care about
-        </div>
-      )}
-    </div>
-  )
-})()}
+        {isOverCap && (
+          <div style={{ fontSize: 11, color: '#b45309', background: '#fff8e1', border: '1px solid #ffe082', borderRadius: 8, padding: '8px 10px', marginBottom: 12 }}>
+            ⚠️ Your major prep may exceed the 70u transfer cap when combined with GE — talk to your counselor.
+          </div>
+        )}
 
         {summary.length === 0 ? (
           <div style={{ fontSize: 12, color: '#aaa' }}>Check off courses to see your progress</div>
@@ -1043,8 +1322,7 @@ export default function Tab2() {
     const noArtByGroupIdFlat = {}
     const inlineRequiredNoArt = []
 
-    // ── CHANGE 1 (cont): compute budget once for school-specific label coloring ──
-    const budget = computeUnitBudget()
+    // ── CHANGE 3 uses isSchoolSpecific flag below ──
 
     for (const na of (overlapData.noArticulation || [])) {
       if (na.partOfPickGroup) {
@@ -1199,8 +1477,8 @@ export default function Tab2() {
                         {isSchoolSpecific && (
                           <span style={{
                             fontSize: 10, borderRadius: 4, padding: '2px 6px', fontWeight: 600,
-                            background: budget?.isOver ? '#fee2e2' : '#f5f4f0',
-                            color: budget?.isOver ? '#dc2626' : '#999',
+                            background: '#f5f4f0',
+                            color: '#999',
                           }}>SCHOOL-SPECIFIC</span>
                         )}
                       </div>
@@ -1253,8 +1531,8 @@ export default function Tab2() {
                     {isSchoolSpecific && (
                       <span style={{
                         fontSize: 10, borderRadius: 4, padding: '2px 6px', fontWeight: 600,
-                        background: budget?.isOver ? '#fee2e2' : '#f5f4f0',
-                        color: budget?.isOver ? '#dc2626' : '#999',
+                        background: '#f5f4f0',
+                        color: '#999',
                       }}>SCHOOL-SPECIFIC</span>
                     )}
                   </div>
@@ -1490,6 +1768,17 @@ export default function Tab2() {
                   <div>☑ check it off once you've taken it — progress saves automatically</div>
                   <div>⚠️ for unit-based groups, unit counts refer to <strong>university course units</strong></div>
                 </div>
+                {overlapData.totalPrograms > 1 && (
+                  <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid #d4ccff' }}>
+                    <strong style={{ display: 'block', marginBottom: 6, fontSize: 13, color: '#1a1a1a' }}>📋 Your transfer strategy</strong>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                      <div>Transfer students can bring a maximum of <strong>70 units</strong> — so it matters which courses you take first.</div>
+                      <div><span style={{ fontSize: 10, background: '#ede9ff', color: '#6C5CE7', borderRadius: 4, padding: '1px 5px', fontWeight: 700 }}>ALL PROGRAMS</span> &nbsp;Take these first — one course satisfies every school at once.</div>
+                      <div><span style={{ fontSize: 10, background: '#fff3e0', color: '#f57f17', borderRadius: 4, padding: '1px 5px', fontWeight: 700 }}>MULTIPLE</span> &nbsp;Take these next — good overlap across several schools.</div>
+                      <div><span style={{ fontSize: 10, background: '#f5f4f0', color: '#999', borderRadius: 4, padding: '1px 5px', fontWeight: 700 }}>SCHOOL-SPECIFIC</span> &nbsp;Take these last — use remaining units on your top choice school.</div>
+                    </div>
+                  </div>
+                )}
               </div>
               <button onClick={() => { setShowBanner(false); localStorage.setItem('tab2_banner_dismissed', '1') }}
                 style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#aaa', fontSize: 20, lineHeight: 1, padding: 0, flexShrink: 0, marginTop: 2 }} aria-label="Dismiss">×</button>
