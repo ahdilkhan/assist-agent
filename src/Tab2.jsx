@@ -107,6 +107,7 @@ function buildCellMap(templateAssets) {
     const dataSections = sections.filter(s => s.type === 'Section')
 
     const instr = group.instruction || {}
+    console.log('GROUP INSTR', group.groupId, JSON.stringify(instr))
     const instrType = instr.type || ''
     const instrConjunction = (instr.conjunction || '').toLowerCase()
 
