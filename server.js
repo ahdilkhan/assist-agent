@@ -46,9 +46,24 @@ app.use("/transferablecourselist", async (req, res) => {
 
 app.use("/api/transferability", async (req, res) => {
   try {
+    const sessionRes = await axios.get("https://assist.org", {
+      headers: { ...browserHeaders },
+    })
+    const cookies = sessionRes.headers["set-cookie"] || []
+    const cookieString = cookies.map(c => c.split(";")[0]).join("; ")
+    const xsrfCookie = cookies.find(c => c.startsWith("XSRF-TOKEN="))
+    const xsrfToken = xsrfCookie ? decodeURIComponent(xsrfCookie.split("=")[1].split(";")[0]) : ""
+
     const url = `${ASSIST_ORG}/api/transferability${req.url}`
     const response = await axios.get(url, {
-      headers: { ...browserHeaders, accept: "application/json, text/plain, */*" },
+      headers: {
+        ...browserHeaders,
+        accept: "application/json, text/plain, */*",
+        cookie: cookieString,
+        "x-xsrf-token": xsrfToken,
+        referer: "https://assist.org/transfer/results",
+        "content-type": "application/json",
+      },
     })
     res.set("Cache-Control", "no-store")
     res.json(response.data)
@@ -66,4 +81,3 @@ const PORT = process.env.PORT || 3001
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`)
 })
-
