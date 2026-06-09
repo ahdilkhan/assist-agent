@@ -42,7 +42,7 @@ const CC_SCHEDULE_URLS = {
   'Chaffey': 'https://colss-prod.ec.chaffey.edu/Student/Courses/Search',
   'Citrus': 'https://apps.citruscollege.edu/live-class-schedule',
   'City College of San Francisco': 'https://www.ccsf.edu/courses',
-  'Clovis': 'https://selfservice.scccd.edu/Student/Courses/Search?SearchResultsView=1&locations=CCC&locations=CWEB&locations=CHYB&locations=COFF&locations=CHC&OpenAndWaitlistedSections=true',
+  'Clovis': 'https://selfservice.scccd.edu/Student/Courses/Search?locations=Z5&locations=Z8&locations=CHYB&locations=COFF&locations=CHC&OpenAndWaitlistedSections=true',
   'Fresno City': 'https://selfservice.scccd.edu/Student/Courses',
   'Reedley': 'https://selfservice.scccd.edu/Student/Courses',
   'Madera': 'https://selfservice.scccd.edu/Student/Courses',
@@ -211,10 +211,7 @@ function parseArticulations(agreement, targetPrefix, targetNumber) {
       ? JSON.parse(agreement.sendingInstitution) : agreement.sendingInstitution
     const ccName = sending?.names?.[0]?.name || sending?.code || 'Unknown CC'
     const ccId = sending?.id
- 
-    // ── DEBUG: log every top-level articulation shape ──────────────────────────
-    // This shows us all the keys present at the articulation level so we can
-    // spot any field names we haven't accounted for.
+
     const shapes = new Set()
     for (const item of arts) {
       const art = item.articulation || item
@@ -224,35 +221,31 @@ function parseArticulations(agreement, targetPrefix, targetNumber) {
         console.log(`[ASSIST shape] ${ccName} →`, shape)
         console.log(`[ASSIST sample]`, JSON.stringify(art, null, 2).slice(0, 800))
       }
- 
-      // ── DEBUG: for any row that mentions our target, dump it completely ──────
+
       const rawStr = JSON.stringify(art)
       if (rawStr.toUpperCase().includes(targetPrefix.toUpperCase()) &&
           rawStr.toUpperCase().includes(targetNumber.toUpperCase())) {
         console.log(`[ASSIST MATCH candidate] ${ccName}:`, JSON.stringify(art, null, 2))
       }
     }
-    // ── END DEBUG ──────────────────────────────────────────────────────────────
- 
+
     const matches = []
     for (const item of arts) {
       const art = item.articulation || item
- 
+
       let receivingCourses = []
-if (art.course) receivingCourses.push(art.course)
-if (art.receivingCourse) receivingCourses.push(art.receivingCourse)
-if (art.courses && Array.isArray(art.courses)) receivingCourses.push(...art.courses)
-if (art.series?.courses && Array.isArray(art.series.courses)) {
-  // Only match this series if our target is the first/lead course
-  const first = art.series.courses[0]
-  const firstPrefix = (first?.prefix || '').trim().toUpperCase()
-  const firstNum = (first?.courseNumber || first?.number || '').trim().toUpperCase()
-  if (firstPrefix === targetPrefix.toUpperCase() && firstNum === targetNumber.toUpperCase()) {
-    receivingCourses.push(...art.series.courses)
-  }
-}
- 
-      // ── UNKNOWN SHAPE GUARD: warn if no receiving field found at all ──────────
+      if (art.course) receivingCourses.push(art.course)
+      if (art.receivingCourse) receivingCourses.push(art.receivingCourse)
+      if (art.courses && Array.isArray(art.courses)) receivingCourses.push(...art.courses)
+      if (art.series?.courses && Array.isArray(art.series.courses)) {
+        const first = art.series.courses[0]
+        const firstPrefix = (first?.prefix || '').trim().toUpperCase()
+        const firstNum = (first?.courseNumber || first?.number || '').trim().toUpperCase()
+        if (firstPrefix === targetPrefix.toUpperCase() && firstNum === targetNumber.toUpperCase()) {
+          receivingCourses.push(...art.series.courses)
+        }
+      }
+
       if (receivingCourses.length === 0) {
         const keys = Object.keys(art)
         if (!['type', 'noArticulationReason', 'sendingArticulation'].every(k => keys.includes(k))) {
@@ -260,28 +253,28 @@ if (art.series?.courses && Array.isArray(art.series.courses)) {
         }
         continue
       }
- 
+
       const isMatch = receivingCourses.some(rc => {
         const rPrefix = (rc.prefix || '').trim().toUpperCase()
         const rNum = (rc.courseNumber || rc.number || '').trim().toUpperCase().replace(/^0+/, '')
-const searchNum = targetNumber.toUpperCase().replace(/^0+/, '')
-return rPrefix === targetPrefix.toUpperCase() && rNum === searchNum
+        const searchNum = targetNumber.toUpperCase().replace(/^0+/, '')
+        return rPrefix === targetPrefix.toUpperCase() && rNum === searchNum
       })
       if (!isMatch) continue
- 
+
       const sendingArt = art.sendingArticulation
       if (sendingArt?.noArticulationReason) continue
- 
+
       const options = parseSendingOptions(sendingArt?.items || [])
       if (options.length === 0) continue
- 
+
       const receivingLabel = receivingCourses
         .map(rc => `${(rc.prefix||'').trim()} ${(rc.courseNumber||rc.number||'').trim()}`)
         .join(' + ')
- 
+
       matches.push({ ccName, ccId, receivingCourse: receivingLabel, receivingTitle: receivingCourses[0]?.courseTitle || '', options })
     }
- 
+
     return matches
   } catch (e) {
     console.warn('parse error:', e)
@@ -395,6 +388,7 @@ export default function App() {
   const [equivalents, setEquivalents] = useState([])
   const [openBlocks, setOpenBlocks] = useState({})
   const [selectedRegions, setSelectedRegions] = useState([])
+  const [courseFilter, setCourseFilter] = useState('any')
   const [selectedCC, setSelectedCC] = useState(null)
   const [savedCCs, setSavedCCs] = useState(new Set())
   const [showSaved, setShowSaved] = useState(false)
@@ -410,7 +404,6 @@ export default function App() {
     return () => { listener.subscription.unsubscribe() }
   }, [])
 
-  // Close dropdown when clicking outside
   useEffect(() => {
     function handleClickOutside(e) {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
@@ -428,13 +421,13 @@ export default function App() {
     })
   }
 
-  // Reset everything back to the home/search state
   function goHome() {
     setStep(1)
     setActiveTab('tab1')
     setEquivalents([])
     setSelectedCC(null)
     setSelectedRegions([])
+    setCourseFilter('any')
     setSavedCCs(new Set())
     setShowSaved(false)
     setOpenBlocks({})
@@ -450,14 +443,23 @@ export default function App() {
     setSavedCCs(prev => { const next = new Set(prev); next.has(ccName) ? next.delete(ccName) : next.add(ccName); return next })
   }
 
-  const filteredEquivalents = selectedRegions.length > 0
+  const regionFiltered = selectedRegions.length > 0
     ? equivalents.filter(eq => selectedRegions.some(r => ccMatchesRegion(eq.ccName, r))) : equivalents
+
+  const filteredEquivalents = regionFiltered.filter(eq => {
+    if (!courseFilter || courseFilter === 'any') return true
+    const minCourses = Math.min(...eq.options.map(o => o.courses.length))
+    if (courseFilter === 'single') return minCourses <= 1
+    if (courseFilter === 'multi') return minCourses >= 2
+    return true
+  })
+
   const savedEquivalents = equivalents.filter(eq => savedCCs.has(eq.ccName))
 
   async function handleSearch() {
     if (!uniId || !prefix || !courseNum) { setError('Please fill in all fields.'); return }
     setError(''); setLoading(true); setLoadingProgress(0)
-    setEquivalents([]); setSelectedRegions([]); setSelectedCC(null)
+    setEquivalents([]); setSelectedRegions([]); setCourseFilter('any'); setSelectedCC(null)
     setSavedCCs(new Set()); setShowSaved(false); setOpenBlocks({})
     try {
       setLoadingMsg('Fetching community colleges...')
@@ -476,27 +478,27 @@ export default function App() {
             if (!key) return []
             const agreement = await getAgreement(key)
             return parseArticulations(agreement, prefix, courseNum)
-          } catch (e) { 
-    console.warn(`Failed ccId ${ccId}:`, e.message)
-    return [] 
-  }
+          } catch (e) {
+            console.warn(`Failed ccId ${ccId}:`, e.message)
+            return []
+          }
         }))
         batchResults.forEach(r => results.push(...r))
         checked += batch.length
         setLoadingProgress(Math.round((checked / total) * 100))
         setLoadingMsg(`Searching... ${checked}/${total} colleges checked`)
       }
-     const byCC = {}
-for (const r of results) {
-  if (!byCC[r.ccName]) {
-    byCC[r.ccName] = r
-  } else {
-    const existing = byCC[r.ccName].receivingCourse.split('+').length
-    const incoming = r.receivingCourse.split('+').length
-    if (incoming < existing) byCC[r.ccName] = r
-  }
-}
-const deduped = Object.values(byCC)
+      const byCC = {}
+      for (const r of results) {
+        if (!byCC[r.ccName]) {
+          byCC[r.ccName] = r
+        } else {
+          const existing = byCC[r.ccName].receivingCourse.split('+').length
+          const incoming = r.receivingCourse.split('+').length
+          if (incoming < existing) byCC[r.ccName] = r
+        }
+      }
+      const deduped = Object.values(byCC)
       setEquivalents(deduped); setStep(2)
     } catch (e) { setError(`Error: ${e.message}`) }
     finally { setLoading(false); setLoadingMsg(''); setLoadingProgress(0) }
@@ -533,25 +535,24 @@ const deduped = Object.values(byCC)
                 {opt.courses.length > 1 && <div style={{ fontSize: 11, color: '#888', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>Take all together</div>}
                 {opt.groupNote && <div style={{ fontSize: 12, color: '#f57f17', marginBottom: 6 }}>⚠️ {opt.groupNote}</div>}
                 {opt.courses.map((c, k) => (
-                 <div className="eq-row" key={k}>
-  <div>
-    <div style={{ fontWeight: 500 }}>{c.prefix} {c.number} — {c.title}</div>
-    <div style={{ fontSize: 12, color: '#888' }}>{c.units ? `${c.units} units` : ''}</div>
-    {c.note && <div style={{ fontSize: 12, color: '#f57f17', marginTop: 2 }}>⚠️ {c.note}</div>}
-    {eq.receivingCourse.includes('+') && (
-      <div style={{ fontSize: 12, color: '#6C5CE7', marginTop: 2 }}>
-        ✅ Also satisfies: {eq.receivingCourse.split('+').slice(1).map(s => s.trim()).join(', ')}
-      </div>
-    )}
-  </div>
-  <span className="badge badge-green">Articulated</span>
-</div>
+                  <div className="eq-row" key={k}>
+                    <div>
+                      <div style={{ fontWeight: 500 }}>{c.prefix} {c.number} — {c.title}</div>
+                      <div style={{ fontSize: 12, color: '#888' }}>{c.units ? `${c.units} units` : ''}</div>
+                      {c.note && <div style={{ fontSize: 12, color: '#f57f17', marginTop: 2 }}>⚠️ {c.note}</div>}
+                      {eq.receivingCourse.includes('+') && (
+                        <div style={{ fontSize: 12, color: '#6C5CE7', marginTop: 2 }}>
+                          ✅ Also satisfies: {eq.receivingCourse.split('+').slice(1).map(s => s.trim()).join(', ')}
+                        </div>
+                      )}
+                    </div>
+                    <span className="badge badge-green">Articulated</span>
+                  </div>
                 ))}
               </div>
             ))}
             <div style={{ marginTop: 12, display: 'flex', gap: 10, alignItems: 'center' }}>
               <button className="btn-primary" style={{ width: 'auto', padding: '7px 14px', fontSize: 13 }} onClick={() => { setSelectedCC(eq); setStep(3) }}>Check schedule →</button>
-              <a className="avail-link" href={`https://assist.org/transfer/results?year=${YEAR_ID}&institution=${eq.ccId}&agreement=${uniId}&agreementType=to&view=agreement&viewBy=major`} target="_blank" rel="noreferrer">View on ASSIST.org ↗</a>
             </div>
           </div>
         )}
@@ -559,7 +560,6 @@ const deduped = Object.values(byCC)
     ))
   }
 
-  // Generate avatar initials from email
   function getInitials(email) {
     if (!email) return '?'
     return email[0].toUpperCase()
@@ -567,7 +567,6 @@ const deduped = Object.values(byCC)
 
   return (
     <div className={`app${activeTab === 'tab2' ? ' wide' : ''}`}>
-      {/* Top navbar */}
       <div style={{
         display: 'flex',
         justifyContent: 'space-between',
@@ -575,10 +574,7 @@ const deduped = Object.values(byCC)
         marginBottom: 32,
         paddingTop: 16,
       }}>
-      
-        {/* Logo + wordmark */}
         {user ? (
-          // Logged-in: icon + "Kourzo" wordmark, clickable to go home
           <div onClick={goHome} title="Go home" style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', flexShrink: 0 }}>
             <img src={kourzoLogo} alt="Kourzo icon" style={{ height: 40, width: 40, display: 'block' }} />
             <span style={{ fontSize: 24, fontWeight: 700, letterSpacing: '-0.5px', lineHeight: 1 }}>
@@ -586,33 +582,31 @@ const deduped = Object.values(byCC)
             </span>
           </div>
         ) : (
-          // Logged-out: centered icon + big wordmark + tagline
           <div style={{ textAlign: 'center', width: '100%' }}>
-  <img src={kourzoLogo} alt="Kourzo icon" style={{ height: 64, width: 64, display: 'block', margin: '0 auto 18px' }} />
-  <div style={{ fontSize: 32, fontWeight: 700, letterSpacing: '-0.5px', marginBottom: 16 }}>
-    <span style={{ color: '#6C5CE7' }}>K</span><span style={{ color: '#1a1a1a' }}>ourzo</span>
-  </div>
-  
-  <p style={{ margin: '0 auto 48px', color: '#666', fontSize: 15, maxWidth: 380 }}>
-    The fastest way to plan your California CC transfer — find course equivalents and map out your path to any UC or CSU.
-  </p>
-  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 32, textAlign: 'left' }}>
-    <div style={{ background: '#fff', border: '0.5px solid #e0e0e0', borderRadius: 12, padding: 22 }}>
-      <div style={{ width: 32, height: 32, borderRadius: 8, background: '#EEEDFE', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 10 }}>
-        <span style={{ color: '#6C5CE7', fontSize: 17 }}>🔍</span>
-      </div>
-      <div style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a', marginBottom: 4 }}>Find CC equivalents</div>
-      <div style={{ fontSize: 12, color: '#888', lineHeight: 1.5 }}>Pick a UC or CSU course and instantly see which community colleges offer an equivalent.</div>
-    </div>
-    <div style={{ background: '#fff', border: '0.5px solid #e0e0e0', borderRadius: 12, padding: 22 }}>
-      <div style={{ width: 32, height: 32, borderRadius: 8, background: '#EEEDFE', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 10 }}>
-        <span style={{ color: '#6C5CE7', fontSize: 17 }}>🗺️</span>
-      </div>
-      <div style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a', marginBottom: 4 }}>Plan across schools</div>
-      <div style={{ fontSize: 12, color: '#888', lineHeight: 1.5 }}>Add multiple transfer targets and find the CC courses that count toward all of them at once.</div>
-    </div>
-  </div>
-</div>
+            <img src={kourzoLogo} alt="Kourzo icon" style={{ height: 64, width: 64, display: 'block', margin: '0 auto 18px' }} />
+            <div style={{ fontSize: 32, fontWeight: 700, letterSpacing: '-0.5px', marginBottom: 16 }}>
+              <span style={{ color: '#6C5CE7' }}>K</span><span style={{ color: '#1a1a1a' }}>ourzo</span>
+            </div>
+            <p style={{ margin: '0 auto 48px', color: '#666', fontSize: 15, maxWidth: 380 }}>
+              The fastest way to plan your California CC transfer — find course equivalents and map out your path to any UC or CSU.
+            </p>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 32, textAlign: 'left' }}>
+              <div style={{ background: '#fff', border: '0.5px solid #e0e0e0', borderRadius: 12, padding: 22 }}>
+                <div style={{ width: 32, height: 32, borderRadius: 8, background: '#EEEDFE', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 10 }}>
+                  <span style={{ color: '#6C5CE7', fontSize: 17 }}>🔍</span>
+                </div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a', marginBottom: 4 }}>Find CC equivalents</div>
+                <div style={{ fontSize: 12, color: '#888', lineHeight: 1.5 }}>Pick a UC or CSU course and instantly see which community colleges offer an equivalent.</div>
+              </div>
+              <div style={{ background: '#fff', border: '0.5px solid #e0e0e0', borderRadius: 12, padding: 22 }}>
+                <div style={{ width: 32, height: 32, borderRadius: 8, background: '#EEEDFE', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 10 }}>
+                  <span style={{ color: '#6C5CE7', fontSize: 17 }}>🗺️</span>
+                </div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a', marginBottom: 4 }}>Plan across schools</div>
+                <div style={{ fontSize: 12, color: '#888', lineHeight: 1.5 }}>Add multiple transfer targets and find the CC courses that count toward all of them at once.</div>
+              </div>
+            </div>
+          </div>
         )}
 
         {user && (
@@ -668,21 +662,21 @@ const deduped = Object.values(byCC)
 
       {!user ? (
         <div className="card" style={{ textAlign: 'center', marginTop: 40 }}>
-  <h3 style={{ marginBottom: 4 }}>Sign in to get started</h3>
-  <p style={{ fontSize: 12, color: '#888', marginBottom: 16 }}>Free — takes a couple seconds</p>
-  <button onClick={signInWithGoogle}>Sign in with Google</button>
-</div>
+          <h3 style={{ marginBottom: 4 }}>Sign in to get started</h3>
+          <p style={{ fontSize: 12, color: '#888', marginBottom: 16 }}>Free — takes a couple seconds</p>
+          <button onClick={signInWithGoogle}>Sign in with Google</button>
+        </div>
       ) : (
         <>
-         <div style={{ display: 'flex', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
             {[['tab1', '🎯 Find CC equivalents for a university course'], ['tab2', '🗺️ Plan for multiple schools']].map(([id, label]) => (
               <div key={id} className={`pref-chip${activeTab === id ? ' selected' : ''}`} style={{ padding: '8px 16px', fontSize: 13 }} onClick={() => setActiveTab(id)}>{label}</div>
             ))}
           </div>
 
           <div style={{ display: activeTab === 'tab2' ? 'block' : 'none' }}>
-  <Tab2 />
-</div>
+            <Tab2 />
+          </div>
 
           {activeTab === 'tab1' && (
             <>
@@ -733,17 +727,27 @@ const deduped = Object.values(byCC)
                     <div className={`pref-chip${showSaved ? ' selected' : ''}`} style={{ padding: '6px 12px', fontSize: 12 }} onClick={() => setShowSaved(true)}>💙 Saved ({savedCCs.size})</div>
                   </div>
                   {!showSaved && (
-                    <div style={{ marginBottom: 12 }}>
-                      <div className="section-label" style={{ marginBottom: 8 }}>Filter by region</div>
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                        <div className={`pref-chip${selectedRegions.length === 0 ? ' selected' : ''}`} style={{ padding: '6px 12px', fontSize: 12 }} onClick={() => setSelectedRegions([])}>All regions</div>
-                        {Object.keys(REGIONS).map(region => {
-                          const count = equivalents.filter(eq => ccMatchesRegion(eq.ccName, region)).length
-                          if (count === 0) return null
-                          return <div key={region} className={`pref-chip${selectedRegions.includes(region) ? ' selected' : ''}`} style={{ padding: '6px 12px', fontSize: 12 }} onClick={() => toggleRegion(region)}>{region} ({count})</div>
-                        })}
+                    <>
+                      <div style={{ marginBottom: 12 }}>
+                        <div className="section-label" style={{ marginBottom: 8 }}>Filter by courses required</div>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                          {[['any', 'Any'], ['single', '1 course'], ['multi', '2+ courses']].map(([val, label]) => (
+                            <div key={val} className={`pref-chip${courseFilter === val ? ' selected' : ''}`} style={{ padding: '6px 12px', fontSize: 12 }} onClick={() => setCourseFilter(val)}>{label}</div>
+                          ))}
+                        </div>
                       </div>
-                    </div>
+                      <div style={{ marginBottom: 12 }}>
+                        <div className="section-label" style={{ marginBottom: 8 }}>Filter by region</div>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                          <div className={`pref-chip${selectedRegions.length === 0 ? ' selected' : ''}`} style={{ padding: '6px 12px', fontSize: 12 }} onClick={() => setSelectedRegions([])}>All regions</div>
+                          {Object.keys(REGIONS).map(region => {
+                            const count = equivalents.filter(eq => ccMatchesRegion(eq.ccName, region)).length
+                            if (count === 0) return null
+                            return <div key={region} className={`pref-chip${selectedRegions.includes(region) ? ' selected' : ''}`} style={{ padding: '6px 12px', fontSize: 12 }} onClick={() => toggleRegion(region)}>{region} ({count})</div>
+                          })}
+                        </div>
+                      </div>
+                    </>
                   )}
                   {showSaved && savedEquivalents.length === 0 && <div className="key-note">No saved colleges yet. Click 💙 on any college to save it.</div>}
                   {showSaved ? renderCCList(savedEquivalents) : renderCCList(filteredEquivalents)}
@@ -775,7 +779,7 @@ const deduped = Object.values(byCC)
                           <div style={{ fontSize: 12, fontWeight: 600, color: '#555', marginBottom: 6 }}>💡 When you get to the schedule:</div>
                           {opt.courses.length === 1
                             ? <div style={{ fontSize: 13 }}>Search for <span style={{ fontFamily: 'monospace', fontWeight: 600 }}>{opt.courses[0].prefix} {opt.courses[0].number}</span></div>
-                            : <ol style={{ paddingLeft: 18, margin: 0 }}>{opt.courses.map((c, k) => <li key={k} style={{ fontSize: 13, marginBottom: 4 }}>Search for <span style={{ fontFamily: 'monospace', fontWeight: 600 }}>{c.prefix} {c.number}</span><span style={{ color: '#888', fontSize: 12 }}> — {c.title}</span></li>)}</ol>
+                            : <ol style={{ paddingLeft: 18, margin: 0 }}>{opt.courses.map((c, k) => <li key={k} style={{ fontSize: 13, marginBottom: 4 }}>Search for <span style={{ fontFamily: 'monospace', fontWeight: 600 }}>{c.prefix} {c.number}</span></li>)}</ol>
                           }
                         </div>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
