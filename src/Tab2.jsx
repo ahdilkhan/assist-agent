@@ -627,21 +627,19 @@ function getCCScheduleUrl(ccName) {
   return key ? CC_SCHEDULE_URLS[key] : null
 }
 
-// ─── Semester Planner sidebar panel ──────────────────────────────────────────
-
-const MAJOR_PREP_TARGET = { Fall: 9, Spring: 9, Summer: 6 }
+// ─── Semester Planner full-page component ────────────────────────────────────
 
 function SemesterPlanner({ rows, completedCourses, onClose, ccName }) {
   const [startTerm, setStartTerm] = useState(TERMS[0])
   const [transferTerm, setTransferTerm] = useState(TERMS[4])
   const [includeSummer, setIncludeSummer] = useState(true)
-  const [termCourses, setTermCourses] = useState({}) // termName → [ccKey, ...]
+  const [termCourses, setTermCourses] = useState({})
   const [dragKey, setDragKey] = useState(null)
   const [dragOver, setDragOver] = useState(null)
 
   const scheduleUrl = getCCScheduleUrl(ccName)
 
-  // Build the list of courses that still need to be taken (pick-group aware)
+  // Build pick-group-aware needed rows
   const groupStateForDisplay = {}
   for (const row of rows) {
     const gid = row.groupId
@@ -658,7 +656,6 @@ function SemesterPlanner({ rows, completedCourses, onClose, ccName }) {
       ? { unitsNeeded: Math.max(0, gs.nRequired - gs.completedUnits), unitsAdded: 0 }
       : { slotsLeft: Math.max(0, gs.nRequired - gs.completedCount) }
   }
-
   const neededRows = []
   for (const row of rows) {
     if (completedCourses.has(row.ccKey)) continue
@@ -680,299 +677,236 @@ function SemesterPlanner({ rows, completedCourses, onClose, ccName }) {
   const totalRemaining = neededRows.length
   const totalUnits = neededRows.reduce((sum, r) => sum + r.primaryCourses.reduce((s, c) => s + (c.units || 3), 0), 0)
 
-  // Build available terms
   const startIdx = TERMS.indexOf(startTerm)
   const endIdx = TERMS.indexOf(transferTerm)
   const availableTerms = startIdx !== -1 && endIdx !== -1 && startIdx < endIdx
     ? TERMS.slice(startIdx, endIdx).filter(t => includeSummer || !t.startsWith('Summer'))
     : []
 
-  // All placed ccKeys across all terms
   const allPlacedKeys = new Set(Object.values(termCourses).flat())
-
-  // Unplaced = needed but not yet placed in any term
   const unplacedRows = neededRows.filter(r => !allPlacedKeys.has(r.ccKey))
 
-  // Per-term course data
-  function getTermRows(term) {
-    return (termCourses[term] || [])
-      .map(key => neededRows.find(r => r.ccKey === key))
-      .filter(Boolean)
-  }
+  const placedUnits = neededRows
+    .filter(r => allPlacedKeys.has(r.ccKey))
+    .reduce((sum, r) => sum + r.primaryCourses.reduce((s, c) => s + (c.units || 3), 0), 0)
+  const isOverCap = placedUnits > 35
 
+  function getTermRows(term) {
+    return (termCourses[term] || []).map(key => neededRows.find(r => r.ccKey === key)).filter(Boolean)
+  }
   function getTermUnits(term) {
     return getTermRows(term).reduce((sum, r) => sum + r.primaryCourses.reduce((s, c) => s + (c.units || 3), 0), 0)
   }
 
-  // Drag handlers
   function handleDragStart(ccKey) { setDragKey(ccKey) }
   function handleDragEnd() { setDragKey(null); setDragOver(null) }
-
   function handleDropOnTerm(term) {
     if (!dragKey) return
     setTermCourses(prev => {
       const next = { ...prev }
-      // Remove from wherever it currently lives
-      for (const t of Object.keys(next)) {
-        next[t] = (next[t] || []).filter(k => k !== dragKey)
-      }
+      for (const t of Object.keys(next)) next[t] = (next[t] || []).filter(k => k !== dragKey)
       next[term] = [...(next[term] || []), dragKey]
       return next
     })
-    setDragKey(null)
-    setDragOver(null)
+    setDragKey(null); setDragOver(null)
   }
-
   function handleDropOnPool() {
     if (!dragKey) return
     setTermCourses(prev => {
       const next = { ...prev }
-      for (const t of Object.keys(next)) {
-        next[t] = (next[t] || []).filter(k => k !== dragKey)
-      }
+      for (const t of Object.keys(next)) next[t] = (next[t] || []).filter(k => k !== dragKey)
       return next
     })
-    setDragKey(null)
-    setDragOver(null)
+    setDragKey(null); setDragOver(null)
   }
-
   function removeCourseFromTerm(term, ccKey) {
     setTermCourses(prev => ({ ...prev, [term]: (prev[term] || []).filter(k => k !== ccKey) }))
   }
 
-  const chipStyle = (isDragging) => ({
-    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-    padding: '7px 10px', border: '1px solid #efefed', borderRadius: 8,
-    background: isDragging ? '#f0edff' : '#fff',
-    cursor: 'grab', opacity: isDragging ? 0.5 : 1, marginBottom: 5,
-  })
+  function CourseChip({ row, onRemove }) {
+    const label = row.primaryCourses.map(c => `${c.prefix} ${c.number}`).join(' + ')
+    const title = row.primaryCourses.map(c => c.title).filter(Boolean).join(' + ')
+    const units = row.primaryCourses.reduce((s, c) => s + (c.units || 3), 0)
+    const isDragging = dragKey === row.ccKey
+    const coverageAll = row.coverage === row.programEntries.length && row.programEntries.length > 1
+    const coverageSome = row.coverage > 1 && !coverageAll
+    const isSchoolSpecific = row.coverage === 1
+    const schoolName = isSchoolSpecific ? row.programEntries[0]?.program?.split(' → ')[0] : null
+
+    return (
+      <div
+        draggable
+        onDragStart={() => handleDragStart(row.ccKey)}
+        onDragEnd={handleDragEnd}
+        style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: '8px 10px', border: '1px solid #efefed', borderRadius: 8,
+          background: isDragging ? '#f0edff' : '#fff',
+          cursor: 'grab', opacity: isDragging ? 0.4 : 1, marginBottom: 6,
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+          <span style={{ color: '#ddd', fontSize: 14, flexShrink: 0 }}>⠿</span>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: '#1a1a1a', display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
+              {label}
+              {coverageAll && <span style={{ fontSize: 9, background: '#ede9ff', color: '#6C5CE7', borderRadius: 3, padding: '1px 5px', fontWeight: 700 }}>ALL PROGRAMS</span>}
+              {coverageSome && <span style={{ fontSize: 9, background: '#fff3e0', color: '#f57f17', borderRadius: 3, padding: '1px 5px', fontWeight: 700 }}>MULTIPLE</span>}
+              {isSchoolSpecific && <span style={{ fontSize: 9, background: '#f5f4f0', color: '#999', borderRadius: 3, padding: '1px 5px', fontWeight: 700 }}>{schoolName || 'SCHOOL-SPECIFIC'}</span>}
+            </div>
+            {title && <div style={{ fontSize: 11, color: '#aaa', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{title}</div>}
+          </div>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0, marginLeft: 8 }}>
+          <span style={{ fontSize: 11, color: '#bbb' }}>{units}u</span>
+          {onRemove && <span onClick={onRemove} style={{ fontSize: 16, color: '#ddd', cursor: 'pointer', lineHeight: 1 }}>×</span>}
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div>
-      {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-        <div style={{ fontSize: 14, fontWeight: 600, color: '#1a1a1a' }}>Semester plan</div>
-        <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: '#888', padding: 0 }}>← Progress</button>
-      </div>
-
-      {/* Term selectors */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10 }}>
-        <div>
-          <div style={{ fontSize: 11, color: '#888', marginBottom: 3 }}>Start term</div>
-          <select value={startTerm} onChange={e => setStartTerm(e.target.value)} style={{ width: '100%', fontSize: 12 }}>
-            {TERMS.slice(0, -1).map(t => <option key={t} value={t}>{t}</option>)}
-          </select>
-        </div>
-        <div>
-          <div style={{ fontSize: 11, color: '#888', marginBottom: 3 }}>Transfer goal</div>
-          <select value={transferTerm} onChange={e => setTransferTerm(e.target.value)} style={{ width: '100%', fontSize: 12 }}>
-            {TERMS.slice(1).map(t => <option key={t} value={t}>{t}</option>)}
-          </select>
+      {/* Top bar */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+        <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, color: '#888', padding: 0, display: 'flex', alignItems: 'center', gap: 4 }}>
+          ← Back to courses
+        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          {scheduleUrl && (
+            <a href={scheduleUrl} target="_blank" rel="noopener noreferrer"
+              style={{ fontSize: 12, color: '#6C5CE7', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 4 }}>
+              ↗ {ccName} schedule
+            </a>
+          )}
+          <div style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a' }}>Semester plan</div>
         </div>
       </div>
 
-      {/* Summer toggle */}
-      <div
-        onClick={() => setIncludeSummer(v => !v)}
-        style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14, cursor: 'pointer', userSelect: 'none' }}
-      >
-        <div style={{
-          width: 30, height: 17, borderRadius: 9, background: includeSummer ? '#6C5CE7' : '#ddd',
-          position: 'relative', transition: 'background 0.2s', flexShrink: 0,
-        }}>
-          <div style={{
-            width: 13, height: 13, borderRadius: '50%', background: '#fff',
-            position: 'absolute', top: 2, left: includeSummer ? 15 : 2, transition: 'left 0.2s',
-          }} />
+      {/* Controls row */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div>
+            <div style={{ fontSize: 10, color: '#aaa', marginBottom: 2 }}>Start term</div>
+            <select value={startTerm} onChange={e => setStartTerm(e.target.value)} style={{ fontSize: 12 }}>
+              {TERMS.slice(0, -1).map(t => <option key={t} value={t}>{t}</option>)}
+            </select>
+          </div>
+          <div style={{ color: '#ccc', marginTop: 14 }}>→</div>
+          <div>
+            <div style={{ fontSize: 10, color: '#aaa', marginBottom: 2 }}>Transfer goal</div>
+            <select value={transferTerm} onChange={e => setTransferTerm(e.target.value)} style={{ fontSize: 12 }}>
+              {TERMS.slice(1).map(t => <option key={t} value={t}>{t}</option>)}
+            </select>
+          </div>
         </div>
-        <span style={{ fontSize: 12, color: '#555' }}>Include summer terms</span>
+
+        <div onClick={() => setIncludeSummer(v => !v)}
+          style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', userSelect: 'none', marginLeft: 'auto' }}>
+          <div style={{ width: 28, height: 16, borderRadius: 8, background: includeSummer ? '#6C5CE7' : '#ddd', position: 'relative', transition: 'background 0.2s', flexShrink: 0 }}>
+            <div style={{ width: 12, height: 12, borderRadius: '50%', background: '#fff', position: 'absolute', top: 2, left: includeSummer ? 14 : 2, transition: 'left 0.2s' }} />
+          </div>
+          <span style={{ fontSize: 12, color: '#666' }}>Include summer</span>
+        </div>
       </div>
 
-      {/* Stats */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 12 }}>
-        <div style={{ background: '#f5f4f0', borderRadius: 8, padding: '8px 10px' }}>
+      {/* Stats row */}
+      <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
+        <div style={{ background: '#f5f4f0', borderRadius: 8, padding: '8px 14px', flex: 1, minWidth: 80 }}>
           <div style={{ fontSize: 18, fontWeight: 600, color: '#1a1a1a' }}>{totalRemaining}</div>
           <div style={{ fontSize: 11, color: '#888' }}>courses left</div>
         </div>
-        <div style={{ background: '#f5f4f0', borderRadius: 8, padding: '8px 10px' }}>
+        <div style={{ background: '#f5f4f0', borderRadius: 8, padding: '8px 14px', flex: 1, minWidth: 80 }}>
           <div style={{ fontSize: 18, fontWeight: 600, color: '#1a1a1a' }}>{totalUnits}u</div>
           <div style={{ fontSize: 11, color: '#888' }}>major prep left</div>
         </div>
+        <div style={{ background: isOverCap ? '#fff5f5' : '#f5f4f0', borderRadius: 8, padding: '8px 14px', flex: 1, minWidth: 80, border: isOverCap ? '1px solid #fecaca' : 'none' }}>
+          <div style={{ fontSize: 18, fontWeight: 600, color: isOverCap ? '#dc2626' : '#1a1a1a' }}>{placedUnits}u</div>
+          <div style={{ fontSize: 11, color: isOverCap ? '#dc2626' : '#888' }}>placed{isOverCap ? ' ⚠️' : ''}</div>
+        </div>
       </div>
 
-      {/* CC schedule link */}
-      {scheduleUrl && (
-        <a
-          href={scheduleUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          style={{
-            display: 'flex', alignItems: 'center', gap: 6,
-            fontSize: 12, color: '#6C5CE7', textDecoration: 'none',
-            background: '#f0edff', borderRadius: 8, padding: '8px 12px',
-            marginBottom: 10, fontWeight: 500,
-          }}
-        >
-          <span style={{ fontSize: 14 }}>↗</span>
-          Check schedule &amp; prerequisites at {ccName}
-        </a>
+      {isOverCap && (
+        <div style={{ fontSize: 11, color: '#b45309', background: '#fff8e1', border: '1px solid #ffe082', borderRadius: 8, padding: '8px 12px', marginBottom: 14, lineHeight: 1.5 }}>
+          ⚠️ Major prep placed ({placedUnits}u) exceeds 35u. When combined with GE (~35u), you may go over the 70u transfer cap — talk to your counselor.
+        </div>
       )}
 
-      {/* GE note */}
-      <div style={{
-        fontSize: 11, color: '#666', background: '#f9f9f7',
-        border: '1px solid #efefed', borderRadius: 8,
-        padding: '8px 10px', marginBottom: 14, lineHeight: 1.5,
-      }}>
-        💡 Each term is typically <strong>15 units total</strong>. Aim for <strong>6–9u of major prep</strong> per term — the rest is GE. Drag courses into the terms that work for you.
-      </div>
-
       {totalRemaining === 0 ? (
-        <div style={{ fontSize: 13, color: '#aaa', textAlign: 'center', padding: '20px 0' }}>🎉 All courses completed!</div>
+        <div style={{ fontSize: 13, color: '#aaa', textAlign: 'center', padding: '40px 0' }}>🎉 All courses completed!</div>
       ) : availableTerms.length === 0 ? (
-        <div style={{ fontSize: 12, color: '#aaa', textAlign: 'center', padding: '12px 0' }}>Adjust your terms above.</div>
+        <div style={{ fontSize: 12, color: '#aaa', textAlign: 'center', padding: '20px 0' }}>Adjust your terms above.</div>
       ) : (
-        <>
-          {/* Term slots */}
-          <div style={{ fontSize: 11, fontWeight: 700, color: '#aaa', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>
-            Your plan
-          </div>
-          {availableTerms.map(term => {
-            const termRows = getTermRows(term)
-            const termUnits = getTermUnits(term)
-            const termType = term.split(' ')[0]
-            const target = MAJOR_PREP_TARGET[termType] || 9
-            const isOver = termUnits > target
-            const isDragTarget = dragOver === term
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 280px', gap: 20, alignItems: 'start' }}>
 
-            return (
-              <div
-                key={term}
-                onDragOver={e => { e.preventDefault(); setDragOver(term) }}
-                onDragLeave={() => setDragOver(null)}
-                onDrop={() => handleDropOnTerm(term)}
-                style={{
-                  border: isDragTarget ? '1.5px dashed #6C5CE7' : '1px solid #efefed',
-                  borderRadius: 8, marginBottom: 8, overflow: 'hidden',
-                  background: isDragTarget ? '#faf8ff' : '#fff',
-                }}
-              >
-                <div style={{
-                  padding: '7px 12px', background: '#f9f9f7',
-                  borderBottom: '1px solid #efefed',
-                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                }}>
-                  <div style={{ fontSize: 12, fontWeight: 600, color: '#1a1a1a' }}>{term}</div>
-                  <div style={{ fontSize: 11, color: isOver ? '#dc2626' : '#aaa' }}>
-                    {termUnits}u major prep{isOver ? ' ⚠️' : ` · ~${(termType === 'Summer' ? 9 : 15) - termUnits}u for GE`}
-                  </div>
-                </div>
-                <div style={{ padding: termRows.length === 0 ? '10px 12px' : '8px 12px' }}>
-                  {termRows.length === 0 ? (
-                    <div style={{ fontSize: 11, color: '#ccc', fontStyle: 'italic' }}>Drag courses here</div>
-                  ) : (
-                    termRows.map(row => {
-                      const label = row.primaryCourses.map(c => `${c.prefix} ${c.number}`).join(' + ')
-                      const title = row.primaryCourses.map(c => c.title).filter(Boolean).join(' + ')
-                      const units = row.primaryCourses.reduce((s, c) => s + (c.units || 3), 0)
-                      const isDragging = dragKey === row.ccKey
-                      const coverageAll = row.coverage === row.programEntries.length && row.programEntries.length > 1
-                      const coverageSome = row.coverage > 1 && !coverageAll
-                      const isSchoolSpecific = row.coverage === 1
-                      const schoolName = isSchoolSpecific ? row.programEntries[0]?.program?.split(' → ')[0] : null
-                      return (
-                        <div
-                          key={row.ccKey}
-                          draggable
-                          onDragStart={() => handleDragStart(row.ccKey)}
-                          onDragEnd={handleDragEnd}
-                          style={chipStyle(isDragging)}
-                        >
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
-                            <span style={{ color: '#ccc', fontSize: 13, flexShrink: 0 }}>⠿</span>
-                            <div style={{ minWidth: 0 }}>
-                              <div style={{ fontSize: 12, fontWeight: 600, color: '#1a1a1a', display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
-                                {label}
-                                {coverageAll && <span style={{ fontSize: 9, background: '#ede9ff', color: '#6C5CE7', borderRadius: 3, padding: '1px 5px', fontWeight: 700 }}>ALL PROGRAMS</span>}
-                                {coverageSome && <span style={{ fontSize: 9, background: '#fff3e0', color: '#f57f17', borderRadius: 3, padding: '1px 5px', fontWeight: 700 }}>MULTIPLE</span>}
-                                {isSchoolSpecific && <span style={{ fontSize: 9, background: '#f5f4f0', color: '#999', borderRadius: 3, padding: '1px 5px', fontWeight: 700 }}>{schoolName || 'SCHOOL-SPECIFIC'}</span>}
-                              </div>
-                              {title && <div style={{ fontSize: 11, color: '#999', marginTop: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{title}</div>}
-                            </div>
-                          </div>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-                            <span style={{ fontSize: 11, color: '#bbb' }}>{units}u</span>
-                            <span
-                              onClick={() => removeCourseFromTerm(term, row.ccKey)}
-                              style={{ fontSize: 14, color: '#ccc', cursor: 'pointer', lineHeight: 1 }}
-                            >×</span>
-                          </div>
-                        </div>
-                      )
-                    })
-                  )}
-                </div>
-              </div>
-            )
-          })}
-
-          {/* Unplaced pool */}
-          {unplacedRows.length > 0 && (
-            <div
-              onDragOver={e => { e.preventDefault(); setDragOver('pool') }}
-              onDragLeave={() => setDragOver(null)}
-              onDrop={handleDropOnPool}
-              style={{ marginTop: 16 }}
-            >
-              <div style={{ fontSize: 11, fontWeight: 700, color: '#aaa', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>
-                Not placed yet — drag into a term above
-              </div>
-              {unplacedRows.map(row => {
-                const label = row.primaryCourses.map(c => `${c.prefix} ${c.number}`).join(' + ')
-                const title = row.primaryCourses.map(c => c.title).filter(Boolean).join(' + ')
-                const units = row.primaryCourses.reduce((s, c) => s + (c.units || 3), 0)
-                const isDragging = dragKey === row.ccKey
-                const coverageAll = row.coverage === row.programEntries.length && row.programEntries.length > 1
-                const coverageSome = row.coverage > 1 && !coverageAll
-                const isSchoolSpecific = row.coverage === 1
-                const schoolName = isSchoolSpecific ? row.programEntries[0]?.program?.split(' → ')[0] : null
-                return (
-                  <div
-                    key={row.ccKey}
-                    draggable
-                    onDragStart={() => handleDragStart(row.ccKey)}
-                    onDragEnd={handleDragEnd}
-                    style={chipStyle(isDragging)}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
-                      <span style={{ color: '#ccc', fontSize: 13, flexShrink: 0 }}>⠿</span>
-                      <div style={{ minWidth: 0 }}>
-                        <div style={{ fontSize: 12, fontWeight: 600, color: '#1a1a1a', display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
-                          {label}
-                          {coverageAll && <span style={{ fontSize: 9, background: '#ede9ff', color: '#6C5CE7', borderRadius: 3, padding: '1px 5px', fontWeight: 700 }}>ALL PROGRAMS</span>}
-                          {coverageSome && <span style={{ fontSize: 9, background: '#fff3e0', color: '#f57f17', borderRadius: 3, padding: '1px 5px', fontWeight: 700 }}>MULTIPLE</span>}
-                          {isSchoolSpecific && <span style={{ fontSize: 9, background: '#f5f4f0', color: '#999', borderRadius: 3, padding: '1px 5px', fontWeight: 700 }}>{schoolName || 'SCHOOL-SPECIFIC'}</span>}
-                        </div>
-                        {title && <div style={{ fontSize: 11, color: '#999', marginTop: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{title}</div>}
-                      </div>
+          {/* Left — term slots */}
+          <div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: '#aaa', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>
+              Your plan — drag courses from the right
+            </div>
+            {availableTerms.map(term => {
+              const termRows = getTermRows(term)
+              const termUnits = getTermUnits(term)
+              const isDragTarget = dragOver === term
+              return (
+                <div
+                  key={term}
+                  onDragOver={e => { e.preventDefault(); setDragOver(term) }}
+                  onDragLeave={() => setDragOver(null)}
+                  onDrop={() => handleDropOnTerm(term)}
+                  style={{
+                    border: isDragTarget ? '1.5px dashed #6C5CE7' : '1px solid #efefed',
+                    borderRadius: 10, marginBottom: 10, overflow: 'hidden',
+                    background: isDragTarget ? '#faf8ff' : '#fff',
+                  }}
+                >
+                  <div style={{ padding: '8px 14px', background: '#f9f9f7', borderBottom: '1px solid #efefed', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a' }}>{term}</div>
+                    <div style={{ fontSize: 11, color: '#aaa' }}>
+                      {termUnits > 0 ? `${termUnits}u major prep` : 'empty'}
                     </div>
-                    <span style={{ fontSize: 11, color: '#bbb', flexShrink: 0 }}>{units}u</span>
                   </div>
-                )
-              })}
-            </div>
-          )}
-
-          {unplacedRows.length === 0 && (
-            <div style={{ fontSize: 11, color: '#aaa', textAlign: 'center', marginTop: 12 }}>
-              All courses placed ✓
-            </div>
-          )}
-
-          <div style={{ fontSize: 11, color: '#ccc', textAlign: 'center', marginTop: 16, lineHeight: 1.5 }}>
-            GE / IGETC courses not shown — talk to your counselor
+                  <div style={{ padding: termRows.length === 0 ? '14px' : '10px 10px 4px' }}>
+                    {termRows.length === 0 ? (
+                      <div style={{ fontSize: 12, color: '#ccc', fontStyle: 'italic', textAlign: 'center' }}>Drop courses here</div>
+                    ) : (
+                      termRows.map(row => (
+                        <CourseChip key={row.ccKey} row={row} onRemove={() => removeCourseFromTerm(term, row.ccKey)} />
+                      ))
+                    )}
+                  </div>
+                </div>
+              )
+            })}
           </div>
-        </>
+
+          {/* Right — unplaced pool */}
+          <div
+            onDragOver={e => { e.preventDefault(); setDragOver('pool') }}
+            onDragLeave={() => setDragOver(null)}
+            onDrop={handleDropOnPool}
+            style={{ position: 'sticky', top: 20 }}
+          >
+            <div style={{ fontSize: 11, fontWeight: 700, color: '#aaa', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>
+              Courses to place
+            </div>
+            {unplacedRows.length === 0 ? (
+              <div style={{ fontSize: 12, color: '#aaa', textAlign: 'center', padding: '20px 0', border: '1px solid #efefed', borderRadius: 10 }}>
+                All placed ✓
+              </div>
+            ) : (
+              <div style={{ border: '1px solid #efefed', borderRadius: 10, padding: '10px 10px 4px', background: '#fafaf8' }}>
+                {unplacedRows.map(row => (
+                  <CourseChip key={row.ccKey} row={row} />
+                ))}
+              </div>
+            )}
+            <div style={{ fontSize: 11, color: '#ccc', textAlign: 'center', marginTop: 14, lineHeight: 1.6 }}>
+              GE / IGETC not shown<br />Talk to your counselor
+            </div>
+          </div>
+
+        </div>
       )}
     </div>
   )
