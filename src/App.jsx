@@ -672,7 +672,7 @@ const filteredEquivalents = selectedRegions.length > 0
       ) : (
         <>
           <div style={{ display: 'flex', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
-            {[['tab1', '🎯 Find CC equivalents for a university course'], ['tab2', '🗺️ Plan for multiple schools']].map(([id, label]) => (
+            {[['tab1', '🎯 Find CC equivalents for a university course'], ['tab2', '🗺️ Plan for multiple schools at once']].map(([id, label]) => (
               <div key={id} className={`pref-chip${activeTab === id ? ' selected' : ''}`} style={{ padding: '8px 16px', fontSize: 13 }} onClick={() => setActiveTab(id)}>{label}</div>
             ))}
           </div>
