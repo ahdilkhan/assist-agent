@@ -1114,7 +1114,11 @@ export default function Tab2() {
 
     // Bottom pass: only render orphan no-art groups not already rendered above
     for (const g of groups) {
-      if ((g.noArtRows || []).length > 0 && g.rows.length === 0) {
+      const unrenderedNoArtRows = (g.noArtRows || []).filter(na => {
+        const key = `${na.uniReq.prefix}|${na.uniReq.number}|${na.program}`
+        return !renderedNoArtKeys.has(key)
+      })
+      if (unrenderedNoArtRows.length > 0 && g.rows.length === 0) {
         const displayLabel = g.sectionLabel || g.groupTitle || 'REQUIREMENTS'
         if (displayLabel !== lastDisplayLabel) {
           lastDisplayLabel = displayLabel
@@ -1124,9 +1128,8 @@ export default function Tab2() {
             </div>
           )
         }
-        for (const na of g.noArtRows) {
+        for (const na of unrenderedNoArtRows) {
           const naRenderKey = `${na.uniReq.prefix}|${na.uniReq.number}|${na.program}`
-          if (renderedNoArtKeys.has(naRenderKey)) continue
           renderedNoArtKeys.add(naRenderKey)
           rendered.push(
             <div key={`noart-req-${na.uniReq.prefix}-${na.uniReq.number}-${na.program}`} style={{ border: '1px solid #fecaca', borderRadius: 8, marginBottom: 6, background: '#fff5f5', overflow: 'hidden' }}>
@@ -1370,7 +1373,7 @@ export default function Tab2() {
             </div>
           )}
 
-          <div style={{ display: isWide ? 'grid' : 'block', gridTemplateColumns: isWide ? '1fr 380px' : undefined, gap: isWide ? 24 : 0, alignItems: 'start' }}>
+          <div style={{ display: isWide ? 'grid' : 'block', gridTemplateColumns: isWide ? '1fr 380px' : undefined, gap: isWide ? 40 : 0, alignItems: 'start' }}>
             <div>
               {renderCourseList()}
               {overlapData.rows.length === 0 && (
