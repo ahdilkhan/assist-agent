@@ -497,7 +497,6 @@ export default function Tab2() {
     setCompletedCourses(new Set())
     try {
       const programArts = await Promise.all(programs.map(async prog => {
-        setLoadingMsg(`Fetching ${prog.uniName} — ${prog.majorLabel}...`)
         const agreement = await getAgreement(prog.majorKey)
         const parsed = parseAllForProgram(agreement, `${prog.uniName} → ${prog.majorLabel}`)
         return { prog, arts: parsed.articulated, noArts: parsed.noArticulation }
@@ -594,7 +593,7 @@ export default function Tab2() {
     } catch (e) {
       setError(`Error: ${e.message}`)
     } finally {
-      setLoading(false); setLoadingMsg('')
+      setLoading(false)
     }
   }
 
@@ -682,14 +681,25 @@ export default function Tab2() {
     const endIdx = termList.indexOf(plannerEnd)
     const validTerms = endIdx > startIdx
 
+    const inputStyle = {
+      fontSize: 12,
+      width: '100%',
+      padding: '6px 8px',
+      border: '1px solid var(--border-input)',
+      borderRadius: 6,
+      background: 'var(--bg-input)',
+      color: 'var(--text)',
+      boxSizing: 'border-box',
+    }
+
     return (
       <>
         {/* ── Progress ── */}
-        <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 4, color: '#1a1a1a' }}>Your plan</div>
-        <div style={{ fontSize: 11, color: '#666', marginBottom: 14 }}>Check rows to mark as done</div>
+        <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 4, color: 'var(--text)' }}>Your plan</div>
+        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 14 }}>Check rows to mark as done</div>
 
         {summary.length === 0 ? (
-          <div style={{ fontSize: 12, color: '#888' }}>Check off courses to see your progress</div>
+          <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Check off courses to see your progress</div>
         ) : (
           summary.map((s, i) => {
             const pct = s.total === 0 ? 0 : Math.round((s.completed / s.total) * 100)
@@ -698,13 +708,13 @@ export default function Tab2() {
             return (
               <div key={i} style={{ marginBottom: i < summary.length - 1 ? 14 : 0 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                  <div style={{ fontSize: 12, fontWeight: isTop ? 600 : 400, color: isTop ? '#1a1a1a' : '#333', flex: 1, marginRight: 8 }}>
+                  <div style={{ fontSize: 12, fontWeight: isTop ? 600 : 400, color: 'var(--text)', flex: 1, marginRight: 8 }}>
                     {showHeart && <span>💜 </span>}{s.label}
                   </div>
-                  <div style={{ fontSize: 11, color: '#555', flexShrink: 0 }}>{s.completed}/{s.total}</div>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', flexShrink: 0 }}>{s.completed}/{s.total}</div>
                 </div>
-                <div style={{ background: '#e0e0e0', borderRadius: 4, height: 6, overflow: 'hidden' }}>
-                  <div style={{ background: pct === 100 ? '#4caf50' : '#6C5CE7', height: '100%', width: `${pct}%`, borderRadius: 4, transition: 'width 0.3s ease' }} />
+                <div style={{ background: 'var(--progress-track)', borderRadius: 4, height: 6, overflow: 'hidden' }}>
+                  <div style={{ background: pct === 100 ? '#4ade80' : '#6C5CE7', height: '100%', width: `${pct}%`, borderRadius: 4, transition: 'width 0.3s ease' }} />
                 </div>
               </div>
             )
@@ -712,21 +722,21 @@ export default function Tab2() {
         )}
 
         {/* ── Transfer Pacing ── */}
-        <div style={{ marginTop: 20, borderTop: '1px solid #d4ccff', paddingTop: 20 }}>
-          <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 12, color: '#3730a3' }}>🗓 Transfer pacing</div>
+        <div style={{ marginTop: 20, borderTop: '1px solid var(--border)', paddingTop: 20 }}>
+          <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 12, color: '#a78bfa' }}>🗓 Transfer pacing</div>
 
           {/* Term selectors */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
             <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 10, color: '#555', marginBottom: 3 }}>Starting term</div>
-              <select value={plannerStart} onChange={e => setPlannerStart(e.target.value)} style={{ fontSize: 12, width: '100%' }}>
+              <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 3 }}>Starting term</div>
+              <select value={plannerStart} onChange={e => setPlannerStart(e.target.value)} style={inputStyle}>
                 {TERMS.slice(0, -1).map(t => <option key={t} value={t}>{t}</option>)}
               </select>
             </div>
-            <div style={{ color: '#aaa', marginTop: 14, fontSize: 12 }}>→</div>
+            <div style={{ color: 'var(--text-muted)', marginTop: 14, fontSize: 12 }}>→</div>
             <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 10, color: '#555', marginBottom: 3 }}>Transfer goal</div>
-              <select value={plannerEnd} onChange={e => setPlannerEnd(e.target.value)} style={{ fontSize: 12, width: '100%' }}>
+              <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 3 }}>Transfer goal</div>
+              <select value={plannerEnd} onChange={e => setPlannerEnd(e.target.value)} style={inputStyle}>
                 {TERMS.slice(1).map(t => <option key={t} value={t}>{t}</option>)}
               </select>
             </div>
@@ -738,7 +748,7 @@ export default function Tab2() {
               onClick={() => setIncludeSummer(v => !v)}
               style={{
                 width: 32, height: 18, borderRadius: 9, cursor: 'pointer', flexShrink: 0,
-                background: includeSummer ? '#6C5CE7' : '#ccc',
+                background: includeSummer ? '#6C5CE7' : 'var(--border)',
                 position: 'relative', transition: 'background 0.2s',
               }}
             >
@@ -749,27 +759,27 @@ export default function Tab2() {
                 transition: 'left 0.2s',
               }} />
             </div>
-            <span style={{ fontSize: 12, color: '#444', cursor: 'pointer' }} onClick={() => setIncludeSummer(v => !v)}>
+            <span style={{ fontSize: 12, color: 'var(--text-muted)', cursor: 'pointer' }} onClick={() => setIncludeSummer(v => !v)}>
               Include summer
             </span>
           </div>
 
           {/* GE units taken input */}
           <div style={{ marginBottom: 16 }}>
-            <div style={{ fontSize: 10, color: '#555', marginBottom: 3 }}>GE units completed so far (out of {GE_TOTAL})</div>
+            <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 3 }}>GE units completed so far (out of {GE_TOTAL})</div>
             <input
               type="number" min={0} max={GE_TOTAL}
               value={geTaken}
               onChange={e => setGeTaken(Math.min(GE_TOTAL, Math.max(0, Number(e.target.value))))}
-              style={{ fontSize: 13, width: '100%', padding: '6px 8px', border: '1px solid #ddd', borderRadius: 6, boxSizing: 'border-box' }}
+              style={{ ...inputStyle, fontSize: 13, padding: '6px 8px' }}
             />
           </div>
 
           {!validTerms ? (
-            <div style={{ fontSize: 12, color: '#666' }}>Set a valid start and transfer term above.</div>
+            <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Set a valid start and transfer term above.</div>
           ) : (
             <>
-              <div style={{ fontSize: 11, color: '#444', marginBottom: 10, lineHeight: 1.5 }}>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 10, lineHeight: 1.5 }}>
                 {GE_TOTAL - Math.min(geTaken, GE_TOTAL)} GE units left · {perProgramPacings.find(p => p)?.semesters ?? '—'} semesters ({plannerStart} → {plannerEnd})
               </div>
 
@@ -786,9 +796,9 @@ export default function Tab2() {
                   const isDone = majorLeft === 0
                   const avgUnits = 4
                   const coursesPerSem = Math.max(1, Math.round(pacing.perSemester / avgUnits))
-                  const loadColor = isDone ? '#16a34a' : coursesPerSem <= 3 ? '#16a34a' : coursesPerSem <= 4 ? '#d97706' : '#dc2626'
-                  const loadBg = isDone ? '#f0fdf4' : coursesPerSem <= 3 ? '#f0fdf4' : coursesPerSem <= 4 ? '#fffbeb' : '#fef2f2'
-                  const loadBorder = isDone ? '#86efac' : coursesPerSem <= 3 ? '#86efac' : coursesPerSem <= 4 ? '#fde68a' : '#fca5a5'
+                  const loadColor = isDone ? '#4ade80' : coursesPerSem <= 3 ? '#4ade80' : coursesPerSem <= 4 ? '#fbbf24' : '#f87171'
+                  const loadBg = isDone ? '#0d2a1a' : coursesPerSem <= 3 ? '#0d2a1a' : coursesPerSem <= 4 ? '#2a2010' : '#2a1010'
+                  const loadBorder = isDone ? '#166534' : coursesPerSem <= 3 ? '#166534' : coursesPerSem <= 4 ? '#5a4a10' : '#5a2020'
                   return (
                     <div key={label} style={{
                       borderRadius: 10,
@@ -800,18 +810,18 @@ export default function Tab2() {
                       border: `1px solid ${loadBorder}`,
                       borderLeft: `4px solid ${loadColor}`,
                     }}>
-                      <div style={{ fontWeight: 700, fontSize: 12, color: '#1a1a1a', lineHeight: 1.3 }}>{uniName}</div>
-                      <div style={{ fontSize: 10, color: '#666', lineHeight: 1.2 }}>{majorName}</div>
-                      <div style={{ borderTop: '1px solid #e8e8e4', paddingTop: 8, marginTop: 2 }}>
+                      <div style={{ fontWeight: 700, fontSize: 12, color: 'var(--text)', lineHeight: 1.3 }}>{uniName}</div>
+                      <div style={{ fontSize: 10, color: 'var(--text-muted)', lineHeight: 1.2 }}>{majorName}</div>
+                      <div style={{ borderTop: `1px solid var(--border)`, paddingTop: 8, marginTop: 2 }}>
                         {isDone ? (
-                          <div style={{ fontSize: 18, fontWeight: 800, color: '#16a34a' }}>✓ Done</div>
+                          <div style={{ fontSize: 18, fontWeight: 800, color: '#4ade80' }}>✓ Done</div>
                         ) : (
                           <div style={{ fontSize: 22, fontWeight: 800, color: loadColor, lineHeight: 1 }}>
                             ~{coursesPerSem}
-                            <span style={{ fontSize: 11, fontWeight: 400, color: '#666', marginLeft: 2 }}>courses/sem</span>
+                            <span style={{ fontSize: 11, fontWeight: 400, color: 'var(--text-muted)', marginLeft: 2 }}>courses/sem</span>
                           </div>
                         )}
-                        <div style={{ fontSize: 10, color: '#666', marginTop: 3 }}>
+                        <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 3 }}>
                           {isDone ? `${mu.total}u complete` : `${majorLeft}u left · ${mu.done}u done`}
                         </div>
                       </div>
@@ -821,16 +831,16 @@ export default function Tab2() {
               </div>
 
               {/* Workload legend */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginBottom: 14, background: '#f5f4ff', borderRadius: 8, padding: '10px 12px' }}>
-                <div style={{ fontSize: 10, fontWeight: 700, color: '#3730a3', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 3 }}>Workload key</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginBottom: 14, background: 'var(--bg-hint)', borderRadius: 8, padding: '10px 12px' }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: '#a78bfa', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 3 }}>Workload key</div>
                 {[
-                  { color: '#16a34a', bg: '#dcfce7', label: '≤ 3 courses/sem', sub: 'manageable' },
-                  { color: '#d97706', bg: '#fef3c7', label: '4 courses/sem', sub: 'busy but doable' },
-                  { color: '#dc2626', bg: '#fee2e2', label: '5+ courses/sem', sub: 'heavy semester' },
-                ].map(({ color, bg, label, sub }) => (
+                  { color: '#4ade80', bg: '#0d2a1a', border: '#166534', label: '≤ 3 courses/sem', sub: 'manageable' },
+                  { color: '#fbbf24', bg: '#2a2010', border: '#5a4a10', label: '4 courses/sem', sub: 'busy but doable' },
+                  { color: '#f87171', bg: '#2a1010', border: '#5a2020', label: '5+ courses/sem', sub: 'heavy semester' },
+                ].map(({ color, bg, border, label, sub }) => (
                   <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <div style={{ width: 12, height: 12, borderRadius: 3, background: bg, border: `2px solid ${color}`, flexShrink: 0 }} />
-                    <span style={{ fontSize: 11, color: '#333' }}><strong>{label}</strong> — {sub}</span>
+                    <span style={{ fontSize: 11, color: 'var(--text-muted)' }}><strong style={{ color: 'var(--text)' }}>{label}</strong> — {sub}</span>
                   </div>
                 ))}
               </div>
@@ -840,14 +850,14 @@ export default function Tab2() {
           {/* Disclaimer */}
           <div style={{
             marginTop: 4,
-            background: '#f5f5f3',
-            border: '1px solid #e8e8e4',
+            background: 'var(--bg-step)',
+            border: '1px solid var(--border)',
             borderRadius: 8,
             padding: '10px 12px',
           }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: '#555', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>How this is calculated</div>
-            <div style={{ fontSize: 11, color: '#444', lineHeight: 1.65 }}>
-              Major prep is based on your <strong>unchecked courses</strong> above. GE (IGETC) is shared across all UC/CSU schools — enter how many units you've already completed. The per-semester number combines remaining major prep + remaining GE, divided evenly across your semesters. Summer is excluded unless toggled on. Always verify sequencing with your counselor.
+            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>How this is calculated</div>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.65 }}>
+              Major prep is based on your <strong style={{ color: 'var(--text)' }}>unchecked courses</strong> above. GE (IGETC) is shared across all UC/CSU schools — enter how many units you've already completed. The per-semester number combines remaining major prep + remaining GE, divided evenly across your semesters. Summer is excluded unless toggled on. Always verify sequencing with your counselor.
             </div>
           </div>
         </div>
@@ -937,7 +947,6 @@ export default function Tab2() {
 
     let lastDisplayLabel = null
     const rendered = []
-    // FIX: single global set to track all rendered no-art keys across both passes
     const renderedNoArtKeys = new Set()
 
     for (const group of groups) {
@@ -950,23 +959,23 @@ export default function Tab2() {
       if (displayLabel !== lastDisplayLabel) {
         lastDisplayLabel = displayLabel
         rendered.push(
-          <div key={`sec-${displayLabel}-${group.groupId}`} style={{ marginTop: rendered.length === 0 ? 0 : 32, marginBottom: 10, paddingBottom: 8, borderBottom: '2px solid #e8e8e4' }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: '#aaa', textTransform: 'uppercase', letterSpacing: '0.1em' }}>{displayLabel}</div>
+          <div key={`sec-${displayLabel}-${group.groupId}`} style={{ marginTop: rendered.length === 0 ? 0 : 32, marginBottom: 10, paddingBottom: 8, borderBottom: '2px solid var(--border)' }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>{displayLabel}</div>
           </div>
         )
       }
 
       if (isPickN && !isEffectivelyRequired) {
         rendered.push(
-          <div key={`group-${group.groupId}`} style={{ border: '1.5px solid #ffe082', borderRadius: 10, marginBottom: 12, overflow: 'hidden', background: '#fffdf5' }}>
-            <div style={{ padding: '9px 14px', borderBottom: '1px solid #ffe082', background: '#fff8e1' }}>
+          <div key={`group-${group.groupId}`} style={{ border: '1.5px solid #5a4a10', borderRadius: 10, marginBottom: 12, overflow: 'hidden', background: '#1a1505' }}>
+            <div style={{ padding: '9px 14px', borderBottom: '1px solid #5a4a10', background: '#221a05' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <span style={{ fontSize: 14 }}>↓</span>
-                <span style={{ fontSize: 12, fontWeight: 700, color: '#b45309' }}>{pickGroupLabel(group)}</span>
-                <span style={{ fontSize: 11, color: '#999', marginLeft: 4 }}>— you don't need all of them</span>
+                <span style={{ fontSize: 12, fontWeight: 700, color: '#fbbf24' }}>{pickGroupLabel(group)}</span>
+                <span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 4 }}>— you don't need all of them</span>
               </div>
               {group.pickType === 'units' && (
-                <div style={{ fontSize: 11, color: '#92400e', marginTop: 6, padding: '4px 8px', background: '#fef3c7', borderRadius: 4, display: 'inline-block' }}>
+                <div style={{ fontSize: 11, color: '#fbbf24', marginTop: 6, padding: '4px 8px', background: '#2a2010', borderRadius: 4, display: 'inline-block' }}>
                   ⚠️ Unit counts refer to the <strong>university's course units</strong>, not your CC's — tap any row to see details
                 </div>
               )}
@@ -979,18 +988,18 @@ export default function Tab2() {
                 const subtitle = slot.courses.map(c => c.title).filter(Boolean).join(' + ')
                 const units = slot.courses.reduce((sum, c) => sum + (c.units || 0), 0)
                 return (
-                  <div key={`noart-${label}`} style={{ borderTop: '1px dashed #fecaca', background: '#fff5f5' }}>
-                    <div style={{ textAlign: 'center', fontSize: 11, fontWeight: 700, color: '#fca5a5', padding: '4px 0', letterSpacing: '0.05em' }}>OR</div>
+                  <div key={`noart-${label}`} style={{ borderTop: '1px dashed #5a2020', background: '#1a0a0a' }}>
+                    <div style={{ textAlign: 'center', fontSize: 11, fontWeight: 700, color: '#f87171', padding: '4px 0', letterSpacing: '0.05em' }}>OR</div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px' }}>
-                      <span style={{ color: '#fca5a5', fontSize: 14, flexShrink: 0 }}>✕</span>
+                      <span style={{ color: '#f87171', fontSize: 14, flexShrink: 0 }}>✕</span>
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontWeight: 600, fontSize: 13, color: '#991b1b', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                        <div style={{ fontWeight: 600, fontSize: 13, color: '#fca5a5', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                           {label}
-                          <span style={{ fontSize: 10, background: '#fee2e2', color: '#dc2626', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>No equivalent at {ccName}</span>
+                          <span style={{ fontSize: 10, background: '#2a1010', color: '#f87171', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>No equivalent at {ccName}</span>
                         </div>
                         {subtitle && <div style={{ fontSize: 11, color: '#f87171', marginTop: 1 }}>{subtitle}{units ? ` · ${units} units` : ''}</div>}
-                        {slot.reason && <div style={{ fontSize: 11, color: '#dc2626', marginTop: 2 }}>{slot.reason}</div>}
-                        <div style={{ fontSize: 11, color: '#b91c1c', marginTop: 4, fontStyle: 'italic' }}>Choose a different option from this group instead</div>
+                        {slot.reason && <div style={{ fontSize: 11, color: '#f87171', marginTop: 2 }}>{slot.reason}</div>}
+                        <div style={{ fontSize: 11, color: '#f87171', marginTop: 4, fontStyle: 'italic' }}>Choose a different option from this group instead</div>
                       </div>
                     </div>
                   </div>
@@ -1008,33 +1017,33 @@ export default function Tab2() {
               const isSchoolSpecific = row.coverage === 1 && overlapData.totalPrograms > 1
 
               return (
-                <div key={row.ccKey} style={{ borderTop: rowIdx > 0 ? '1px dashed #f0e6c8' : 'none', background: isDone ? '#f7f4ec' : '#fffdf5', opacity: isDone ? 0.6 : 1 }}>
-                  {rowIdx > 0 && <div style={{ textAlign: 'center', fontSize: 11, fontWeight: 700, color: '#ccc', padding: '4px 0', letterSpacing: '0.05em' }}>OR</div>}
+                <div key={row.ccKey} style={{ borderTop: rowIdx > 0 ? '1px dashed #3a3010' : 'none', background: isDone ? '#141208' : '#1a1505', opacity: isDone ? 0.6 : 1 }}>
+                  {rowIdx > 0 && <div style={{ textAlign: 'center', fontSize: 11, fontWeight: 700, color: '#5a4a10', padding: '4px 0', letterSpacing: '0.05em' }}>OR</div>}
                   <div onClick={() => setExpandedRow(isExpanded ? null : row.ccKey)} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', cursor: 'pointer' }}>
                     <div onClick={e => e.stopPropagation()}>
-                      <input type="checkbox" checked={isDone} onChange={() => toggleCourse(row.ccKey)} style={{ width: 15, height: 15, cursor: 'pointer', accentColor: '#b45309' }} />
+                      <input type="checkbox" checked={isDone} onChange={() => toggleCourse(row.ccKey)} style={{ width: 15, height: 15, cursor: 'pointer', accentColor: '#fbbf24' }} />
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontWeight: 600, fontSize: 13, textDecoration: isDone ? 'line-through' : 'none', color: isDone ? '#aaa' : '#1a1a1a', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                      <div style={{ fontWeight: 600, fontSize: 13, textDecoration: isDone ? 'line-through' : 'none', color: isDone ? 'var(--text-muted)' : 'var(--text)', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                         {label}
-                        {coverageAll && <span style={{ fontSize: 10, background: '#ede9ff', color: '#6C5CE7', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>ALL PROGRAMS</span>}
-                        {coverageMost && <span style={{ fontSize: 10, background: '#e0f7f4', color: '#0d7377', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>MULTIPLE</span>}
-                        {isSchoolSpecific && <span style={{ fontSize: 10, borderRadius: 4, padding: '2px 6px', fontWeight: 600, background: '#dbeafe', color: '#1e40af' }}>SCHOOL-SPECIFIC</span>}
+                        {coverageAll && <span style={{ fontSize: 10, background: 'var(--bg-chip-selected)', color: '#a78bfa', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>ALL PROGRAMS</span>}
+                        {coverageMost && <span style={{ fontSize: 10, background: '#0d2a28', color: '#34d399', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>MULTIPLE</span>}
+                        {isSchoolSpecific && <span style={{ fontSize: 10, borderRadius: 4, padding: '2px 6px', fontWeight: 600, background: '#0d1a2e', color: '#60a5fa' }}>SCHOOL-SPECIFIC</span>}
                       </div>
-                      {subtitle && <div style={{ fontSize: 11, color: '#999', marginTop: 1 }}>{subtitle}{units ? ` · ${units} units` : ''}</div>}
+                      {subtitle && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>{subtitle}{units ? ` · ${units} units` : ''}</div>}
                     </div>
                     <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
                       {overlapData.programLabels.map((progLabel, pi) => {
                         const has = row.programEntries.some(pe => pe.program === progLabel)
                         return (
                           <div key={pi} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-                            {overlapData.programLabels.length > 1 && <div style={{ fontSize: 9, color: '#bbb', textAlign: 'center', maxWidth: 48, lineHeight: 1.2 }}>{shortLabel(progLabel).split('\n')[0]}</div>}
-                            <span style={{ color: has ? '#6C5CE7' : '#e0e0e0', fontSize: 16, lineHeight: 1 }}>●</span>
+                            {overlapData.programLabels.length > 1 && <div style={{ fontSize: 9, color: 'var(--text-muted)', textAlign: 'center', maxWidth: 48, lineHeight: 1.2 }}>{shortLabel(progLabel).split('\n')[0]}</div>}
+                            <span style={{ color: has ? '#a78bfa' : 'var(--border)', fontSize: 16, lineHeight: 1 }}>●</span>
                           </div>
                         )
                       })}
                     </div>
-                    <div style={{ fontSize: 11, color: '#ccc' }}>{isExpanded ? '▲' : '▼'}</div>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{isExpanded ? '▲' : '▼'}</div>
                   </div>
                   {isExpanded && renderExpandedRow(row)}
                 </div>
@@ -1056,55 +1065,54 @@ export default function Tab2() {
           const isSchoolSpecific = row.coverage === 1 && overlapData.totalPrograms > 1
 
           rendered.push(
-            <div key={row.ccKey} style={{ border: '1px solid #efefed', borderRadius: 8, marginBottom: 6, background: isDone ? '#fafafa' : '#fff', opacity: isDone ? 0.55 : 1, overflow: 'hidden' }}>
+            <div key={row.ccKey} style={{ border: '1px solid var(--border)', borderRadius: 8, marginBottom: 6, background: isDone ? 'var(--bg-step)' : 'var(--bg-card)', opacity: isDone ? 0.55 : 1, overflow: 'hidden' }}>
               <div onClick={() => setExpandedRow(isExpanded ? null : row.ccKey)} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', cursor: 'pointer' }}>
                 <div onClick={e => e.stopPropagation()}>
-                  <input type="checkbox" checked={isDone} onChange={() => toggleCourse(row.ccKey)} style={{ width: 15, height: 15, cursor: 'pointer', accentColor: '#1a1a1a' }} />
+                  <input type="checkbox" checked={isDone} onChange={() => toggleCourse(row.ccKey)} style={{ width: 15, height: 15, cursor: 'pointer', accentColor: '#a78bfa' }} />
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontWeight: 600, fontSize: 13, textDecoration: isDone ? 'line-through' : 'none', color: isDone ? '#aaa' : '#1a1a1a', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                  <div style={{ fontWeight: 600, fontSize: 13, textDecoration: isDone ? 'line-through' : 'none', color: isDone ? 'var(--text-muted)' : 'var(--text)', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                     {label}
-                    {coverageAll && <span style={{ fontSize: 10, background: '#ede9ff', color: '#6C5CE7', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>ALL PROGRAMS</span>}
-                    {coverageMost && <span style={{ fontSize: 10, background: '#e0f7f4', color: '#0d7377', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>MULTIPLE</span>}
-                    {isSchoolSpecific && <span style={{ fontSize: 10, borderRadius: 4, padding: '2px 6px', fontWeight: 600, background: '#dbeafe', color: '#1e40af' }}>SCHOOL-SPECIFIC</span>}
+                    {coverageAll && <span style={{ fontSize: 10, background: 'var(--bg-chip-selected)', color: '#a78bfa', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>ALL PROGRAMS</span>}
+                    {coverageMost && <span style={{ fontSize: 10, background: '#0d2a28', color: '#34d399', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>MULTIPLE</span>}
+                    {isSchoolSpecific && <span style={{ fontSize: 10, borderRadius: 4, padding: '2px 6px', fontWeight: 600, background: '#0d1a2e', color: '#60a5fa' }}>SCHOOL-SPECIFIC</span>}
                   </div>
-                  {subtitle && <div style={{ fontSize: 11, color: '#999', marginTop: 1 }}>{subtitle}{units ? ` · ${units} units` : ''}</div>}
+                  {subtitle && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>{subtitle}{units ? ` · ${units} units` : ''}</div>}
                 </div>
                 <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
                   {overlapData.programLabels.map((progLabel, pi) => {
                     const has = row.programEntries.some(pe => pe.program === progLabel)
                     return (
                       <div key={pi} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-                        {overlapData.programLabels.length > 1 && <div style={{ fontSize: 9, color: '#bbb', textAlign: 'center', maxWidth: 48, lineHeight: 1.2 }}>{shortLabel(progLabel).split('\n')[0]}</div>}
-                        <span style={{ color: has ? '#6C5CE7' : '#e0e0e0', fontSize: 16, lineHeight: 1 }}>●</span>
+                        {overlapData.programLabels.length > 1 && <div style={{ fontSize: 9, color: 'var(--text-muted)', textAlign: 'center', maxWidth: 48, lineHeight: 1.2 }}>{shortLabel(progLabel).split('\n')[0]}</div>}
+                        <span style={{ color: has ? '#a78bfa' : 'var(--border)', fontSize: 16, lineHeight: 1 }}>●</span>
                       </div>
                     )
                   })}
                 </div>
-                <div style={{ fontSize: 11, color: '#ccc' }}>{isExpanded ? '▲' : '▼'}</div>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{isExpanded ? '▲' : '▼'}</div>
               </div>
               {isExpanded && renderExpandedRow(row, isEffectivelyRequired)}
             </div>
           )
         })
 
-        // FIX: register each inline no-art key before pushing, so the bottom pass skips them
         effectiveNoArtRows.forEach(na => {
           const naInlineKey = `${na.uniReq.prefix}|${na.uniReq.number}|${na.program}`
           renderedNoArtKeys.add(naInlineKey)
           rendered.push(
-            <div key={`noart-inline-${na.uniReq.prefix}-${na.uniReq.number}-${na.program}`} style={{ border: '1px solid #fecaca', borderRadius: 8, marginBottom: 6, background: '#fff5f5', overflow: 'hidden' }}>
+            <div key={`noart-inline-${na.uniReq.prefix}-${na.uniReq.number}-${na.program}`} style={{ border: '1px solid #5a2020', borderRadius: 8, marginBottom: 6, background: '#1a0a0a', overflow: 'hidden' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px' }}>
-                <span style={{ color: '#fca5a5', fontSize: 14, flexShrink: 0 }}>✕</span>
+                <span style={{ color: '#f87171', fontSize: 14, flexShrink: 0 }}>✕</span>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontWeight: 600, fontSize: 13, color: '#991b1b', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                  <div style={{ fontWeight: 600, fontSize: 13, color: '#fca5a5', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                     {na.uniReq.prefix} {na.uniReq.number}
-                    {na.uniReq.title && <span style={{ fontWeight: 400, color: '#b91c1c' }}>— {na.uniReq.title}</span>}
+                    {na.uniReq.title && <span style={{ fontWeight: 400, color: '#f87171' }}>— {na.uniReq.title}</span>}
                   </div>
                   {na.uniReq.units && <div style={{ fontSize: 11, color: '#f87171', marginTop: 1 }}>{na.uniReq.units} units · {na.program}</div>}
-                  {na.reason && <div style={{ fontSize: 11, color: '#dc2626', marginTop: 2 }}>{na.reason}</div>}
+                  {na.reason && <div style={{ fontSize: 11, color: '#f87171', marginTop: 2 }}>{na.reason}</div>}
                 </div>
-                <span style={{ fontSize: 11, background: '#fee2e2', color: '#dc2626', borderRadius: 4, padding: '2px 8px', fontWeight: 600, flexShrink: 0 }}>No equivalent at {ccName}</span>
+                <span style={{ fontSize: 11, background: '#2a1010', color: '#f87171', borderRadius: 4, padding: '2px 8px', fontWeight: 600, flexShrink: 0 }}>No equivalent at {ccName}</span>
               </div>
             </div>
           )
@@ -1112,7 +1120,7 @@ export default function Tab2() {
       }
     }
 
-    // Bottom pass: only render orphan no-art groups not already rendered above
+    // Bottom pass
     for (const g of groups) {
       const unrenderedNoArtRows = (g.noArtRows || []).filter(na => {
         const key = `${na.uniReq.prefix}|${na.uniReq.number}|${na.program}`
@@ -1123,8 +1131,8 @@ export default function Tab2() {
         if (displayLabel !== lastDisplayLabel) {
           lastDisplayLabel = displayLabel
           rendered.push(
-            <div key={`sec-noart-${displayLabel}-${g.groupId}`} style={{ marginTop: rendered.length === 0 ? 0 : 32, marginBottom: 10, paddingBottom: 8, borderBottom: '2px solid #e8e8e4' }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: '#aaa', textTransform: 'uppercase', letterSpacing: '0.1em' }}>{displayLabel}</div>
+            <div key={`sec-noart-${displayLabel}-${g.groupId}`} style={{ marginTop: rendered.length === 0 ? 0 : 32, marginBottom: 10, paddingBottom: 8, borderBottom: '2px solid var(--border)' }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>{displayLabel}</div>
             </div>
           )
         }
@@ -1132,18 +1140,18 @@ export default function Tab2() {
           const naRenderKey = `${na.uniReq.prefix}|${na.uniReq.number}|${na.program}`
           renderedNoArtKeys.add(naRenderKey)
           rendered.push(
-            <div key={`noart-req-${na.uniReq.prefix}-${na.uniReq.number}-${na.program}`} style={{ border: '1px solid #fecaca', borderRadius: 8, marginBottom: 6, background: '#fff5f5', overflow: 'hidden' }}>
+            <div key={`noart-req-${na.uniReq.prefix}-${na.uniReq.number}-${na.program}`} style={{ border: '1px solid #5a2020', borderRadius: 8, marginBottom: 6, background: '#1a0a0a', overflow: 'hidden' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px' }}>
-                <span style={{ color: '#fca5a5', fontSize: 14, flexShrink: 0 }}>✕</span>
+                <span style={{ color: '#f87171', fontSize: 14, flexShrink: 0 }}>✕</span>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontWeight: 600, fontSize: 13, color: '#991b1b', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                  <div style={{ fontWeight: 600, fontSize: 13, color: '#fca5a5', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                     {na.uniReq.prefix} {na.uniReq.number}
-                    {na.uniReq.title && <span style={{ fontWeight: 400, color: '#b91c1c' }}>— {na.uniReq.title}</span>}
+                    {na.uniReq.title && <span style={{ fontWeight: 400, color: '#f87171' }}>— {na.uniReq.title}</span>}
                   </div>
                   {na.uniReq.units && <div style={{ fontSize: 11, color: '#f87171', marginTop: 1 }}>{na.uniReq.units} units · {na.program}</div>}
-                  {na.reason && <div style={{ fontSize: 11, color: '#dc2626', marginTop: 2 }}>{na.reason}</div>}
+                  {na.reason && <div style={{ fontSize: 11, color: '#f87171', marginTop: 2 }}>{na.reason}</div>}
                 </div>
-                <span style={{ fontSize: 11, background: '#fee2e2', color: '#dc2626', borderRadius: 4, padding: '2px 8px', fontWeight: 600, flexShrink: 0 }}>No equivalent at {ccName}</span>
+                <span style={{ fontSize: 11, background: '#2a1010', color: '#f87171', borderRadius: 4, padding: '2px 8px', fontWeight: 600, flexShrink: 0 }}>No equivalent at {ccName}</span>
               </div>
             </div>
           )
@@ -1156,42 +1164,42 @@ export default function Tab2() {
 
   function renderExpandedRow(row, isEffectivelyRequired = false) {
     return (
-      <div style={{ borderTop: '1px solid #f0f0f0', background: '#fafafa', padding: '12px 14px 14px 38px' }}>
+      <div style={{ borderTop: '1px solid var(--border)', background: 'var(--bg-step)', padding: '12px 14px 14px 38px' }}>
         {isEffectivelyRequired && (
-          <div style={{ fontSize: 12, color: '#888', background: '#f0f0f0', borderRadius: 6, padding: '7px 10px', marginBottom: 12 }}>
+          <div style={{ fontSize: 12, color: 'var(--text-muted)', background: 'var(--bg-input)', borderRadius: 6, padding: '7px 10px', marginBottom: 12 }}>
             ℹ️ The university offers multiple ways to satisfy this requirement, but this is the only one with an equivalent at {ccName}.
           </div>
         )}
         {row.programEntries.map((pe, i) => (
-          <div key={i} style={{ marginBottom: i < row.programEntries.length - 1 ? 14 : 0, paddingBottom: i < row.programEntries.length - 1 ? 14 : 0, borderBottom: i < row.programEntries.length - 1 ? '1px solid #eee' : 'none' }}>
-            <div style={{ fontSize: 12, fontWeight: 600, color: '#555', marginBottom: 4 }}>{pe.program}</div>
+          <div key={i} style={{ marginBottom: i < row.programEntries.length - 1 ? 14 : 0, paddingBottom: i < row.programEntries.length - 1 ? 14 : 0, borderBottom: i < row.programEntries.length - 1 ? `1px solid var(--border)` : 'none' }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 4 }}>{pe.program}</div>
             {(() => {
               const isRec = isRecommendedSection(pe.groupTitle) || isRecommendedSection(pe.sectionLabel)
               return (
-                <div style={{ fontSize: 11, marginBottom: 6, display: 'inline-flex', alignItems: 'center', gap: 4, background: isRec ? '#fff8e1' : '#f0fdf4', borderRadius: 4, padding: '2px 8px', color: isRec ? '#b45309' : '#166534', fontWeight: 600 }}>
+                <div style={{ fontSize: 11, marginBottom: 6, display: 'inline-flex', alignItems: 'center', gap: 4, background: isRec ? '#2a2010' : '#0d2a1a', borderRadius: 4, padding: '2px 8px', color: isRec ? '#fbbf24' : '#4ade80', fontWeight: 600 }}>
                   {isRec ? '★ Recommended by this program' : '✓ Required by this program'}
                 </div>
               )
             })()}
-            <div style={{ fontSize: 12, color: '#888', marginBottom: 8 }}>
-              Satisfies: <span style={{ fontWeight: 500, color: '#1a1a1a' }}>{pe.uniReq.prefix} {pe.uniReq.number} — {pe.uniReq.title}</span>
+            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 8 }}>
+              Satisfies: <span style={{ fontWeight: 500, color: 'var(--text)' }}>{pe.uniReq.prefix} {pe.uniReq.number} — {pe.uniReq.title}</span>
               {pe.uniReq.units ? ` (${pe.uniReq.units} uni units)` : ''}
             </div>
             {pe.uniReq.allCourseLabels?.length > 1 && (
-              <div style={{ fontSize: 11, color: '#888', marginBottom: 8 }}>Also counts toward: {pe.uniReq.allCourseLabels.slice(1).join(', ')}</div>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 8 }}>Also counts toward: {pe.uniReq.allCourseLabels.slice(1).join(', ')}</div>
             )}
             {pe.options.map((opt, j) => (
               <div key={j}>
-                {j > 0 && <div style={{ fontSize: 11, color: '#bbb', padding: '6px 0', borderTop: '1px dashed #eee', marginTop: 6, marginBottom: 2 }}>or instead:</div>}
-                {opt.courses.length > 1 && <div style={{ fontSize: 11, color: '#888', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>Take all together</div>}
-                {opt.groupNote && <div style={{ fontSize: 11, color: '#f57f17', marginBottom: 4 }}>⚠️ {opt.groupNote}</div>}
+                {j > 0 && <div style={{ fontSize: 11, color: 'var(--text-muted)', padding: '6px 0', borderTop: `1px dashed var(--border)`, marginTop: 6, marginBottom: 2 }}>or instead:</div>}
+                {opt.courses.length > 1 && <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>Take all together</div>}
+                {opt.groupNote && <div style={{ fontSize: 11, color: '#f59e0b', marginBottom: 4 }}>⚠️ {opt.groupNote}</div>}
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                   {opt.courses.map((c, k) => (
-                    <div key={k} style={{ background: '#efefed', borderRadius: 6, padding: '4px 10px', fontSize: 12 }}>
-                      <span style={{ fontFamily: 'monospace', fontWeight: 600 }}>{c.prefix} {c.number}</span>
-                      {c.title && <span style={{ color: '#666', marginLeft: 6 }}>{c.title}</span>}
-                      {c.units && <span style={{ color: '#999', marginLeft: 6 }}>{c.units}u</span>}
-                      {c.note && <div style={{ fontSize: 11, color: '#f57f17', marginTop: 4 }}>⚠️ {c.note}</div>}
+                    <div key={k} style={{ background: 'var(--bg-input)', borderRadius: 6, padding: '4px 10px', fontSize: 12 }}>
+                      <span style={{ fontFamily: 'monospace', fontWeight: 600, color: '#a78bfa' }}>{c.prefix} {c.number}</span>
+                      {c.title && <span style={{ color: 'var(--text-muted)', marginLeft: 6 }}>{c.title}</span>}
+                      {c.units && <span style={{ color: 'var(--text-muted)', marginLeft: 6 }}>{c.units}u</span>}
+                      {c.note && <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 4 }}>⚠️ {c.note}</div>}
                     </div>
                   ))}
                 </div>
@@ -1211,7 +1219,7 @@ export default function Tab2() {
 
       {!overlapData && (
         <>
-          <div style={{ fontSize: 13, color: '#666', marginBottom: 16 }}>
+          <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 16 }}>
             Add your target programs and we'll show you which courses at your CC satisfy the most requirements across all of them.
           </div>
 
@@ -1236,10 +1244,10 @@ export default function Tab2() {
               {programs.length > 0 && (
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 14 }}>
                   {programs.map((p, i) => (
-                    <div key={i} style={{ background: '#f0f0f0', borderRadius: 20, padding: '6px 12px', fontSize: 13, display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <span style={{ fontWeight: 500 }}>{p.uniName}</span>
-                      <span style={{ color: '#666' }}>→ {p.majorLabel}</span>
-                      <span onClick={() => removeProgram(i)} style={{ cursor: 'pointer', color: '#999', fontSize: 16, lineHeight: 1 }}>×</span>
+                    <div key={i} style={{ background: 'var(--bg-chip-selected)', border: '1px solid var(--border-chip-selected)', borderRadius: 20, padding: '6px 12px', fontSize: 13, display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ fontWeight: 500, color: 'var(--text)' }}>{p.uniName}</span>
+                      <span style={{ color: 'var(--text-muted)' }}>→ {p.majorLabel}</span>
+                      <span onClick={() => removeProgram(i)} style={{ cursor: 'pointer', color: 'var(--text-muted)', fontSize: 16, lineHeight: 1 }}>×</span>
                     </div>
                   ))}
                 </div>
@@ -1276,7 +1284,7 @@ export default function Tab2() {
           {programs.length > 0 && (
             <div className="card">
               <div className="section-label" style={{ marginBottom: 10 }}>Step 3 — Find my courses</div>
-              <p style={{ fontSize: 13, color: '#666', marginBottom: 14 }}>
+              <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 14 }}>
                 Analyzing {programs.length} program{programs.length > 1 ? 's' : ''} to find which {ccName} courses give you the most coverage.
               </p>
               {loading
@@ -1299,74 +1307,51 @@ export default function Tab2() {
           </div>
 
           {showBanner && (
-            <div style={{ background: '#f0edff', border: '1px solid #d4ccff', borderRadius: 12, padding: '16px 18px', marginBottom: 20 }}>
+            <div style={{ background: 'var(--bg-hint)', border: '1px solid var(--border)', borderRadius: 12, padding: '16px 18px', marginBottom: 20 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}>
-                <div style={{ fontWeight: 700, fontSize: 14, color: '#1a1a1a' }}>How to read this</div>
+                <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--text)' }}>How to read this</div>
                 <button onClick={() => { setShowBanner(false); localStorage.setItem('tab2_banner_dismissed', '1') }}
-                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#aaa', fontSize: 20, lineHeight: 1, padding: 0, flexShrink: 0 }} aria-label="Dismiss">×</button>
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: 20, lineHeight: 1, padding: 0, flexShrink: 0 }} aria-label="Dismiss">×</button>
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: isWide ? '1fr 1fr' : '1fr', gap: '8px 20px', marginBottom: 16 }}>
-                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-                  <span style={{ color: '#6C5CE7', fontSize: 18, lineHeight: 1, flexShrink: 0, marginTop: 1 }}>●</span>
-                  <div style={{ fontSize: 12, color: '#444', lineHeight: 1.5 }}>
-                    <strong style={{ color: '#1a1a1a' }}>Purple dot</strong> — this program requires the course
+                {[
+                  { icon: '●', iconColor: '#a78bfa', label: 'Purple dot', desc: '— this program requires the course' },
+                  { icon: '●', iconColor: 'var(--border)', label: 'Grey dot', desc: '— not required by that program' },
+                  { icon: '🟡', iconColor: null, label: 'Yellow card', desc: '— choose from the group, you don\'t need all of them' },
+                  { icon: '🔴', iconColor: null, label: 'Red row', desc: '— no equivalent course at your CC' },
+                  { icon: '▼', iconColor: null, label: 'Tap any row', desc: '— see which university requirement it satisfies' },
+                  { icon: '☑', iconColor: null, label: 'Check it off', desc: '— progress saves automatically' },
+                ].map(({ icon, iconColor, label, desc }) => (
+                  <div key={label} style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                    <span style={{ color: iconColor || 'inherit', fontSize: iconColor ? 18 : 14, lineHeight: 1, flexShrink: 0, marginTop: 1 }}>{icon}</span>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.5 }}>
+                      <strong style={{ color: 'var(--text)' }}>{label}</strong> {desc}
+                    </div>
                   </div>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-                  <span style={{ color: '#e0e0e0', fontSize: 18, lineHeight: 1, flexShrink: 0, marginTop: 1 }}>●</span>
-                  <div style={{ fontSize: 12, color: '#444', lineHeight: 1.5 }}>
-                    <strong style={{ color: '#1a1a1a' }}>Grey dot</strong> — not required by that program
-                  </div>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-                  <span style={{ fontSize: 16, lineHeight: 1, flexShrink: 0, marginTop: 1 }}>🟡</span>
-                  <div style={{ fontSize: 12, color: '#444', lineHeight: 1.5 }}>
-                    <strong style={{ color: '#1a1a1a' }}>Yellow card</strong> — choose from the group, you don't need all of them
-                  </div>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-                  <span style={{ fontSize: 16, lineHeight: 1, flexShrink: 0, marginTop: 1 }}>🔴</span>
-                  <div style={{ fontSize: 12, color: '#444', lineHeight: 1.5 }}>
-                    <strong style={{ color: '#1a1a1a' }}>Red row</strong> — no equivalent course at your CC
-                  </div>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-                  <span style={{ fontSize: 14, lineHeight: 1, flexShrink: 0, marginTop: 2 }}>▼</span>
-                  <div style={{ fontSize: 12, color: '#444', lineHeight: 1.5 }}>
-                    <strong style={{ color: '#1a1a1a' }}>Tap any row</strong> — see which university requirement it satisfies
-                  </div>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-                  <span style={{ fontSize: 14, lineHeight: 1, flexShrink: 0, marginTop: 2 }}>☑</span>
-                  <div style={{ fontSize: 12, color: '#444', lineHeight: 1.5 }}>
-                    <strong style={{ color: '#1a1a1a' }}>Check it off</strong> — progress saves automatically
-                  </div>
-                </div>
+                ))}
               </div>
 
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 16, paddingTop: 12, borderTop: '1px solid #d4ccff' }}>
-                <span style={{ fontSize: 10, background: '#ede9ff', color: '#6C5CE7', borderRadius: 4, padding: '3px 8px', fontWeight: 700 }}>ALL PROGRAMS</span>
-                <span style={{ fontSize: 10, background: '#e0f7f4', color: '#0d7377', borderRadius: 4, padding: '3px 8px', fontWeight: 700 }}>MULTIPLE</span>
-                <span style={{ fontSize: 10, background: '#dbeafe', color: '#1e40af', borderRadius: 4, padding: '3px 8px', fontWeight: 700 }}>SCHOOL-SPECIFIC</span>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 16, paddingTop: 12, borderTop: `1px solid var(--border)` }}>
+                <span style={{ fontSize: 10, background: 'var(--bg-chip-selected)', color: '#a78bfa', borderRadius: 4, padding: '3px 8px', fontWeight: 700 }}>ALL PROGRAMS</span>
+                <span style={{ fontSize: 10, background: '#0d2a28', color: '#34d399', borderRadius: 4, padding: '3px 8px', fontWeight: 700 }}>MULTIPLE</span>
+                <span style={{ fontSize: 10, background: '#0d1a2e', color: '#60a5fa', borderRadius: 4, padding: '3px 8px', fontWeight: 700 }}>SCHOOL-SPECIFIC</span>
               </div>
 
               {overlapData.totalPrograms > 1 && (
-                <div style={{ background: '#fff', border: '1px solid #d4ccff', borderRadius: 10, padding: '12px 14px' }}>
-                  <div style={{ fontWeight: 700, fontSize: 13, color: '#1a1a1a', marginBottom: 8 }}>📋 Prioritize for max efficiency</div>
+                <div style={{ background: 'var(--bg-card)', border: `1px solid var(--border)`, borderRadius: 10, padding: '12px 14px' }}>
+                  <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--text)', marginBottom: 8 }}>📋 Prioritize for max efficiency</div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-                      <span style={{ fontSize: 10, background: '#ede9ff', color: '#6C5CE7', borderRadius: 4, padding: '3px 8px', fontWeight: 700, flexShrink: 0, marginTop: 1 }}>1st ALL PROGRAMS</span>
-                      <span style={{ fontSize: 12, color: '#444', lineHeight: 1.5 }}>Do these first — one course counts toward every school at once. Maximum efficiency.</span>
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-                      <span style={{ fontSize: 10, background: '#e0f7f4', color: '#0d7377', borderRadius: 4, padding: '3px 8px', fontWeight: 700, flexShrink: 0, marginTop: 1 }}>2nd MULTIPLE</span>
-                      <span style={{ fontSize: 12, color: '#444', lineHeight: 1.5 }}>Do these next — solid overlap, keeps several options open.</span>
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-                      <span style={{ fontSize: 10, background: '#dbeafe', color: '#1e40af', borderRadius: 4, padding: '3px 8px', fontWeight: 700, flexShrink: 0, marginTop: 1 }}>3rd SCHOOL-SPECIFIC</span>
-                      <span style={{ fontSize: 12, color: '#444', lineHeight: 1.5 }}>Do these last, with your remaining units, once you've narrowed down your top-choice school. Transfer students can bring a max of 70 units.</span>
-                    </div>
+                    {[
+                      { badge: 'ALL PROGRAMS', bg: 'var(--bg-chip-selected)', color: '#a78bfa', order: '1st', desc: 'Do these first — one course counts toward every school at once. Maximum efficiency.' },
+                      { badge: 'MULTIPLE', bg: '#0d2a28', color: '#34d399', order: '2nd', desc: 'Do these next — solid overlap, keeps several options open.' },
+                      { badge: 'SCHOOL-SPECIFIC', bg: '#0d1a2e', color: '#60a5fa', order: '3rd', desc: 'Do these last, with your remaining units, once you\'ve narrowed down your top-choice school. Transfer students can bring a max of 70 units.' },
+                    ].map(({ badge, bg, color, order, desc }) => (
+                      <div key={badge} style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                        <span style={{ fontSize: 10, background: bg, color, borderRadius: 4, padding: '3px 8px', fontWeight: 700, flexShrink: 0, marginTop: 1 }}>{order} {badge}</span>
+                        <span style={{ fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.5 }}>{desc}</span>
+                      </div>
+                    ))}
                   </div>
                 </div>
               )}
@@ -1381,9 +1366,9 @@ export default function Tab2() {
               )}
             </div>
 
-            {/* Sidebar — sticky with independent scroll */}
+            {/* Sidebar */}
             <div style={{ position: isWide ? 'sticky' : 'static', top: 16, maxHeight: isWide ? 'calc(100vh - 32px)' : undefined, overflowY: isWide ? 'auto' : undefined }}>
-              <div className="card" style={{ background: '#f9f9f7', border: '1px solid #e8e8e4' }}>
+              <div className="card" style={{ borderTop: '3px solid #6C5CE7' }}>
                 {renderSidebar()}
               </div>
             </div>

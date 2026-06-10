@@ -385,14 +385,7 @@ export default function App() {
   const [showSaved, setShowSaved] = useState(false)
   const [user, setUser] = useState(null)
   const [dropdownOpen, setDropdownOpen] = useState(false)
-  const [darkMode, setDarkMode] = useState(() => localStorage.getItem('kourzo-theme') === 'dark')
   const dropdownRef = useRef(null)
-
-  // Apply theme to document
-  useEffect(() => {
-    document.documentElement.setAttribute('data-theme', darkMode ? 'dark' : 'light')
-    localStorage.setItem('kourzo-theme', darkMode ? 'dark' : 'light')
-  }, [darkMode])
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => { setUser(data.user) })
@@ -531,7 +524,7 @@ export default function App() {
                       <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{c.units ? `${c.units} units` : ''}</div>
                       {c.note && <div style={{ fontSize: 12, color: '#f59e0b', marginTop: 2 }}>⚠️ {c.note}</div>}
                       {eq.receivingCourse.includes('+') && (
-                        <div style={{ fontSize: 12, color: '#6C5CE7', marginTop: 2 }}>
+                        <div style={{ fontSize: 12, color: '#a78bfa', marginTop: 2 }}>
                           ✅ Also satisfies: {eq.receivingCourse.split('+').slice(1).map(s => s.trim()).join(', ')}
                         </div>
                       )}
@@ -598,47 +591,36 @@ export default function App() {
           </div>
         )}
 
-        {/* Right side: theme toggle + user menu */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
-          {/* Dark mode toggle */}
-          <button
-            className="theme-toggle"
-            onClick={() => setDarkMode(d => !d)}
-            title={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}
-          >
-            {darkMode ? '☀️' : '🌙'}
-          </button>
+        {/* Right side: user menu */}
+        {user && (
+          <div ref={dropdownRef} style={{ position: 'relative' }}>
+            <button
+              onClick={() => setDropdownOpen(o => !o)}
+              style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'none', border: '1.5px solid var(--border-input)', borderRadius: 999, padding: '6px 12px 6px 6px', cursor: 'pointer', fontSize: 13, color: 'var(--text)' }}
+            >
+              <div style={{ width: 30, height: 30, borderRadius: '50%', background: 'linear-gradient(135deg, #6C5CE7, #a78bfa)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 14, flexShrink: 0 }}>
+                {getInitials(user.email)}
+              </div>
+              <span style={{ maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user.email}</span>
+              <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>▼</span>
+            </button>
 
-          {user && (
-            <div ref={dropdownRef} style={{ position: 'relative' }}>
-              <button
-                onClick={() => setDropdownOpen(o => !o)}
-                style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'none', border: '1.5px solid var(--border-input)', borderRadius: 999, padding: '6px 12px 6px 6px', cursor: 'pointer', fontSize: 13, color: 'var(--text)' }}
-              >
-                <div style={{ width: 30, height: 30, borderRadius: '50%', background: 'linear-gradient(135deg, #6C5CE7, #a78bfa)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 14, flexShrink: 0 }}>
-                  {getInitials(user.email)}
+            {dropdownOpen && (
+              <div style={{ position: 'absolute', right: 0, top: 'calc(100% + 8px)', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 12, boxShadow: 'var(--dropdown-shadow)', minWidth: 200, zIndex: 100, overflow: 'hidden' }}>
+                <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)' }}>
+                  <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 2 }}>Signed in as</div>
+                  <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)', wordBreak: 'break-all' }}>{user.email}</div>
                 </div>
-                <span style={{ maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user.email}</span>
-                <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>▼</span>
-              </button>
-
-              {dropdownOpen && (
-                <div style={{ position: 'absolute', right: 0, top: 'calc(100% + 8px)', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 12, boxShadow: 'var(--dropdown-shadow)', minWidth: 200, zIndex: 100, overflow: 'hidden' }}>
-                  <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)' }}>
-                    <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 2 }}>Signed in as</div>
-                    <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)', wordBreak: 'break-all' }}>{user.email}</div>
-                  </div>
-                  <button
-                    onClick={async () => { await supabase.auth.signOut(); setDropdownOpen(false) }}
-                    style={{ width: '100%', padding: '12px 16px', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, color: '#e53935', fontWeight: 500 }}
-                  >
-                    Sign out
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
+                <button
+                  onClick={async () => { await supabase.auth.signOut(); setDropdownOpen(false) }}
+                  style={{ width: '100%', padding: '12px 16px', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, color: '#e53935', fontWeight: 500 }}
+                >
+                  Sign out
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* ── Not signed in ── */}
@@ -785,16 +767,15 @@ export default function App() {
                           </div>
                         ))}
                         <div style={{ background: 'var(--bg-hint)', borderRadius: 8, padding: '10px 12px', marginBottom: 14 }}>
-                          <div style={{ fontSize: 12, fontWeight: 600, color: '#6C5CE7', marginBottom: 6 }}>💡 When you get to the schedule:</div>
+                          <div style={{ fontSize: 12, fontWeight: 600, color: '#a78bfa', marginBottom: 6 }}>💡 When you get to the schedule:</div>
                           {opt.courses.length === 1
-                            ? <div style={{ fontSize: 13, color: 'var(--text)' }}>Search for <span style={{ fontFamily: 'monospace', fontWeight: 600, color: '#6C5CE7' }}>{opt.courses[0].prefix} {opt.courses[0].number}</span></div>
-                            : <ol style={{ paddingLeft: 18, margin: 0 }}>{opt.courses.map((c, k) => <li key={k} style={{ fontSize: 13, color: 'var(--text)', marginBottom: 4 }}>Search for <span style={{ fontFamily: 'monospace', fontWeight: 600, color: '#6C5CE7' }}>{c.prefix} {c.number}</span></li>)}</ol>
+                            ? <div style={{ fontSize: 13, color: 'var(--text)' }}>Search for <span style={{ fontFamily: 'monospace', fontWeight: 600, color: '#a78bfa' }}>{opt.courses[0].prefix} {opt.courses[0].number}</span></div>
+                            : <ol style={{ paddingLeft: 18, margin: 0 }}>{opt.courses.map((c, k) => <li key={k} style={{ fontSize: 13, color: 'var(--text)', marginBottom: 4 }}>Search for <span style={{ fontFamily: 'monospace', fontWeight: 600, color: '#a78bfa' }}>{c.prefix} {c.number}</span></li>)}</ol>
                           }
                         </div>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                           <a className="avail-link" href={getScheduleUrl(selectedCC.ccName)} target="_blank" rel="noreferrer" style={{ fontWeight: 600, fontSize: 14 }}>🔍 Search schedule at {selectedCC.ccName} ↗</a>
                           <a className="avail-link" href="https://www.cccapply.org/" target="_blank" rel="noreferrer" style={{ color: 'var(--text-muted)', fontWeight: 400 }}>📋 Apply / Enroll via CCCApply ↗</a>
-                          <a className="avail-link" href={`https://assist.org/transfer/results?year=${YEAR_ID}&institution=${selectedCC.ccId}&agreement=${uniId}&agreementType=to&view=agreement&viewBy=major`} target="_blank" rel="noreferrer" style={{ color: 'var(--text-muted)', fontWeight: 400 }}>📄 View full agreement on ASSIST.org ↗</a>
                         </div>
                       </div>
                     </div>
