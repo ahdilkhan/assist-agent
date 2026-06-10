@@ -644,7 +644,7 @@ export default function App() {
             Continue with Google
           </button>
           <div className="or-divider" style={{ margin: '16px 0' }}>or</div>
-          <button className="btn-secondary" style={{ width: '100%', maxWidth: 380, padding: '11px', fontSize: 14 }} onClick={() => setGuestMode(true)}>
+          <button className="btn-google" style={{ width: '100%', maxWidth: 380, justifyContent: 'center', fontWeight: 400, color: 'var(--text-muted)' }} onClick={() => setGuestMode(true)}>
             Continue as guest
           </button>
         </div>
