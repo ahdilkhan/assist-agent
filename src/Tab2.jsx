@@ -779,11 +779,47 @@ export default function Tab2() {
 
           {!validTerms ? (
             <div style={{ fontSize: 12, color: '#aaa' }}>Set a valid start and transfer term above.</div>
-          ) : null}
+          ) : (
+            <>
+              <div style={{ fontSize: 11, color: '#888', marginBottom: 10, lineHeight: 1.5 }}>
+                {GE_TOTAL - Math.min(geTaken, GE_TOTAL)} GE units left · {perProgramPacings.find(p => p)?.semesters ?? '—'} semesters ({plannerStart} → {plannerEnd})
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 16 }}>
+                {overlapData.programLabels.map((label, i) => {
+                  const pacing = perProgramPacings[i]
+                  const mu = programMajorUnits[label] || { total: 0, done: 0 }
+                  const majorLeft = Math.max(0, mu.total - mu.done)
+                  const parts = label.split(' → ')
+                  const uniName = parts[0] || label
+                  const majorName = parts[1] || ''
+                  if (!pacing) return null
+                  const isDone = majorLeft === 0
+                  return (
+                    <div key={label} style={{ border: '1px solid #e8e8e4', borderRadius: 10, padding: '12px', background: '#fff', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      <div style={{ fontWeight: 700, fontSize: 12, color: '#1a1a1a', lineHeight: 1.3 }}>{uniName}</div>
+                      <div style={{ fontSize: 10, color: '#999', lineHeight: 1.2 }}>{majorName}</div>
+                      <div style={{ borderTop: '1px solid #f0f0ee', paddingTop: 8, marginTop: 2 }}>
+                        {isDone ? (
+                          <div style={{ fontSize: 18, fontWeight: 800, color: '#4caf50' }}>✓ Done</div>
+                        ) : (
+                          <div style={{ fontSize: 22, fontWeight: 800, color: '#1a1a1a', lineHeight: 1 }}>
+                            ~{pacing.perSemester}<span style={{ fontSize: 11, fontWeight: 400, color: '#888', marginLeft: 2 }}>u/sem</span>
+                          </div>
+                        )}
+                        <div style={{ fontSize: 10, color: '#aaa', marginTop: 3 }}>
+                          {isDone ? `${mu.total}u complete` : `${majorLeft}u left · ${mu.done}u done`}
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </>
+          )}
 
           {/* Disclaimer — styled as a clear info block, not tiny grey text */}
           <div style={{
-            marginTop: validTerms ? 4 : 16,
+            marginTop: 4,
             background: '#f5f5f3',
             border: '1px solid #e8e8e4',
             borderRadius: 8,
@@ -957,7 +993,7 @@ export default function Tab2() {
                         {label}
                         {coverageAll && <span style={{ fontSize: 10, background: '#ede9ff', color: '#6C5CE7', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>ALL PROGRAMS</span>}
                         {coverageMost && <span style={{ fontSize: 10, background: '#e0f7f4', color: '#0d7377', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>MULTIPLE</span>}
-                        {isSchoolSpecific && <span style={{ fontSize: 10, borderRadius: 4, padding: '2px 6px', fontWeight: 600, background: '#fce4ec', color: '#c2185b' }}>SCHOOL-SPECIFIC</span>}
+                        {isSchoolSpecific && <span style={{ fontSize: 10, borderRadius: 4, padding: '2px 6px', fontWeight: 600, background: '#dbeafe', color: '#1e40af' }}>SCHOOL-SPECIFIC</span>}
                       </div>
                       {subtitle && <div style={{ fontSize: 11, color: '#999', marginTop: 1 }}>{subtitle}{units ? ` · ${units} units` : ''}</div>}
                     </div>
@@ -1004,7 +1040,7 @@ export default function Tab2() {
                     {label}
                     {coverageAll && <span style={{ fontSize: 10, background: '#ede9ff', color: '#6C5CE7', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>ALL PROGRAMS</span>}
                     {coverageMost && <span style={{ fontSize: 10, background: '#e0f7f4', color: '#0d7377', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>MULTIPLE</span>}
-                    {isSchoolSpecific && <span style={{ fontSize: 10, borderRadius: 4, padding: '2px 6px', fontWeight: 600, background: '#fce4ec', color: '#c2185b' }}>SCHOOL-SPECIFIC</span>}
+                    {isSchoolSpecific && <span style={{ fontSize: 10, borderRadius: 4, padding: '2px 6px', fontWeight: 600, background: '#dbeafe', color: '#1e40af' }}>SCHOOL-SPECIFIC</span>}
                   </div>
                   {subtitle && <div style={{ fontSize: 11, color: '#999', marginTop: 1 }}>{subtitle}{units ? ` · ${units} units` : ''}</div>}
                 </div>
@@ -1278,7 +1314,7 @@ export default function Tab2() {
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 16, paddingTop: 12, borderTop: '1px solid #d4ccff' }}>
                 <span style={{ fontSize: 10, background: '#ede9ff', color: '#6C5CE7', borderRadius: 4, padding: '3px 8px', fontWeight: 700 }}>ALL PROGRAMS</span>
                 <span style={{ fontSize: 10, background: '#e0f7f4', color: '#0d7377', borderRadius: 4, padding: '3px 8px', fontWeight: 700 }}>MULTIPLE</span>
-                <span style={{ fontSize: 10, background: '#fce4ec', color: '#c2185b', borderRadius: 4, padding: '3px 8px', fontWeight: 700 }}>SCHOOL-SPECIFIC</span>
+                <span style={{ fontSize: 10, background: '#dbeafe', color: '#1e40af', borderRadius: 4, padding: '3px 8px', fontWeight: 700 }}>SCHOOL-SPECIFIC</span>
               </div>
 
               {/* Strategy tip */}
@@ -1295,7 +1331,7 @@ export default function Tab2() {
                       <span style={{ fontSize: 12, color: '#444', lineHeight: 1.5 }}>Do these next — solid overlap, keeps several options open.</span>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-                      <span style={{ fontSize: 10, background: '#fce4ec', color: '#c2185b', borderRadius: 4, padding: '3px 8px', fontWeight: 700, flexShrink: 0, marginTop: 1 }}>3rd SCHOOL-SPECIFIC</span>
+                      <span style={{ fontSize: 10, background: '#dbeafe', color: '#1e40af', borderRadius: 4, padding: '3px 8px', fontWeight: 700, flexShrink: 0, marginTop: 1 }}>3rd SCHOOL-SPECIFIC</span>
                       <span style={{ fontSize: 12, color: '#444', lineHeight: 1.5 }}>Do these last, with your remaining units, once you've narrowed down your top-choice school. Transfer students can bring a max of 70 units.</span>
                     </div>
                   </div>
@@ -1304,7 +1340,7 @@ export default function Tab2() {
             </div>
           )}
 
-          <div style={{ display: isWide ? 'grid' : 'block', gridTemplateColumns: isWide ? '1fr 300px' : undefined, gap: isWide ? 24 : 0, alignItems: 'start' }}>
+          <div style={{ display: isWide ? 'grid' : 'block', gridTemplateColumns: isWide ? '1fr 380px' : undefined, gap: isWide ? 24 : 0, alignItems: 'start' }}>
             <div>
               {renderCourseList()}
               {overlapData.rows.length === 0 && (
@@ -1319,66 +1355,7 @@ export default function Tab2() {
             </div>
           </div>
 
-          {/* ── Full-width pacing cards — snake wrap layout ── */}
-          {(() => {
-            const termList = includeSummer ? TERMS : TERMS.filter(t => !t.startsWith('Summer'))
-            const startIdx = termList.indexOf(plannerStart)
-            const endIdx = termList.indexOf(plannerEnd)
-            const validTerms = endIdx > startIdx
-            if (!validTerms) return null
-            const geLeft = Math.max(0, GE_TOTAL - geTaken)
-            const semesters = perProgramPacings.find(p => p)?.semesters ?? '—'
-            return (
-              <div style={{ marginTop: 24 }}>
-                <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 6 }}>
-                  <div style={{ fontWeight: 700, fontSize: 15, color: '#1a1a1a' }}>Units/semester to stay on track</div>
-                </div>
-                <div style={{ fontSize: 12, color: '#888', marginBottom: 14, lineHeight: 1.5 }}>
-                  Based on remaining major prep + GE ({geLeft} GE units left), spread across {semesters} semester{semesters !== 1 ? 's' : ''} from {plannerStart} to {plannerEnd}.
-                </div>
-                {/* Snake-wrap: auto-fill columns min 180px, so 2–4+ per row depending on screen width */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 12 }}>
-                  {overlapData.programLabels.map((label, i) => {
-                    const pacing = perProgramPacings[i]
-                    const mu = programMajorUnits[label] || { total: 0, done: 0 }
-                    const majorLeft = Math.max(0, mu.total - mu.done)
-                    const parts = label.split(' → ')
-                    const uniName = parts[0] || label
-                    const majorName = parts[1] || ''
-                    if (!pacing) return null
-                    const isDone = majorLeft === 0
-
-                    return (
-                      <div key={label} style={{
-                        border: '1px solid #e8e8e4', borderRadius: 12, padding: '14px 16px',
-                        background: '#fff', display: 'flex', flexDirection: 'column', gap: 8,
-                      }}>
-                        <div>
-                          <div style={{ fontWeight: 700, fontSize: 13, color: '#1a1a1a', lineHeight: 1.3 }}>{uniName}</div>
-                          <div style={{ fontSize: 11, color: '#999', lineHeight: 1.3, marginTop: 3 }}>{majorName}</div>
-                        </div>
-                        <div style={{ borderTop: '1px solid #f0f0ee', paddingTop: 8 }}>
-                          {isDone ? (
-                            <div style={{ fontSize: 22, fontWeight: 800, color: '#4caf50' }}>✓ Done</div>
-                          ) : (
-                            <div style={{ fontSize: 26, fontWeight: 800, color: '#1a1a1a', lineHeight: 1 }}>
-                              ~{pacing.perSemester}
-                              <span style={{ fontSize: 13, fontWeight: 400, color: '#888', marginLeft: 2 }}>u/sem</span>
-                            </div>
-                          )}
-                          <div style={{ fontSize: 11, color: '#aaa', marginTop: 4 }}>
-                            {isDone
-                              ? `All ${mu.total}u of major prep complete`
-                              : `${majorLeft}u major left · ${mu.done}u done`}
-                          </div>
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              </div>
-            )
-          })()}
+          
         </>
       )}
     </div>
