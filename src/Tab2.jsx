@@ -579,10 +579,11 @@ export default function Tab2() {
         }
       })
 
+      // Sort by ASSIST section order first, then coverage within each section
       rows.sort((a, b) => {
-        if (b.coverage !== a.coverage) return b.coverage - a.coverage
         if (a._groupPosition !== b._groupPosition) return a._groupPosition - b._groupPosition
         if (a._sectionPosition !== b._sectionPosition) return a._sectionPosition - b._sectionPosition
+        if (b.coverage !== a.coverage) return b.coverage - a.coverage
         return a.ccKey.localeCompare(b.ccKey)
       })
 
@@ -598,35 +599,28 @@ export default function Tab2() {
     }
   }
 
+  // CHANGE 1: computeAttainability — counts all required courses including red no-art rows, excludes recommended
   function computeAttainability() {
     if (!overlapData) return []
     const programMap = {}
     for (const label of overlapData.programLabels) {
       programMap[label] = { label, total: 0, completed: 0 }
     }
-    const programGroupMap = {}
     for (const row of overlapData.rows) {
       const isDone = completedCourses.has(row.ccKey)
       for (const pe of row.programEntries) {
         if (!programMap[pe.program]) continue
-        const pgKey = `${pe.program}|${pe.groupId}`
-        if (!programGroupMap[pgKey]) {
-          programGroupMap[pgKey] = { program: pe.program, nRequired: pe.nRequired, pickType: pe.pickType, totalCourses: 0, completedCourses: 0 }
-        }
-        programGroupMap[pgKey].totalCourses += 1
-        if (isDone) programGroupMap[pgKey].completedCourses += 1
+        if (isRecommendedSection(pe.groupTitle) || isRecommendedSection(pe.sectionLabel)) continue
+        programMap[pe.program].total += 1
+        if (isDone) programMap[pe.program].completed += 1
       }
     }
-    for (const pg of Object.values(programGroupMap)) {
-      if (!programMap[pg.program]) continue
-      if (pg.nRequired !== null) {
-        programMap[pg.program].total += 1
-        const isDone = pg.pickType === 'count' ? pg.completedCourses >= pg.nRequired : pg.completedCourses >= 1
-        if (isDone) programMap[pg.program].completed += 1
-      } else {
-        programMap[pg.program].total += pg.totalCourses
-        programMap[pg.program].completed += pg.completedCourses
-      }
+    // Also count no-articulation required courses toward total (can never be completed)
+    for (const na of (overlapData.noArticulation || [])) {
+      if (!programMap[na.program]) continue
+      if (isRecommendedSection(na.groupTitle) || isRecommendedSection(na.sectionLabel)) continue
+      if (na.coveredByAnotherOption) continue
+      programMap[na.program].total += 1
     }
     return Object.values(programMap).sort((a, b) => {
       const aPct = a.total === 0 ? 0 : a.completed / a.total
@@ -766,7 +760,7 @@ export default function Tab2() {
             </span>
           </div>
 
-          {/* GE units taken input — just the input, no progress bar */}
+          {/* GE units taken input */}
           <div style={{ marginBottom: 16 }}>
             <div style={{ fontSize: 10, color: '#aaa', marginBottom: 3 }}>GE units completed so far (out of {GE_TOTAL})</div>
             <input
@@ -784,6 +778,8 @@ export default function Tab2() {
               <div style={{ fontSize: 11, color: '#888', marginBottom: 10, lineHeight: 1.5 }}>
                 {GE_TOTAL - Math.min(geTaken, GE_TOTAL)} GE units left · {perProgramPacings.find(p => p)?.semesters ?? '—'} semesters ({plannerStart} → {plannerEnd})
               </div>
+
+              {/* CHANGE 4: Pacing cards — color coded by workload, courses/sem instead of units/sem */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 16 }}>
                 {overlapData.programLabels.map((label, i) => {
                   const pacing = perProgramPacings[i]
@@ -794,16 +790,31 @@ export default function Tab2() {
                   const majorName = parts[1] || ''
                   if (!pacing) return null
                   const isDone = majorLeft === 0
+                  const avgUnits = 4
+                  const coursesPerSem = Math.max(1, Math.round(pacing.perSemester / avgUnits))
+                  const loadColor = isDone ? '#16a34a' : coursesPerSem <= 3 ? '#16a34a' : coursesPerSem <= 4 ? '#d97706' : '#dc2626'
+                  const loadBg = isDone ? '#f0fdf4' : coursesPerSem <= 3 ? '#f0fdf4' : coursesPerSem <= 4 ? '#fffbeb' : '#fef2f2'
+                  const loadBorder = isDone ? '#86efac' : coursesPerSem <= 3 ? '#86efac' : coursesPerSem <= 4 ? '#fde68a' : '#fca5a5'
                   return (
-                    <div key={label} style={{ border: '1px solid #e8e8e4', borderRadius: 10, padding: '12px', background: '#fff', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    <div key={label} style={{
+                      borderRadius: 10,
+                      padding: '12px',
+                      background: loadBg,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 6,
+                      border: `1px solid ${loadBorder}`,
+                      borderLeft: `4px solid ${loadColor}`,
+                    }}>
                       <div style={{ fontWeight: 700, fontSize: 12, color: '#1a1a1a', lineHeight: 1.3 }}>{uniName}</div>
                       <div style={{ fontSize: 10, color: '#999', lineHeight: 1.2 }}>{majorName}</div>
                       <div style={{ borderTop: '1px solid #f0f0ee', paddingTop: 8, marginTop: 2 }}>
                         {isDone ? (
-                          <div style={{ fontSize: 18, fontWeight: 800, color: '#4caf50' }}>✓ Done</div>
+                          <div style={{ fontSize: 18, fontWeight: 800, color: '#16a34a' }}>✓ Done</div>
                         ) : (
-                          <div style={{ fontSize: 22, fontWeight: 800, color: '#1a1a1a', lineHeight: 1 }}>
-                            ~{pacing.perSemester}<span style={{ fontSize: 11, fontWeight: 400, color: '#888', marginLeft: 2 }}>u/sem</span>
+                          <div style={{ fontSize: 22, fontWeight: 800, color: loadColor, lineHeight: 1 }}>
+                            ~{coursesPerSem}
+                            <span style={{ fontSize: 11, fontWeight: 400, color: '#888', marginLeft: 2 }}>courses/sem</span>
                           </div>
                         )}
                         <div style={{ fontSize: 10, color: '#aaa', marginTop: 3 }}>
@@ -817,7 +828,7 @@ export default function Tab2() {
             </>
           )}
 
-          {/* Disclaimer — styled as a clear info block, not tiny grey text */}
+          {/* Disclaimer */}
           <div style={{
             marginTop: 4,
             background: '#f5f5f3',
@@ -877,6 +888,12 @@ export default function Tab2() {
         groups.push(g)
       }
       groupIdToGroup[groupId].rows.push(row)
+    }
+
+    // CHANGE 2 (part 2): rows are already globally sorted by coverage from generateOverlap,
+    // but also sort within each group so pick-N options show highest coverage first
+    for (const g of Object.values(groupIdToGroup)) {
+      g.rows.sort((a, b) => b.coverage - a.coverage)
     }
 
     for (const na of inlineRequiredNoArt) {
@@ -1083,6 +1100,8 @@ export default function Tab2() {
       }
     }
 
+    // CHANGE 3: Deduplicate no-art rows at the bottom using a seen-key set
+    const renderedNoArtKeys = new Set()
     for (const g of groups) {
       if ((g.noArtRows || []).length > 0 && g.rows.length === 0) {
         const displayLabel = g.sectionLabel || g.groupTitle || 'REQUIREMENTS'
@@ -1095,6 +1114,9 @@ export default function Tab2() {
           )
         }
         for (const na of g.noArtRows) {
+          const naRenderKey = `${na.uniReq.prefix}|${na.uniReq.number}|${na.program}`
+          if (renderedNoArtKeys.has(naRenderKey)) continue
+          renderedNoArtKeys.add(naRenderKey)
           rendered.push(
             <div key={`noart-req-${na.uniReq.prefix}-${na.uniReq.number}-${na.program}`} style={{ border: '1px solid #fecaca', borderRadius: 8, marginBottom: 6, background: '#fff5f5', overflow: 'hidden' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px' }}>
@@ -1270,7 +1292,6 @@ export default function Tab2() {
                   style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#aaa', fontSize: 20, lineHeight: 1, padding: 0, flexShrink: 0 }} aria-label="Dismiss">×</button>
               </div>
 
-              {/* Legend grid */}
               <div style={{ display: 'grid', gridTemplateColumns: isWide ? '1fr 1fr' : '1fr', gap: '8px 20px', marginBottom: 16 }}>
                 <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
                   <span style={{ color: '#6C5CE7', fontSize: 18, lineHeight: 1, flexShrink: 0, marginTop: 1 }}>●</span>
@@ -1310,14 +1331,12 @@ export default function Tab2() {
                 </div>
               </div>
 
-              {/* Badge legend */}
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 16, paddingTop: 12, borderTop: '1px solid #d4ccff' }}>
                 <span style={{ fontSize: 10, background: '#ede9ff', color: '#6C5CE7', borderRadius: 4, padding: '3px 8px', fontWeight: 700 }}>ALL PROGRAMS</span>
                 <span style={{ fontSize: 10, background: '#e0f7f4', color: '#0d7377', borderRadius: 4, padding: '3px 8px', fontWeight: 700 }}>MULTIPLE</span>
                 <span style={{ fontSize: 10, background: '#dbeafe', color: '#1e40af', borderRadius: 4, padding: '3px 8px', fontWeight: 700 }}>SCHOOL-SPECIFIC</span>
               </div>
 
-              {/* Strategy tip */}
               {overlapData.totalPrograms > 1 && (
                 <div style={{ background: '#fff', border: '1px solid #d4ccff', borderRadius: 10, padding: '12px 14px' }}>
                   <div style={{ fontWeight: 700, fontSize: 13, color: '#1a1a1a', marginBottom: 8 }}>📋 Prioritize for max efficiency</div>
@@ -1348,14 +1367,18 @@ export default function Tab2() {
               )}
             </div>
 
+            {/* CHANGE 5: Sidebar with independent scroll */}
             <div style={{ position: isWide ? 'sticky' : 'static', top: 20 }}>
-              <div className="card" style={{ background: '#f9f9f7', border: '1px solid #e8e8e4' }}>
+              <div className="card" style={{
+                background: '#f9f9f7',
+                border: '1px solid #e8e8e4',
+                maxHeight: 'calc(100vh - 48px)',
+                overflowY: 'auto',
+              }}>
                 {renderSidebar()}
               </div>
             </div>
           </div>
-
-          
         </>
       )}
     </div>
