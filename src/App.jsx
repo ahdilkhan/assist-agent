@@ -385,7 +385,14 @@ export default function App() {
   const [showSaved, setShowSaved] = useState(false)
   const [user, setUser] = useState(null)
   const [dropdownOpen, setDropdownOpen] = useState(false)
+  const [darkMode, setDarkMode] = useState(() => localStorage.getItem('kourzo-theme') === 'dark')
   const dropdownRef = useRef(null)
+
+  // Apply theme to document
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', darkMode ? 'dark' : 'light')
+    localStorage.setItem('kourzo-theme', darkMode ? 'dark' : 'light')
+  }, [darkMode])
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => { setUser(data.user) })
@@ -413,16 +420,9 @@ export default function App() {
   }
 
   function goHome() {
-    setStep(1)
-    setActiveTab('tab1')
-    setEquivalents([])
-    setSelectedCC(null)
-    setSelectedRegions([])
-    setCourseFilter('any')
-    setSavedCCs(new Set())
-    setShowSaved(false)
-    setOpenBlocks({})
-    setError('')
+    setStep(1); setActiveTab('tab1'); setEquivalents([]); setSelectedCC(null)
+    setSelectedRegions([]); setCourseFilter('any'); setSavedCCs(new Set())
+    setShowSaved(false); setOpenBlocks({}); setError('')
   }
 
   function toggleBlock(key) { setOpenBlocks(prev => ({ ...prev, [key]: !prev[key] })) }
@@ -489,8 +489,7 @@ export default function App() {
           if (incoming < existing) byCC[r.ccName] = r
         }
       }
-      const deduped = Object.values(byCC)
-      setEquivalents(deduped); setStep(2)
+      setEquivalents(Object.values(byCC)); setStep(2)
     } catch (e) { setError(`Error: ${e.message}`) }
     finally { setLoading(false); setLoadingMsg(''); setLoadingProgress(0) }
   }
@@ -510,27 +509,27 @@ export default function App() {
             <span onClick={e => toggleSave(eq.ccName, e)} style={{ fontSize: 16, cursor: 'pointer', flexShrink: 0, opacity: savedCCs.has(eq.ccName) ? 1 : 0.3, transition: 'opacity 0.15s' }}>💙</span>
             <div>
               <h3 style={{ margin: 0 }}>{eq.ccName}</h3>
-              <div style={{ fontSize: 12, color: '#888', marginTop: 2 }}>
+              <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
                 {getCourseCountLabel(eq)}
                 {eq.options?.[0]?.courses?.[0] ? ` · ${eq.options[0].courses[0].prefix} ${eq.options[0].courses[0].number}${eq.options[0].courses.length > 1 ? ' +' : ''}` : ''}
               </div>
             </div>
           </div>
-          <span style={{ fontSize: 11, color: '#aaa', flexShrink: 0 }}>{openBlocks[eq.ccName] ? '▲' : '▼'}</span>
+          <span style={{ fontSize: 11, color: 'var(--text-muted)', flexShrink: 0 }}>{openBlocks[eq.ccName] ? '▲' : '▼'}</span>
         </div>
         {openBlocks[eq.ccName] && (
           <div className="result-body">
             {eq.options?.map((opt, j) => (
               <div key={j}>
                 {j > 0 && <div className="or-divider">or</div>}
-                {opt.courses.length > 1 && <div style={{ fontSize: 11, color: '#888', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>Take all together</div>}
+                {opt.courses.length > 1 && <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>Take all together</div>}
                 {opt.groupNote && <div style={{ fontSize: 12, color: '#f57f17', marginBottom: 6 }}>⚠️ {opt.groupNote}</div>}
                 {opt.courses.map((c, k) => (
                   <div className="eq-row" key={k}>
                     <div>
-                      <div style={{ fontWeight: 500 }}>{c.prefix} {c.number} — {c.title}</div>
-                      <div style={{ fontSize: 12, color: '#888' }}>{c.units ? `${c.units} units` : ''}</div>
-                      {c.note && <div style={{ fontSize: 12, color: '#f57f17', marginTop: 2 }}>⚠️ {c.note}</div>}
+                      <div style={{ fontWeight: 500, color: 'var(--text)' }}>{c.prefix} {c.number} — {c.title}</div>
+                      <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{c.units ? `${c.units} units` : ''}</div>
+                      {c.note && <div style={{ fontSize: 12, color: '#f59e0b', marginTop: 2 }}>⚠️ {c.note}</div>}
                       {eq.receivingCourse.includes('+') && (
                         <div style={{ fontSize: 12, color: '#6C5CE7', marginTop: 2 }}>
                           ✅ Also satisfies: {eq.receivingCourse.split('+').slice(1).map(s => s.trim()).join(', ')}
@@ -556,84 +555,97 @@ export default function App() {
     return email[0].toUpperCase()
   }
 
+  const gradientText = {
+    background: 'linear-gradient(135deg, #6C5CE7 0%, #a78bfa 100%)',
+    WebkitBackgroundClip: 'text',
+    WebkitTextFillColor: 'transparent',
+    backgroundClip: 'text',
+  }
+
   return (
     <div className={`app${activeTab === 'tab2' ? ' wide' : ''}`}>
+
       {/* ── Header ── */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 32, paddingTop: 16 }}>
         {user ? (
           <div onClick={goHome} title="Go home" style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', flexShrink: 0 }}>
             <img src={kourzoLogo} alt="Kourzo icon" style={{ height: 40, width: 40, display: 'block' }} />
             <span style={{ fontSize: 24, fontWeight: 700, letterSpacing: '-0.5px', lineHeight: 1 }}>
-              <span style={{ background: 'linear-gradient(135deg, #6C5CE7 0%, #a78bfa 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>K</span>
-              <span style={{ color: '#1a1a1a' }}>ourzo</span>
+              <span style={gradientText}>K</span><span style={{ color: 'var(--text)' }}>ourzo</span>
             </span>
           </div>
         ) : (
           <div style={{ textAlign: 'center', width: '100%' }}>
             <img src={kourzoLogo} alt="Kourzo icon" style={{ height: 64, width: 64, display: 'block', margin: '0 auto 18px' }} />
-            {/* Gradient title */}
             <div style={{ fontSize: 32, fontWeight: 700, letterSpacing: '-0.5px', marginBottom: 16 }}>
-              <span style={{ background: 'linear-gradient(135deg, #6C5CE7 0%, #a78bfa 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>Kourzo</span>
+              <span style={gradientText}>Kourzo</span>
             </div>
-            <p style={{ margin: '0 auto 40px', color: '#666', fontSize: 15, maxWidth: 380, lineHeight: 1.6 }}>
+            <p style={{ margin: '0 auto 40px', color: 'var(--text-muted)', fontSize: 15, maxWidth: 380, lineHeight: 1.6 }}>
               The fastest way to plan your California CC transfer — find course equivalents and map out your path to any UC or CSU.
             </p>
-            {/* Feature cards */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 32, textAlign: 'left' }}>
               <div className="feature-card">
-                <div className="feature-icon">
-                  <span style={{ fontSize: 17 }}>🔍</span>
-                </div>
-                <div style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a', marginBottom: 5 }}>Find CC equivalents</div>
-                <div style={{ fontSize: 12, color: '#888', lineHeight: 1.6 }}>Pick a UC or CSU course and instantly see which community colleges offer an equivalent.</div>
+                <div className="feature-icon"><span style={{ fontSize: 17 }}>🔍</span></div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', marginBottom: 5 }}>Find CC equivalents</div>
+                <div style={{ fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.6 }}>Pick a UC or CSU course and instantly see which community colleges offer an equivalent.</div>
               </div>
               <div className="feature-card">
-                <div className="feature-icon">
-                  <span style={{ fontSize: 17 }}>🗺️</span>
-                </div>
-                <div style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a', marginBottom: 5 }}>Plan across schools</div>
-                <div style={{ fontSize: 12, color: '#888', lineHeight: 1.6 }}>Add multiple transfer targets and find the CC courses that count toward all of them at once.</div>
+                <div className="feature-icon"><span style={{ fontSize: 17 }}>🗺️</span></div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', marginBottom: 5 }}>Plan across schools</div>
+                <div style={{ fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.6 }}>Add multiple transfer targets and find the CC courses that count toward all of them at once.</div>
               </div>
             </div>
           </div>
         )}
 
-        {user && (
-          <div ref={dropdownRef} style={{ position: 'relative' }}>
-            <button
-              onClick={() => setDropdownOpen(o => !o)}
-              style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'none', border: '1.5px solid #e0daf5', borderRadius: 999, padding: '6px 12px 6px 6px', cursor: 'pointer', fontSize: 13 }}
-            >
-              <div style={{ width: 30, height: 30, borderRadius: '50%', background: 'linear-gradient(135deg, #6C5CE7, #a78bfa)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 14, flexShrink: 0 }}>
-                {getInitials(user.email)}
-              </div>
-              <span style={{ maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#333' }}>{user.email}</span>
-              <span style={{ fontSize: 10, color: '#aaa' }}>▼</span>
-            </button>
+        {/* Right side: theme toggle + user menu */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+          {/* Dark mode toggle */}
+          <button
+            className="theme-toggle"
+            onClick={() => setDarkMode(d => !d)}
+            title={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}
+          >
+            {darkMode ? '☀️' : '🌙'}
+          </button>
 
-            {dropdownOpen && (
-              <div style={{ position: 'absolute', right: 0, top: 'calc(100% + 8px)', background: '#fff', border: '1px solid #e8e4f5', borderRadius: 12, boxShadow: '0 6px 24px rgba(108,92,231,0.12)', minWidth: 200, zIndex: 100, overflow: 'hidden' }}>
-                <div style={{ padding: '12px 16px', borderBottom: '1px solid #f0eeff' }}>
-                  <div style={{ fontSize: 12, color: '#aaa', marginBottom: 2 }}>Signed in as</div>
-                  <div style={{ fontSize: 13, fontWeight: 500, color: '#333', wordBreak: 'break-all' }}>{user.email}</div>
+          {user && (
+            <div ref={dropdownRef} style={{ position: 'relative' }}>
+              <button
+                onClick={() => setDropdownOpen(o => !o)}
+                style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'none', border: '1.5px solid var(--border-input)', borderRadius: 999, padding: '6px 12px 6px 6px', cursor: 'pointer', fontSize: 13, color: 'var(--text)' }}
+              >
+                <div style={{ width: 30, height: 30, borderRadius: '50%', background: 'linear-gradient(135deg, #6C5CE7, #a78bfa)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 14, flexShrink: 0 }}>
+                  {getInitials(user.email)}
                 </div>
-                <button
-                  onClick={async () => { await supabase.auth.signOut(); setDropdownOpen(false) }}
-                  style={{ width: '100%', padding: '12px 16px', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, color: '#d32f2f', fontWeight: 500 }}
-                >
-                  Sign out
-                </button>
-              </div>
-            )}
-          </div>
-        )}
+                <span style={{ maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user.email}</span>
+                <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>▼</span>
+              </button>
+
+              {dropdownOpen && (
+                <div style={{ position: 'absolute', right: 0, top: 'calc(100% + 8px)', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 12, boxShadow: 'var(--dropdown-shadow)', minWidth: 200, zIndex: 100, overflow: 'hidden' }}>
+                  <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)' }}>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 2 }}>Signed in as</div>
+                    <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)', wordBreak: 'break-all' }}>{user.email}</div>
+                  </div>
+                  <button
+                    onClick={async () => { await supabase.auth.signOut(); setDropdownOpen(false) }}
+                    style={{ width: '100%', padding: '12px 16px', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, color: '#e53935', fontWeight: 500 }}
+                  >
+                    Sign out
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* ── Not signed in ── */}
       {!user ? (
-        <div className="card" style={{ textAlign: 'center', borderTop: '3px solid #6C5CE7' }}>
-          <h3 style={{ marginBottom: 6, fontSize: 17 }}>Sign in to get started</h3>
-          <p style={{ fontSize: 13, color: '#aaa', marginBottom: 20 }}>Free — takes a couple seconds</p>
+        <div className="card" style={{ textAlign: 'center' }}>
+          <h3 style={{ marginBottom: 6, fontSize: 17, color: 'var(--text)' }}>Sign in to get started</h3>
+          <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 20 }}>Free — takes a couple seconds</p>
           <button className="btn-google" onClick={signInWithGoogle}>
             <svg width="18" height="18" viewBox="0 0 18 18" xmlns="http://www.w3.org/2000/svg">
               <path d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.875 2.684-6.615z" fill="#4285F4"/>
@@ -667,7 +679,7 @@ export default function App() {
 
               {error && <div className="error-box">{error}</div>}
 
-              {/* ── Step 1: Search ── */}
+              {/* ── Step 1 ── */}
               {step === 1 && (
                 <div className="card">
                   <div className="field">
@@ -704,7 +716,7 @@ export default function App() {
                 </div>
               )}
 
-              {/* ── Step 2: Results ── */}
+              {/* ── Step 2 ── */}
               {step === 2 && (
                 <>
                   <div className="top-row">
@@ -714,12 +726,10 @@ export default function App() {
                     </div>
                     <button className="btn-secondary" onClick={() => { setStep(1); setEquivalents([]) }}>← New search</button>
                   </div>
-
                   <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
                     <div className={`pref-chip${!showSaved ? ' selected' : ''}`} style={{ padding: '6px 12px', fontSize: 12 }} onClick={() => setShowSaved(false)}>All colleges ({equivalents.length})</div>
                     <div className={`pref-chip${showSaved ? ' selected' : ''}`} style={{ padding: '6px 12px', fontSize: 12 }} onClick={() => setShowSaved(true)}>💙 Saved ({savedCCs.size})</div>
                   </div>
-
                   {!showSaved && (
                     <>
                       <div style={{ marginBottom: 12 }}>
@@ -743,13 +753,12 @@ export default function App() {
                       </div>
                     </>
                   )}
-
                   {showSaved && savedEquivalents.length === 0 && <div className="key-note">No saved colleges yet. Click 💙 on any college to save it.</div>}
                   {showSaved ? renderCCList(savedEquivalents) : renderCCList(filteredEquivalents)}
                 </>
               )}
 
-              {/* ── Step 3: Schedule ── */}
+              {/* ── Step 3 ── */}
               {step === 3 && selectedCC && (
                 <>
                   <div className="top-row">
@@ -763,29 +772,29 @@ export default function App() {
                     <div key={i}>
                       {i > 0 && <div className="or-divider">or</div>}
                       <div className="avail-card">
-                        {opt.courses.length > 1 && <div style={{ fontSize: 11, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>Take all of these together</div>}
-                        {opt.groupNote && <div style={{ fontSize: 12, color: '#f57f17', marginBottom: 8 }}>⚠️ {opt.groupNote}</div>}
+                        {opt.courses.length > 1 && <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>Take all of these together</div>}
+                        {opt.groupNote && <div style={{ fontSize: 12, color: '#f59e0b', marginBottom: 8 }}>⚠️ {opt.groupNote}</div>}
                         {opt.courses.map((c, j) => (
                           <div key={j} style={{ marginBottom: j < opt.courses.length - 1 ? 10 : 12 }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                               <h4>{c.prefix} {c.number} — {c.title}</h4>
                               <span className="badge badge-green">Articulated</span>
                             </div>
-                            {c.units && <div style={{ fontSize: 12, color: '#888', marginTop: 2 }}>{c.units} units</div>}
-                            {c.note && <div style={{ fontSize: 12, color: '#f57f17', marginTop: 4 }}>⚠️ {c.note}</div>}
+                            {c.units && <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>{c.units} units</div>}
+                            {c.note && <div style={{ fontSize: 12, color: '#f59e0b', marginTop: 4 }}>⚠️ {c.note}</div>}
                           </div>
                         ))}
-                        <div style={{ background: '#f5f3ff', borderRadius: 8, padding: '10px 12px', marginBottom: 14 }}>
+                        <div style={{ background: 'var(--bg-hint)', borderRadius: 8, padding: '10px 12px', marginBottom: 14 }}>
                           <div style={{ fontSize: 12, fontWeight: 600, color: '#6C5CE7', marginBottom: 6 }}>💡 When you get to the schedule:</div>
                           {opt.courses.length === 1
-                            ? <div style={{ fontSize: 13 }}>Search for <span style={{ fontFamily: 'monospace', fontWeight: 600, color: '#6C5CE7' }}>{opt.courses[0].prefix} {opt.courses[0].number}</span></div>
-                            : <ol style={{ paddingLeft: 18, margin: 0 }}>{opt.courses.map((c, k) => <li key={k} style={{ fontSize: 13, marginBottom: 4 }}>Search for <span style={{ fontFamily: 'monospace', fontWeight: 600, color: '#6C5CE7' }}>{c.prefix} {c.number}</span></li>)}</ol>
+                            ? <div style={{ fontSize: 13, color: 'var(--text)' }}>Search for <span style={{ fontFamily: 'monospace', fontWeight: 600, color: '#6C5CE7' }}>{opt.courses[0].prefix} {opt.courses[0].number}</span></div>
+                            : <ol style={{ paddingLeft: 18, margin: 0 }}>{opt.courses.map((c, k) => <li key={k} style={{ fontSize: 13, color: 'var(--text)', marginBottom: 4 }}>Search for <span style={{ fontFamily: 'monospace', fontWeight: 600, color: '#6C5CE7' }}>{c.prefix} {c.number}</span></li>)}</ol>
                           }
                         </div>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                           <a className="avail-link" href={getScheduleUrl(selectedCC.ccName)} target="_blank" rel="noreferrer" style={{ fontWeight: 600, fontSize: 14 }}>🔍 Search schedule at {selectedCC.ccName} ↗</a>
-                          <a className="avail-link" href="https://www.cccapply.org/" target="_blank" rel="noreferrer" style={{ color: '#aaa', fontWeight: 400 }}>📋 Apply / Enroll via CCCApply ↗</a>
-                          <a className="avail-link" href={`https://assist.org/transfer/results?year=${YEAR_ID}&institution=${selectedCC.ccId}&agreement=${uniId}&agreementType=to&view=agreement&viewBy=major`} target="_blank" rel="noreferrer" style={{ color: '#aaa', fontWeight: 400 }}>📄 View full agreement on ASSIST.org ↗</a>
+                          <a className="avail-link" href="https://www.cccapply.org/" target="_blank" rel="noreferrer" style={{ color: 'var(--text-muted)', fontWeight: 400 }}>📋 Apply / Enroll via CCCApply ↗</a>
+                          <a className="avail-link" href={`https://assist.org/transfer/results?year=${YEAR_ID}&institution=${selectedCC.ccId}&agreement=${uniId}&agreementType=to&view=agreement&viewBy=major`} target="_blank" rel="noreferrer" style={{ color: 'var(--text-muted)', fontWeight: 400 }}>📄 View full agreement on ASSIST.org ↗</a>
                         </div>
                       </div>
                     </div>
