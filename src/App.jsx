@@ -560,7 +560,7 @@ export default function App() {
     <div className={`app${activeTab === 'tab2' ? ' wide' : ''}`}>
 
       {/* ── Header ── */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 32, paddingTop: 16 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 32, paddingTop: 16 }}>
         {user ? (
           <div onClick={goHome} title="Go home" style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', flexShrink: 0 }}>
             <img src={kourzoLogo} alt="Kourzo icon" style={{ height: 40, width: 40, display: 'block' }} />
@@ -623,7 +623,7 @@ export default function App() {
           </div>
         )}
         {guestMode && (
-          <button className="btn-secondary" style={{ fontSize: 13 }} onClick={() => setGuestMode(false)}>
+          <button className="btn-secondary" style={{ fontSize: 13, padding: '8px 20px', whiteSpace: 'nowrap', alignSelf: 'flex-start' }} onClick={() => setGuestMode(false)}>
             Sign in
           </button>
         )}
@@ -644,7 +644,7 @@ export default function App() {
             Continue with Google
           </button>
           <div className="or-divider" style={{ margin: '16px 0' }}>or</div>
-          <button className="btn-secondary" style={{ width: '100%', padding: '11px', fontSize: 14 }} onClick={() => setGuestMode(true)}>
+          <button className="btn-secondary" style={{ width: '100%', maxWidth: 380, padding: '11px', fontSize: 14 }} onClick={() => setGuestMode(true)}>
             Continue as guest
           </button>
         </div>
