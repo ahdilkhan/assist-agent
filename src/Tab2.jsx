@@ -579,7 +579,6 @@ export default function Tab2() {
         }
       })
 
-      // Sort by ASSIST section order first, then coverage within each section
       rows.sort((a, b) => {
         if (a._groupPosition !== b._groupPosition) return a._groupPosition - b._groupPosition
         if (a._sectionPosition !== b._sectionPosition) return a._sectionPosition - b._sectionPosition
@@ -599,7 +598,6 @@ export default function Tab2() {
     }
   }
 
-  // CHANGE 1: computeAttainability — counts all required courses including red no-art rows, excludes recommended
   function computeAttainability() {
     if (!overlapData) return []
     const programMap = {}
@@ -615,7 +613,6 @@ export default function Tab2() {
         if (isDone) programMap[pe.program].completed += 1
       }
     }
-    // Also count no-articulation required courses toward total (can never be completed)
     for (const na of (overlapData.noArticulation || [])) {
       if (!programMap[na.program]) continue
       if (isRecommendedSection(na.groupTitle) || isRecommendedSection(na.sectionLabel)) continue
@@ -636,8 +633,6 @@ export default function Tab2() {
     return `${uni}\n${major || ''}`
   }
 
-  // ─── Per-program pacing ───────────────────────────────────────────────────
-
   function computePacingPerProgram(majorUnitsLeft, majorUnitsTotal, majorUnitsDone) {
     const termList = includeSummer ? TERMS : TERMS.filter(t => !t.startsWith('Summer'))
     const startIdx = termList.indexOf(plannerStart)
@@ -656,7 +651,6 @@ export default function Tab2() {
 
   const summary = computeAttainability()
 
-  // ─── Per-program units — computed at component level so sidebar + pacing section can both use ───
   const programMajorUnits = (() => {
     if (!overlapData) return {}
     const mu = {}
@@ -692,10 +686,10 @@ export default function Tab2() {
       <>
         {/* ── Progress ── */}
         <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 4, color: '#1a1a1a' }}>Your plan</div>
-        <div style={{ fontSize: 11, color: '#aaa', marginBottom: 14 }}>Check rows to mark as done</div>
+        <div style={{ fontSize: 11, color: '#666', marginBottom: 14 }}>Check rows to mark as done</div>
 
         {summary.length === 0 ? (
-          <div style={{ fontSize: 12, color: '#aaa' }}>Check off courses to see your progress</div>
+          <div style={{ fontSize: 12, color: '#888' }}>Check off courses to see your progress</div>
         ) : (
           summary.map((s, i) => {
             const pct = s.total === 0 ? 0 : Math.round((s.completed / s.total) * 100)
@@ -704,10 +698,10 @@ export default function Tab2() {
             return (
               <div key={i} style={{ marginBottom: i < summary.length - 1 ? 14 : 0 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                  <div style={{ fontSize: 12, fontWeight: isTop ? 600 : 400, color: isTop ? '#1a1a1a' : '#555', flex: 1, marginRight: 8 }}>
+                  <div style={{ fontSize: 12, fontWeight: isTop ? 600 : 400, color: isTop ? '#1a1a1a' : '#333', flex: 1, marginRight: 8 }}>
                     {showHeart && <span>💜 </span>}{s.label}
                   </div>
-                  <div style={{ fontSize: 11, color: '#888', flexShrink: 0 }}>{s.completed}/{s.total}</div>
+                  <div style={{ fontSize: 11, color: '#555', flexShrink: 0 }}>{s.completed}/{s.total}</div>
                 </div>
                 <div style={{ background: '#e0e0e0', borderRadius: 4, height: 6, overflow: 'hidden' }}>
                   <div style={{ background: pct === 100 ? '#4caf50' : '#6C5CE7', height: '100%', width: `${pct}%`, borderRadius: 4, transition: 'width 0.3s ease' }} />
@@ -718,20 +712,20 @@ export default function Tab2() {
         )}
 
         {/* ── Transfer Pacing ── */}
-        <div style={{ marginTop: 20, paddingTop: 20, borderTop: '1px solid #e8e8e4' }}>
-          <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 12, color: '#1a1a1a' }}>Transfer pacing</div>
+        <div style={{ marginTop: 20, borderTop: '1px solid #d4ccff', paddingTop: 20 }}>
+          <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 12, color: '#3730a3' }}>🗓 Transfer pacing</div>
 
           {/* Term selectors */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
             <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 10, color: '#aaa', marginBottom: 3 }}>Starting term</div>
+              <div style={{ fontSize: 10, color: '#555', marginBottom: 3 }}>Starting term</div>
               <select value={plannerStart} onChange={e => setPlannerStart(e.target.value)} style={{ fontSize: 12, width: '100%' }}>
                 {TERMS.slice(0, -1).map(t => <option key={t} value={t}>{t}</option>)}
               </select>
             </div>
-            <div style={{ color: '#ccc', marginTop: 14, fontSize: 12 }}>→</div>
+            <div style={{ color: '#aaa', marginTop: 14, fontSize: 12 }}>→</div>
             <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 10, color: '#aaa', marginBottom: 3 }}>Transfer goal</div>
+              <div style={{ fontSize: 10, color: '#555', marginBottom: 3 }}>Transfer goal</div>
               <select value={plannerEnd} onChange={e => setPlannerEnd(e.target.value)} style={{ fontSize: 12, width: '100%' }}>
                 {TERMS.slice(1).map(t => <option key={t} value={t}>{t}</option>)}
               </select>
@@ -755,14 +749,14 @@ export default function Tab2() {
                 transition: 'left 0.2s',
               }} />
             </div>
-            <span style={{ fontSize: 12, color: '#666', cursor: 'pointer' }} onClick={() => setIncludeSummer(v => !v)}>
+            <span style={{ fontSize: 12, color: '#444', cursor: 'pointer' }} onClick={() => setIncludeSummer(v => !v)}>
               Include summer
             </span>
           </div>
 
           {/* GE units taken input */}
           <div style={{ marginBottom: 16 }}>
-            <div style={{ fontSize: 10, color: '#aaa', marginBottom: 3 }}>GE units completed so far (out of {GE_TOTAL})</div>
+            <div style={{ fontSize: 10, color: '#555', marginBottom: 3 }}>GE units completed so far (out of {GE_TOTAL})</div>
             <input
               type="number" min={0} max={GE_TOTAL}
               value={geTaken}
@@ -772,15 +766,15 @@ export default function Tab2() {
           </div>
 
           {!validTerms ? (
-            <div style={{ fontSize: 12, color: '#aaa' }}>Set a valid start and transfer term above.</div>
+            <div style={{ fontSize: 12, color: '#666' }}>Set a valid start and transfer term above.</div>
           ) : (
             <>
-              <div style={{ fontSize: 11, color: '#888', marginBottom: 10, lineHeight: 1.5 }}>
+              <div style={{ fontSize: 11, color: '#444', marginBottom: 10, lineHeight: 1.5 }}>
                 {GE_TOTAL - Math.min(geTaken, GE_TOTAL)} GE units left · {perProgramPacings.find(p => p)?.semesters ?? '—'} semesters ({plannerStart} → {plannerEnd})
               </div>
 
-              {/* CHANGE 4: Pacing cards — color coded by workload, courses/sem instead of units/sem */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 16 }}>
+              {/* Pacing cards */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
                 {overlapData.programLabels.map((label, i) => {
                   const pacing = perProgramPacings[i]
                   const mu = programMajorUnits[label] || { total: 0, done: 0 }
@@ -807,23 +801,38 @@ export default function Tab2() {
                       borderLeft: `4px solid ${loadColor}`,
                     }}>
                       <div style={{ fontWeight: 700, fontSize: 12, color: '#1a1a1a', lineHeight: 1.3 }}>{uniName}</div>
-                      <div style={{ fontSize: 10, color: '#999', lineHeight: 1.2 }}>{majorName}</div>
-                      <div style={{ borderTop: '1px solid #f0f0ee', paddingTop: 8, marginTop: 2 }}>
+                      <div style={{ fontSize: 10, color: '#666', lineHeight: 1.2 }}>{majorName}</div>
+                      <div style={{ borderTop: '1px solid #e8e8e4', paddingTop: 8, marginTop: 2 }}>
                         {isDone ? (
                           <div style={{ fontSize: 18, fontWeight: 800, color: '#16a34a' }}>✓ Done</div>
                         ) : (
                           <div style={{ fontSize: 22, fontWeight: 800, color: loadColor, lineHeight: 1 }}>
                             ~{coursesPerSem}
-                            <span style={{ fontSize: 11, fontWeight: 400, color: '#888', marginLeft: 2 }}>courses/sem</span>
+                            <span style={{ fontSize: 11, fontWeight: 400, color: '#666', marginLeft: 2 }}>courses/sem</span>
                           </div>
                         )}
-                        <div style={{ fontSize: 10, color: '#aaa', marginTop: 3 }}>
+                        <div style={{ fontSize: 10, color: '#666', marginTop: 3 }}>
                           {isDone ? `${mu.total}u complete` : `${majorLeft}u left · ${mu.done}u done`}
                         </div>
                       </div>
                     </div>
                   )
                 })}
+              </div>
+
+              {/* Workload legend */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginBottom: 14, background: '#f5f4ff', borderRadius: 8, padding: '10px 12px' }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: '#3730a3', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 3 }}>Workload key</div>
+                {[
+                  { color: '#16a34a', bg: '#dcfce7', label: '≤ 3 courses/sem', sub: 'manageable' },
+                  { color: '#d97706', bg: '#fef3c7', label: '4 courses/sem', sub: 'busy but doable' },
+                  { color: '#dc2626', bg: '#fee2e2', label: '5+ courses/sem', sub: 'heavy semester' },
+                ].map(({ color, bg, label, sub }) => (
+                  <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <div style={{ width: 12, height: 12, borderRadius: 3, background: bg, border: `2px solid ${color}`, flexShrink: 0 }} />
+                    <span style={{ fontSize: 11, color: '#333' }}><strong>{label}</strong> — {sub}</span>
+                  </div>
+                ))}
               </div>
             </>
           )}
@@ -836,8 +845,8 @@ export default function Tab2() {
             borderRadius: 8,
             padding: '10px 12px',
           }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>How this is calculated</div>
-            <div style={{ fontSize: 11, color: '#666', lineHeight: 1.65 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: '#555', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>How this is calculated</div>
+            <div style={{ fontSize: 11, color: '#444', lineHeight: 1.65 }}>
               Major prep is based on your <strong>unchecked courses</strong> above. GE (IGETC) is shared across all UC/CSU schools — enter how many units you've already completed. The per-semester number combines remaining major prep + remaining GE, divided evenly across your semesters. Summer is excluded unless toggled on. Always verify sequencing with your counselor.
             </div>
           </div>
@@ -890,8 +899,6 @@ export default function Tab2() {
       groupIdToGroup[groupId].rows.push(row)
     }
 
-    // CHANGE 2 (part 2): rows are already globally sorted by coverage from generateOverlap,
-    // but also sort within each group so pick-N options show highest coverage first
     for (const g of Object.values(groupIdToGroup)) {
       g.rows.sort((a, b) => b.coverage - a.coverage)
     }
@@ -930,6 +937,8 @@ export default function Tab2() {
 
     let lastDisplayLabel = null
     const rendered = []
+    // FIX: single global set to track all rendered no-art keys across both passes
+    const renderedNoArtKeys = new Set()
 
     for (const group of groups) {
       const isPickN = group.nRequired !== null
@@ -1079,7 +1088,10 @@ export default function Tab2() {
           )
         })
 
+        // FIX: register each inline no-art key before pushing, so the bottom pass skips them
         effectiveNoArtRows.forEach(na => {
+          const naInlineKey = `${na.uniReq.prefix}|${na.uniReq.number}|${na.program}`
+          renderedNoArtKeys.add(naInlineKey)
           rendered.push(
             <div key={`noart-inline-${na.uniReq.prefix}-${na.uniReq.number}-${na.program}`} style={{ border: '1px solid #fecaca', borderRadius: 8, marginBottom: 6, background: '#fff5f5', overflow: 'hidden' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px' }}>
@@ -1100,8 +1112,7 @@ export default function Tab2() {
       }
     }
 
-    // CHANGE 3: Deduplicate no-art rows at the bottom using a seen-key set
-    const renderedNoArtKeys = new Set()
+    // Bottom pass: only render orphan no-art groups not already rendered above
     for (const g of groups) {
       if ((g.noArtRows || []).length > 0 && g.rows.length === 0) {
         const displayLabel = g.sectionLabel || g.groupTitle || 'REQUIREMENTS'
@@ -1367,14 +1378,9 @@ export default function Tab2() {
               )}
             </div>
 
-            {/* CHANGE 5: Sidebar with independent scroll */}
-            <div style={{ position: isWide ? 'sticky' : 'static', top: 20 }}>
-              <div className="card" style={{
-                background: '#f9f9f7',
-                border: '1px solid #e8e8e4',
-                maxHeight: 'calc(100vh - 48px)',
-                overflowY: 'auto',
-              }}>
+            {/* Sidebar — sticky with independent scroll */}
+            <div style={{ position: isWide ? 'sticky' : 'static', top: 16, maxHeight: isWide ? 'calc(100vh - 32px)' : undefined, overflowY: isWide ? 'auto' : undefined }}>
+              <div className="card" style={{ background: '#f9f9f7', border: '1px solid #e8e8e4' }}>
                 {renderSidebar()}
               </div>
             </div>
