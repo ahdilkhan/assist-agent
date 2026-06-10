@@ -377,132 +377,6 @@ function pickGroupLabel(group) {
   }
 }
 
-// ─── CC schedule URL lookup ───────────────────────────────────────────────────
-
-const CC_SCHEDULE_URLS = {
-  'Diablo Valley': 'https://webapps.4cd.edu/apps/courseschedulesearch/search-course.aspx?search=dvc',
-  'Los Medanos': 'https://webapps.4cd.edu/apps/courseschedulesearch/search-course.aspx?search=lmc',
-  'Contra Costa': 'https://webapps.4cd.edu/apps/courseschedulesearch/search-course.aspx',
-  'De Anza': 'https://www.deanza.edu/schedule/',
-  'Allan Hancock': 'https://www.hancockcollege.edu/apply/register.php',
-  'American River': 'https://arc.losrios.edu/admissions/get-started-and-apply',
-  'Antelope Valley': 'https://www.avc.edu/schedule',
-  'Bakersfield': 'https://reg-prod.ec.kccd.edu/StudentRegistrationSsb/ssb/term/termSelection?mode=search',
-  'Porterville': 'https://reg-prod.ec.kccd.edu/StudentRegistrationSsb/ssb/term/termSelection?mode=search',
-  'Copper Mountain': 'https://reg-prod.ec.kccd.edu/StudentRegistrationSsb/ssb/term/termSelection?mode=search',
-  'Cerro Coso': 'https://reg-prod.ec.kccd.edu/StudentRegistrationSsb/ssb/term/termSelection?mode=search',
-  'Barstow': 'https://ssbprod2.barstow.edu:8443/StudentRegistrationSsb/ssb/term/termSelection?mode=search',
-  'Butte': 'https://selfservice.butte.edu/Student/Courses',
-  'Cabrillo': 'https://cabrillo-ss.colleague.elluciancloud.com/Student/Courses',
-  'Canada College': 'https://phx-ban-apps.smccd.edu/StudentRegistrationSsb/ssb/term/termSelection?mode=search',
-  'Skyline': 'https://phx-ban-apps.smccd.edu/StudentRegistrationSsb/ssb/term/termSelection?mode=search',
-  'College of San Mateo': 'https://phx-ban-apps.smccd.edu/StudentRegistrationSsb/ssb/term/termSelection?mode=search',
-  'Cerritos': 'https://secure.cerritos.edu/schedule/',
-  'Las Positas': 'https://banssprod.clpccd.cc.ca.us/StudentRegistrationSsb/ssb/term/termSelection?mode=search',
-  'Chabot': 'https://banssprod.clpccd.cc.ca.us/StudentRegistrationSsb/ssb/term/termSelection?mode=search',
-  'Chaffey': 'https://colss-prod.ec.chaffey.edu/Student/Courses/Search',
-  'Citrus': 'https://apps.citruscollege.edu/live-class-schedule',
-  'City College of San Francisco': 'https://www.ccsf.edu/courses',
-  'Clovis': 'https://selfservice.scccd.edu/Student/Courses/Search',
-  'Fresno City': 'https://selfservice.scccd.edu/Student/Courses',
-  'Reedley': 'https://selfservice.scccd.edu/Student/Courses',
-  'Madera': 'https://selfservice.scccd.edu/Student/Courses',
-  'Coalinga': 'https://coalingacollege.edu/schedule/',
-  'Lemoore': 'https://lemoorecollege.edu/schedule/',
-  'Golden West': 'https://ssb-prod.ec.cccd.edu/PROD/pw_pub_sched.p_search?Term=202650&college=GW',
-  'Orange Coast': 'https://ssb-prod.ec.cccd.edu/PROD/pw_pub_sched.p_search?Term=202650&college=OC',
-  'Coastline': 'https://ssb-prod.ec.cccd.edu/PROD/pw_pub_sched.p_search',
-  'College of Alameda': 'https://alameda.edu/coa-online-schedule?campus=Alameda',
-  'Merritt': 'https://merritt.edu/online-schedule?campus=Merritt',
-  'Laney': 'https://laney.edu/class-scheduling?campus=Laney',
-  'College of Marin': 'https://netapps.marin.edu/Apps/Directory/ScheduleSearch.aspx',
-  'College of the Canyons': 'https://selfservice.canyons.edu/Student/Courses',
-  'College of the Desert': 'https://ss.collegeofthedesert.edu/Student/Courses',
-  'College of the Redwoods': 'https://webadvisor.redwoods.edu/WAPROD/WebAdvisor?TOKENIDX=574086532&SS=1&APP=ST&CONSTITUENCY=WBST',
-  'College of the Sequoias': 'https://banweb.cos.edu/prod/hzsched.p_search',
-  'College of the Siskiyous': 'https://reg-prod.cloud.siskiyous.edu/StudentRegistrationSsb/ssb/term/termSelection?mode=search',
-  'Columbia': 'https://myapps.yosemite.edu/ccclasssearch/',
-  'Modesto': 'https://myapps.yosemite.edu/mjcclasssearch/',
-  'Compton': 'https://cmptn-prod-pxes02.banner.elluciancloud.com:8090/StudentRegistrationSsb/ssb/term/termSelection?mode=search',
-  'Cosumnes River': 'https://crc.losrios.edu/academics/search-class-schedules',
-  'Crafton Hills': 'https://www.craftonhills.edu/eschedule/',
-  'Cuesta': 'https://ssb2.cuesta.edu/StudentRegistrationSsb/ssb/term/termSelection?mode=search',
-  'Cuyamaca': 'https://selfservice.gcccd.edu/Student/Courses',
-  'Grossmont': 'https://selfservice.gcccd.edu/Student/Courses',
-  'Cypress': 'https://schedule.nocccd.edu/?college=1',
-  'Fullerton College': 'https://schedule.nocccd.edu/?college=2',
-  'East Los Angeles': 'https://www.elac.edu/academics/calendar-schedules/schedules',
-  'El Camino': 'https://selfservice.elcamino.edu/student/courses/',
-  'Evergreen Valley': 'https://colss-prod.ec.sjeccd.edu/Student/Courses',
-  'San Jose City': 'https://colss-prod.ec.sjeccd.edu/Student/Courses',
-  'Folsom Lake': 'https://flc.losrios.edu/academics/search-class-schedules',
-  'Foothill': 'https://foothill.edu/schedule/index.html',
-  'Gavilan': 'https://reg-prod.ec.gavilan.edu/StudentRegistrationSsb/ssb/term/termSelection?mode=search',
-  'Glendale': 'https://psprd.glendale.edu/psc/guest/EMPLOYEE/HRMS/c/COMMUNITY_ACCESS.CLASS_SEARCH.GBL',
-  'Hartnell': 'https://stuserv.hartnell.edu/Student/Courses/',
-  'Imperial Valley': 'https://imperial.courses.civitaslearning.com/',
-  'Irvine Valley': 'https://classes.socccd.edu/smartscheduleweb/index/1/I/202670/MarketingCode',
-  'Saddleback': 'https://classes.socccd.edu/smartscheduleweb/index/1/S/202670/MarketingCode',
-  'Lake Tahoe': 'https://ss.ltcc.edu:8183/Student/Courses/Search',
-  'Lassen': 'https://webadvisor.lassencollege.edu:8171/student/courses',
-  'Long Beach City': 'https://www.cs.lbcc.edu/psc/guest/EMPLOYEE/SA/c/NUI_FRAMEWORK.PT_AGSTARTPAGE_NUI.GBL',
-  'Mendocino': 'https://service.mendocino.edu/Student/Courses',
-  'Merced College': 'https://ss-prod.mccd.edu/Student/Courses',
-  'MiraCosta': 'https://surf.miracosta.edu/psc/ps/EMPLOYEE/SA/c/MCC_CUSTOM_FL.MZ_CLASS_LIST_FL.GBL',
-  'Mission College': 'https://schedule.wvm.edu/?college=mc',
-  'West Valley': 'https://schedule.wvm.edu/?college=wv',
-  'Monterey Peninsula': 'https://reg-prod.mpc.elluciancloud.com:8103/StudentRegistrationSsb/ssb/term/termSelection?mode=search',
-  'Moorpark': 'https://schedule.vcccd.edu/',
-  'Ventura College': 'https://schedule.vcccd.edu/',
-  'Oxnard': 'https://schedule.vcccd.edu/',
-  'Moreno Valley': 'https://www.mvc.edu/class-finder/index.php',
-  'Mount San Antonio': 'https://prodrg.mtsac.edu/StudentRegistrationSsb/ssb/term/termSelection?mode=search',
-  'Mt. San Jacinto': 'https://selfservice.msjc.edu/css/courses',
-  'Napa Valley': 'https://colss-prod.ec.napavalley.edu/Student/Courses',
-  'Norco': 'https://norcocollege.edu/scheduleapp/index.html',
-  'Ohlone': 'https://selfservice.ohlone.edu:8443/Student/Courses',
-  'Palo Verde': 'https://prod-selfserv.paloverde.edu/Student/Courses/Search',
-  'Palomar': 'https://my.palomar.edu/psp/palc9prd_1/EMPLOYEE/SA/s/WEBLIB_HCX_CM.H_CLASS_SEARCH.FieldFormula.IScript_Main',
-  'Pasadena': 'https://findclasses.pasadena.edu/',
-  'Santiago Canyon': 'https://colss-prod.cloud.rsccd.edu/Student/Courses/Search',
-  'Santa Ana': 'https://colss-prod.cloud.rsccd.edu/Student/Courses/Search',
-  'Rio Hondo': 'https://ssb.riohondo.edu:8443/prodssb/pw_pub_sched.p_search',
-  'Riverside City': 'https://rcc.edu/academics/class-finder.html',
-  'Sacramento City': 'https://scc.losrios.edu/academics/search-class-schedules',
-  'San Bernardino Valley': 'https://www.valleycollege.edu/eschedule/',
-  'San Diego City': 'https://www.sdccd.edu/students/class-search/search.html',
-  'San Diego Mesa': 'https://www.sdccd.edu/students/class-search/search.html',
-  'San Diego Miramar': 'https://www.sdccd.edu/students/class-search/search.html',
-  'San Joaquin Delta': 'https://deltacollege.search.collegescheduler.com/search?term=2265',
-  'Santa Barbara City': 'https://banner.sbcc.edu/ords/ssb/pw_pub_sched.p_search?term=202710',
-  'Santa Monica': 'https://smccis.smc.edu/smcweb/f?p=373:1::::::',
-  'Santa Rosa': 'https://reg-prod.santarosajc.elluciancloud.com:8103/StudentRegistrationSsb/ssb/term/termSelection?mode=search',
-  'Shasta': 'https://mysc.shastacollege.edu/Student/Courses',
-  'Sierra College': 'https://ss.oci.sierracollege.edu/StudentRegistrationSsb/ssb/term/termSelection?mode=search',
-  'Solano': 'https://ssb.solano.edu/StudentRegistrationSsb/ssb/term/termSelection?mode=search',
-  'Southwestern': 'https://collselfserv.swccd.edu/Student/Courses',
-  'Taft': 'https://ct-prod-bsr.taftcollege.edu:8443/StudentRegistrationSsb/ssb/term/termSelection?mode=search',
-  'Victor Valley': 'https://vvc-ss.colleague.elluciancloud.com/Student/Courses',
-  'Woodland': 'https://wcc-self-service.yccd.edu/Student/Courses/Search',
-  'Yuba': 'https://yc.yccd.edu/admissions/courses/',
-  'Feather River': 'https://www.frc.edu/admissions/registration',
-  'Los Angeles City': 'https://www.lacitycollege.edu/Academics/class-schedule',
-  'Los Angeles Valley': 'https://mycollege-guest.laccd.edu/psc/classsearchguest/EMPLOYEE/HRMS/c/COMMUNITY_ACCESS.CLASS_SEARCH.GBL',
-  'Los Angeles Pierce': 'https://mycollege-guest.laccd.edu/psc/classsearchguest/EMPLOYEE/HRMS/c/COMMUNITY_ACCESS.CLASS_SEARCH.GBL',
-  'Los Angeles Harbor': 'https://mycollege-guest.laccd.edu/psc/classsearchguest/EMPLOYEE/HRMS/c/COMMUNITY_ACCESS.CLASS_SEARCH.GBL',
-  'Los Angeles Mission': 'https://mycollege-guest.laccd.edu/psc/classsearchguest/EMPLOYEE/HRMS/c/COMMUNITY_ACCESS.CLASS_SEARCH.GBL',
-  'Los Angeles Trade': 'https://mycollege-guest.laccd.edu/psc/classsearchguest/EMPLOYEE/HRMS/c/COMMUNITY_ACCESS.CLASS_SEARCH.GBL',
-  'Los Angeles Southwest': 'https://mycollege-guest.laccd.edu/psc/classsearchguest/EMPLOYEE/HRMS/c/COMMUNITY_ACCESS.CLASS_SEARCH.GBL',
-  'West Los Angeles': 'https://mycollege-guest.laccd.edu/psc/classsearchguest/EMPLOYEE/HRMS/c/COMMUNITY_ACCESS.CLASS_SEARCH.GBL',
-  'Kings River': 'https://selfservice.scccd.edu/Student/Courses',
-}
-
-function getCCScheduleUrl(ccName) {
-  if (!ccName) return null
-  const key = Object.keys(CC_SCHEDULE_URLS).find(k => ccName.includes(k))
-  return key ? CC_SCHEDULE_URLS[key] : null
-}
-
 // ─── Main Tab2 component ──────────────────────────────────────────────────────
 
 export default function Tab2() {
@@ -782,30 +656,8 @@ export default function Tab2() {
     const totalLeft = majorUnitsLeft + geLeft
     const perSemester = Math.round(totalLeft / semesters)
 
-    let status, statusLabel, statusColor, statusBg, advice
-    if (majorUnitsLeft === 0) {
-      status = 'done'; statusLabel = 'Done'
-      statusColor = '#3B6D11'; statusBg = '#EAF3DE'
-      const gePerSem = geLeft > 0 ? Math.round(geLeft / semesters) : 0
-      advice = gePerSem > 0
-        ? `Major prep complete. ~${gePerSem}u/semester for remaining GE.`
-        : `You're all set for this school.`
-    } else if (perSemester <= 15) {
-      status = 'on-track'; statusLabel = 'On track'
-      statusColor = '#3B6D11'; statusBg = '#EAF3DE'
-      advice = `You're on track. ~${perSemester} units per semester is a comfortable pace.`
-    } else if (perSemester <= 18) {
-      status = 'tight'; statusLabel = 'Tight'
-      statusColor = '#854F0B'; statusBg = '#FAEEDA'
-      advice = `It'll be tight. You'll need ~${perSemester} units every semester — no light terms.`
-    } else {
-      status = 'heavy'; statusLabel = 'Heavy load'
-      statusColor = '#A32D2D'; statusBg = '#FCEBEB'
-      advice = `This is a heavy load (~${perSemester}u/sem). Consider pushing your transfer goal back one term.`
-    }
-
     const barPct = Math.min(100, Math.round((perSemester / 20) * 100))
-    return { majorUnitsLeft, majorUnitsTotal, majorUnitsDone, geLeft, semesters, perSemester, status, statusLabel, statusColor, statusBg, advice, barPct }
+    return { majorUnitsLeft, majorUnitsTotal, majorUnitsDone, geLeft, semesters, perSemester, barPct }
   }
 
   const summary = computeAttainability()
@@ -813,8 +665,6 @@ export default function Tab2() {
   // ─── Sidebar ─────────────────────────────────────────────────────────────
 
   function renderSidebar() {
-    const scheduleUrl = getCCScheduleUrl(ccName)
-    const atCap = geTaken >= GE_TOTAL
     const termList = includeSummer ? TERMS : TERMS.filter(t => !t.startsWith('Summer'))
     const startIdx = termList.indexOf(plannerStart)
     const endIdx = termList.indexOf(plannerEnd)
@@ -841,26 +691,11 @@ export default function Tab2() {
       return computePacingPerProgram(majorLeft, mu.total, mu.done)
     })
 
-    // Overall worst status for summary banner
-    const statusRank = { done: 0, 'on-track': 1, tight: 2, heavy: 3 }
-    const worstStatus = perProgramPacings.reduce((worst, p) => {
-      if (!p) return worst
-      return (statusRank[p.status] || 0) > (statusRank[worst] || 0) ? p.status : worst
-    }, 'on-track')
-
-    const bannerMap = {
-      done:       { text: "You're all set — major prep complete for all schools.", label: 'On track', bg: '#EAF3DE', border: '#c5e0a0', color: '#3B6D11' },
-      'on-track': { text: "You're on track for all schools.",                      label: 'On track', bg: '#EAF3DE', border: '#c5e0a0', color: '#3B6D11' },
-      tight:      { text: "It'll be tight for some schools. Check the details below.", label: 'Tight', bg: '#FAEEDA', border: '#f5d49a', color: '#854F0B' },
-      heavy:      { text: "At least one school needs a heavier load than ideal. Check the details below.", label: 'Heavy load', bg: '#FCEBEB', border: '#f5c0c0', color: '#A32D2D' },
-    }
-    const banner = bannerMap[worstStatus] || bannerMap['on-track']
-
     return (
       <>
         {/* ── Progress ── */}
-        <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 4 }}>📊 Progress</div>
-        <div style={{ fontSize: 11, color: '#888', marginBottom: 12 }}>Check rows to update</div>
+        <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 4, color: '#1a1a1a' }}>Your plan</div>
+        <div style={{ fontSize: 11, color: '#aaa', marginBottom: 14 }}>Check rows to mark as done</div>
 
         {summary.length === 0 ? (
           <div style={{ fontSize: 12, color: '#aaa' }}>Check off courses to see your progress</div>
@@ -870,7 +705,7 @@ export default function Tab2() {
             const isTop = i === 0 && summary.length > 1
             const showHeart = isTop && completedCourses.size > 0
             return (
-              <div key={i} style={{ marginBottom: i < summary.length - 1 ? 16 : 0 }}>
+              <div key={i} style={{ marginBottom: i < summary.length - 1 ? 14 : 0 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
                   <div style={{ fontSize: 12, fontWeight: isTop ? 600 : 400, color: isTop ? '#1a1a1a' : '#555', flex: 1, marginRight: 8 }}>
                     {showHeart && <span>💜 </span>}{s.label}
@@ -887,7 +722,7 @@ export default function Tab2() {
 
         {/* ── Transfer Pacing ── */}
         <div style={{ marginTop: 20, paddingTop: 20, borderTop: '1px solid #e8e8e4' }}>
-          <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 12 }}>🗓 Transfer pacing</div>
+          <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 12, color: '#1a1a1a' }}>Transfer pacing</div>
 
           {/* Term selectors */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
@@ -928,9 +763,9 @@ export default function Tab2() {
             </span>
           </div>
 
-          {/* GE units taken input */}
-          <div style={{ marginBottom: 14 }}>
-            <div style={{ fontSize: 10, color: '#aaa', marginBottom: 3 }}>GE units completed so far</div>
+          {/* GE units taken input — just the input, no progress bar */}
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ fontSize: 10, color: '#aaa', marginBottom: 3 }}>GE units completed so far (out of {GE_TOTAL})</div>
             <input
               type="number" min={0} max={GE_TOTAL}
               value={geTaken}
@@ -939,116 +774,74 @@ export default function Tab2() {
             />
           </div>
 
-          {/* GE progress bar */}
-          <div style={{ marginBottom: 16 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#aaa', marginBottom: 4 }}>
-              <span>GE progress (IGETC)</span>
-              <span>{geTaken} of {GE_TOTAL} units</span>
-            </div>
-            <div style={{ background: '#e8e8e4', borderRadius: 6, height: 6, overflow: 'hidden' }}>
-              <div style={{
-                height: '100%', borderRadius: 6,
-                width: `${Math.min(100, Math.round((geTaken / GE_TOTAL) * 100))}%`,
-                background: atCap ? '#4caf50' : geTaken >= 28 ? '#f59e0b' : '#6C5CE7',
-                transition: 'width 0.3s ease',
-              }} />
-            </div>
-            {atCap
-              ? <div style={{ fontSize: 10, color: '#4caf50', marginTop: 3, fontWeight: 600 }}>GE complete ✓</div>
-              : <div style={{ fontSize: 10, color: '#bbb', marginTop: 3 }}>{GE_TOTAL - geTaken} units remaining</div>
-            }
-          </div>
-
           {!validTerms ? (
             <div style={{ fontSize: 12, color: '#aaa' }}>Set a valid start and transfer term above.</div>
           ) : (
             <>
-              {/* Overall banner */}
-              <div style={{ background: banner.bg, border: `1px solid ${banner.border}`, borderRadius: 10, padding: '10px 14px', marginBottom: 16 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div style={{ fontWeight: 600, fontSize: 12, color: banner.color, flex: 1, marginRight: 8 }}>{banner.text}</div>
-                  <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 20, background: 'rgba(0,0,0,0.07)', color: banner.color, flexShrink: 0 }}>{banner.label}</span>
-                </div>
+              {/* Per-school cards — snake/wrap layout */}
+              <div style={{ fontSize: 11, fontWeight: 700, color: '#aaa', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>
+                Units/semester to stay on track
+              </div>
+              <div style={{ fontSize: 11, color: '#888', marginBottom: 12, lineHeight: 1.5 }}>
+                Based on remaining major prep + GE ({GE_TOTAL - Math.min(geTaken, GE_TOTAL)} GE units left), spread across {overlapData.programLabels.map((_, i) => perProgramPacings[i]?.semesters).filter(Boolean)[0] ?? '—'} semesters.
               </div>
 
-              {/* Per-school cards */}
-              <div style={{ fontSize: 11, fontWeight: 700, color: '#aaa', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>Your schools</div>
+              {/* Snake-wrap grid: 2 cards per row, wraps to next row */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 16 }}>
+                {overlapData.programLabels.map((label, i) => {
+                  const pacing = perProgramPacings[i]
+                  const mu = programMajorUnits[label] || { total: 0, done: 0 }
+                  const majorLeft = Math.max(0, mu.total - mu.done)
+                  const parts = label.split(' → ')
+                  const uniName = parts[0] || label
+                  const majorName = parts[1] || ''
+                  if (!pacing) return null
 
-              {overlapData.programLabels.map((label, i) => {
-                const pacing = perProgramPacings[i]
-                const mu = programMajorUnits[label] || { total: 0, done: 0 }
-                const majorLeft = Math.max(0, mu.total - mu.done)
-                const parts = label.split(' → ')
-                const uniName = parts[0] || label
-                const majorName = parts[1] || ''
-                if (!pacing) return null
+                  const isDone = majorLeft === 0
 
-                return (
-                  <div key={label} style={{ border: '1px solid #e8e8e4', borderRadius: 10, marginBottom: 12, padding: '12px 14px', background: '#fff' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
+                  return (
+                    <div key={label} style={{
+                      border: '1px solid #e8e8e4', borderRadius: 10, padding: '10px 12px',
+                      background: '#fff', display: 'flex', flexDirection: 'column', gap: 6,
+                    }}>
                       <div>
-                        <div style={{ fontWeight: 700, fontSize: 13, color: '#1a1a1a' }}>{uniName}</div>
-                        <div style={{ fontSize: 11, color: '#888' }}>{majorName}</div>
+                        <div style={{ fontWeight: 700, fontSize: 12, color: '#1a1a1a', lineHeight: 1.3 }}>{uniName}</div>
+                        <div style={{ fontSize: 10, color: '#999', lineHeight: 1.3, marginTop: 2 }}>{majorName}</div>
                       </div>
-                      <span style={{
-                        fontSize: 11, fontWeight: 600, padding: '3px 9px', borderRadius: 20, flexShrink: 0, marginLeft: 8,
-                        background: pacing.statusBg, color: pacing.statusColor,
-                      }}>{pacing.statusLabel}</span>
-                    </div>
 
-                    {/* Stats row */}
-                    <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
-                      <div style={{ flex: 1, background: '#f9f9f7', borderRadius: 8, padding: '8px 10px' }}>
-                        {pacing.status === 'done' ? (
-                          <>
-                            <div style={{ fontSize: 18, fontWeight: 700, color: '#3B6D11' }}>✓ Done</div>
-                            <div style={{ fontSize: 11, color: '#888' }}>major prep</div>
-                            <div style={{ fontSize: 11, color: '#aaa' }}>all {mu.total}u complete</div>
-                          </>
-                        ) : (
-                          <>
-                            <div style={{ fontSize: 18, fontWeight: 700, color: '#1a1a1a' }}>{majorLeft}u</div>
-                            <div style={{ fontSize: 11, color: '#888' }}>major prep left</div>
-                            <div style={{ fontSize: 11, color: '#aaa' }}>{mu.done}u of {mu.total}u done</div>
-                          </>
-                        )}
-                      </div>
-                      <div style={{ flex: 1, background: pacing.statusBg, borderRadius: 8, padding: '8px 10px' }}>
-                        <div style={{ fontSize: 18, fontWeight: 700, color: pacing.statusColor }}>~{pacing.perSemester}u</div>
-                        <div style={{ fontSize: 11, color: pacing.statusColor, opacity: 0.85 }}>per semester</div>
-                        <div style={{ fontSize: 11, color: pacing.statusColor, opacity: 0.7 }}>major + GE combined</div>
+                      {isDone ? (
+                        <div style={{ fontSize: 20, fontWeight: 800, color: '#4caf50', lineHeight: 1 }}>✓</div>
+                      ) : (
+                        <div style={{ fontSize: 22, fontWeight: 800, color: '#1a1a1a', lineHeight: 1 }}>
+                          ~{pacing.perSemester}<span style={{ fontSize: 11, fontWeight: 400, color: '#888' }}>u/sem</span>
+                        </div>
+                      )}
+
+                      <div style={{ fontSize: 10, color: '#aaa' }}>
+                        {isDone
+                          ? `Major prep done · ${mu.total}u complete`
+                          : `${majorLeft}u major left · ${mu.done}u done`
+                        }
                       </div>
                     </div>
-
-                    {/* Bar */}
-                    <div style={{ background: '#e8e8e4', borderRadius: 6, height: 6, overflow: 'hidden', marginBottom: 4 }}>
-                      <div style={{
-                        height: '100%', borderRadius: 6,
-                        width: `${pacing.barPct}%`,
-                        background: (pacing.status === 'on-track' || pacing.status === 'done') ? '#4caf50' : pacing.status === 'tight' ? '#f59e0b' : '#ef4444',
-                        transition: 'width 0.4s ease',
-                      }} />
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: '#bbb', marginBottom: 8 }}>
-                      <span>light</span><span>comfortable up to 15u</span><span>heavy</span>
-                    </div>
-
-                    <div style={{ fontSize: 12, color: '#555', lineHeight: 1.5 }}>{pacing.advice}</div>
-                  </div>
-                )
-              })}
-
-              {scheduleUrl && (
-                <a href={scheduleUrl} target="_blank" rel="noopener noreferrer"
-                  style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 4, fontSize: 12, color: '#6C5CE7', textDecoration: 'none' }}>
-                  ↗ {ccName} schedule
-                </a>
-              )}
+                  )
+                })}
+              </div>
             </>
           )}
 
-          <div style={{ fontSize: 10, color: '#ccc', marginTop: 14, lineHeight: 1.6 }}>
-            Major prep based on unchecked courses in your plan. GE is shared — IGETC satisfies all UC/CSU schools. Per-semester load includes major prep and remaining GE. Summer excluded unless toggled on. Talk to your counselor about sequencing.
+          {/* Disclaimer — styled as a clear info block, not tiny grey text */}
+          <div style={{
+            marginTop: 4,
+            background: '#f5f5f3',
+            border: '1px solid #e8e8e4',
+            borderRadius: 8,
+            padding: '10px 12px',
+          }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>How this is calculated</div>
+            <div style={{ fontSize: 11, color: '#666', lineHeight: 1.65 }}>
+              Major prep is based on your <strong>unchecked courses</strong> above. GE (IGETC) is shared across all UC/CSU schools — enter how many units you've already completed. The per-semester number combines remaining major prep + remaining GE, divided evenly across your semesters. Summer is excluded unless toggled on. Always verify sequencing with your counselor.
+            </div>
           </div>
         </div>
       </>
@@ -1483,31 +1276,80 @@ export default function Tab2() {
           </div>
 
           {showBanner && (
-            <div style={{ background: '#f0edff', border: '1px solid #d4ccff', borderRadius: 10, padding: '12px 14px', marginBottom: 20, display: 'flex', gap: 12, alignItems: 'flex-start' }}>
-              <div style={{ flex: 1, fontSize: 12, color: '#444' }}>
-                <strong style={{ display: 'block', marginBottom: 8, fontSize: 13, color: '#1a1a1a' }}>How to read this</strong>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  <div><span style={{ color: '#6C5CE7', fontWeight: 700 }}>●</span> purple = that program requires this course &nbsp;·&nbsp; <span style={{ color: '#ccc', fontWeight: 700 }}>●</span> grey = not required</div>
-                  <div><span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 2, background: '#ffe082', verticalAlign: 'middle', marginRight: 4 }} />yellow-bordered card = choose from the group — you don't need all of them</div>
-                  <div>🔴 red row = no equivalent at your CC</div>
-                  <div>▼ tap any row to see which university requirement it satisfies</div>
-                  <div>☑ check it off once you've taken it — progress saves automatically</div>
-                  <div>⚠️ for unit-based groups, unit counts refer to <strong>university course units</strong></div>
+            <div style={{ background: '#f0edff', border: '1px solid #d4ccff', borderRadius: 12, padding: '16px 18px', marginBottom: 20 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}>
+                <div style={{ fontWeight: 700, fontSize: 14, color: '#1a1a1a' }}>How to read this</div>
+                <button onClick={() => { setShowBanner(false); localStorage.setItem('tab2_banner_dismissed', '1') }}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#aaa', fontSize: 20, lineHeight: 1, padding: 0, flexShrink: 0 }} aria-label="Dismiss">×</button>
+              </div>
+
+              {/* Legend grid */}
+              <div style={{ display: 'grid', gridTemplateColumns: isWide ? '1fr 1fr' : '1fr', gap: '8px 20px', marginBottom: 16 }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                  <span style={{ color: '#6C5CE7', fontSize: 18, lineHeight: 1, flexShrink: 0, marginTop: 1 }}>●</span>
+                  <div style={{ fontSize: 12, color: '#444', lineHeight: 1.5 }}>
+                    <strong style={{ color: '#1a1a1a' }}>Purple dot</strong> — this program requires the course
+                  </div>
                 </div>
-                {overlapData.totalPrograms > 1 && (
-                  <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid #d4ccff' }}>
-                    <strong style={{ display: 'block', marginBottom: 6, fontSize: 13, color: '#1a1a1a' }}>📋 Your transfer strategy</strong>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-                      <div>Transfer students can bring a maximum of <strong>70 units</strong> — so it matters which courses you take first.</div>
-                      <div><span style={{ fontSize: 10, background: '#ede9ff', color: '#6C5CE7', borderRadius: 4, padding: '1px 5px', fontWeight: 700 }}>ALL PROGRAMS</span> &nbsp;Take these first — one course satisfies every school at once.</div>
-                      <div><span style={{ fontSize: 10, background: '#fff3e0', color: '#f57f17', borderRadius: 4, padding: '1px 5px', fontWeight: 700 }}>MULTIPLE</span> &nbsp;Take these next — good overlap across several schools.</div>
-                      <div><span style={{ fontSize: 10, background: '#f5f4f0', color: '#999', borderRadius: 4, padding: '1px 5px', fontWeight: 700 }}>SCHOOL-SPECIFIC</span> &nbsp;Take these last — use remaining units on your top choice school.</div>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                  <span style={{ color: '#e0e0e0', fontSize: 18, lineHeight: 1, flexShrink: 0, marginTop: 1 }}>●</span>
+                  <div style={{ fontSize: 12, color: '#444', lineHeight: 1.5 }}>
+                    <strong style={{ color: '#1a1a1a' }}>Grey dot</strong> — not required by that program
+                  </div>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                  <span style={{ fontSize: 16, lineHeight: 1, flexShrink: 0, marginTop: 1 }}>🟡</span>
+                  <div style={{ fontSize: 12, color: '#444', lineHeight: 1.5 }}>
+                    <strong style={{ color: '#1a1a1a' }}>Yellow card</strong> — choose from the group, you don't need all of them
+                  </div>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                  <span style={{ fontSize: 16, lineHeight: 1, flexShrink: 0, marginTop: 1 }}>🔴</span>
+                  <div style={{ fontSize: 12, color: '#444', lineHeight: 1.5 }}>
+                    <strong style={{ color: '#1a1a1a' }}>Red row</strong> — no equivalent course at your CC
+                  </div>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                  <span style={{ fontSize: 14, lineHeight: 1, flexShrink: 0, marginTop: 2 }}>▼</span>
+                  <div style={{ fontSize: 12, color: '#444', lineHeight: 1.5 }}>
+                    <strong style={{ color: '#1a1a1a' }}>Tap any row</strong> — see which university requirement it satisfies
+                  </div>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                  <span style={{ fontSize: 14, lineHeight: 1, flexShrink: 0, marginTop: 2 }}>☑</span>
+                  <div style={{ fontSize: 12, color: '#444', lineHeight: 1.5 }}>
+                    <strong style={{ color: '#1a1a1a' }}>Check it off</strong> — progress saves automatically
+                  </div>
+                </div>
+              </div>
+
+              {/* Badge legend */}
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 16, paddingTop: 12, borderTop: '1px solid #d4ccff' }}>
+                <span style={{ fontSize: 10, background: '#ede9ff', color: '#6C5CE7', borderRadius: 4, padding: '3px 8px', fontWeight: 700 }}>ALL PROGRAMS</span>
+                <span style={{ fontSize: 10, background: '#fff3e0', color: '#f57f17', borderRadius: 4, padding: '3px 8px', fontWeight: 700 }}>MULTIPLE</span>
+                <span style={{ fontSize: 10, background: '#f5f4f0', color: '#999', borderRadius: 4, padding: '3px 8px', fontWeight: 700 }}>SCHOOL-SPECIFIC</span>
+              </div>
+
+              {/* Strategy tip */}
+              {overlapData.totalPrograms > 1 && (
+                <div style={{ background: '#fff', border: '1px solid #d4ccff', borderRadius: 10, padding: '12px 14px' }}>
+                  <div style={{ fontWeight: 700, fontSize: 13, color: '#1a1a1a', marginBottom: 8 }}>📋 Prioritize for max efficiency</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                      <span style={{ fontSize: 10, background: '#ede9ff', color: '#6C5CE7', borderRadius: 4, padding: '3px 8px', fontWeight: 700, flexShrink: 0, marginTop: 1 }}>1st ALL PROGRAMS</span>
+                      <span style={{ fontSize: 12, color: '#444', lineHeight: 1.5 }}>Do these first — one course counts toward every school at once. Maximum efficiency.</span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                      <span style={{ fontSize: 10, background: '#fff3e0', color: '#f57f17', borderRadius: 4, padding: '3px 8px', fontWeight: 700, flexShrink: 0, marginTop: 1 }}>2nd MULTIPLE</span>
+                      <span style={{ fontSize: 12, color: '#444', lineHeight: 1.5 }}>Do these next — solid overlap, keeps several options open.</span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                      <span style={{ fontSize: 10, background: '#f5f4f0', color: '#999', borderRadius: 4, padding: '3px 8px', fontWeight: 700, flexShrink: 0, marginTop: 1 }}>3rd SCHOOL-SPECIFIC</span>
+                      <span style={{ fontSize: 12, color: '#444', lineHeight: 1.5 }}>Do these last, with your remaining units, once you've narrowed down your top-choice school. Transfer students can bring a max of 70 units.</span>
                     </div>
                   </div>
-                )}
-              </div>
-              <button onClick={() => { setShowBanner(false); localStorage.setItem('tab2_banner_dismissed', '1') }}
-                style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#aaa', fontSize: 20, lineHeight: 1, padding: 0, flexShrink: 0, marginTop: 2 }} aria-label="Dismiss">×</button>
+                </div>
+              )}
             </div>
           )}
 
