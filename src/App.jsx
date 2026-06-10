@@ -385,6 +385,7 @@ export default function App() {
   const [showSaved, setShowSaved] = useState(false)
   const [user, setUser] = useState(null)
   const [dropdownOpen, setDropdownOpen] = useState(false)
+  const [guestMode, setGuestMode] = useState(false)
   const dropdownRef = useRef(null)
 
   useEffect(() => {
@@ -415,7 +416,7 @@ export default function App() {
   function goHome() {
     setStep(1); setActiveTab('tab1'); setEquivalents([]); setSelectedCC(null)
     setSelectedRegions([]); setCourseFilter('any'); setSavedCCs(new Set())
-    setShowSaved(false); setOpenBlocks({}); setError('')
+    setShowSaved(false); setOpenBlocks({}); setError(''); setGuestMode(false)
   }
 
   function toggleBlock(key) { setOpenBlocks(prev => ({ ...prev, [key]: !prev[key] })) }
@@ -592,7 +593,7 @@ export default function App() {
         )}
 
         {/* Right side: user menu */}
-        {user && (
+        {user && !guestMode && (
           <div ref={dropdownRef} style={{ position: 'relative' }}>
             <button
               onClick={() => setDropdownOpen(o => !o)}
@@ -621,10 +622,15 @@ export default function App() {
             )}
           </div>
         )}
+        {guestMode && (
+          <button className="btn-secondary" style={{ fontSize: 13 }} onClick={() => setGuestMode(false)}>
+            Sign in
+          </button>
+        )}
       </div>
 
       {/* ── Not signed in ── */}
-      {!user ? (
+     {!user && !guestMode ? (
         <div className="card" style={{ textAlign: 'center' }}>
           <h3 style={{ marginBottom: 6, fontSize: 17, color: 'var(--text)' }}>Sign in to get started</h3>
           <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 20 }}>Free — takes a couple seconds</p>
@@ -636,6 +642,10 @@ export default function App() {
               <path d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0 5.482 0 2.438 2.017.957 4.961L3.964 7.293C4.672 5.166 6.656 3.58 9 3.58z" fill="#EA4335"/>
             </svg>
             Continue with Google
+          </button>
+          <div className="or-divider" style={{ margin: '16px 0' }}>or</div>
+          <button className="btn-secondary" style={{ width: '100%', padding: '11px', fontSize: 14 }} onClick={() => setGuestMode(true)}>
+            Continue as guest
           </button>
         </div>
       ) : (
