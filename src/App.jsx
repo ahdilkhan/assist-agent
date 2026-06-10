@@ -221,7 +221,6 @@ function parseArticulations(agreement, targetPrefix, targetNumber) {
         console.log(`[ASSIST shape] ${ccName} →`, shape)
         console.log(`[ASSIST sample]`, JSON.stringify(art, null, 2).slice(0, 800))
       }
-
       const rawStr = JSON.stringify(art)
       if (rawStr.toUpperCase().includes(targetPrefix.toUpperCase()) &&
           rawStr.toUpperCase().includes(targetNumber.toUpperCase())) {
@@ -232,7 +231,6 @@ function parseArticulations(agreement, targetPrefix, targetNumber) {
     const matches = []
     for (const item of arts) {
       const art = item.articulation || item
-
       let receivingCourses = []
       if (art.course) receivingCourses.push(art.course)
       if (art.receivingCourse) receivingCourses.push(art.receivingCourse)
@@ -245,7 +243,6 @@ function parseArticulations(agreement, targetPrefix, targetNumber) {
           receivingCourses.push(...art.series.courses)
         }
       }
-
       if (receivingCourses.length === 0) {
         const keys = Object.keys(art)
         if (!['type', 'noArticulationReason', 'sendingArticulation'].every(k => keys.includes(k))) {
@@ -253,7 +250,6 @@ function parseArticulations(agreement, targetPrefix, targetNumber) {
         }
         continue
       }
-
       const isMatch = receivingCourses.some(rc => {
         const rPrefix = (rc.prefix || '').trim().toUpperCase()
         const rNum = (rc.courseNumber || rc.number || '').trim().toUpperCase().replace(/^0+/, '')
@@ -261,20 +257,15 @@ function parseArticulations(agreement, targetPrefix, targetNumber) {
         return rPrefix === targetPrefix.toUpperCase() && rNum === searchNum
       })
       if (!isMatch) continue
-
       const sendingArt = art.sendingArticulation
       if (sendingArt?.noArticulationReason) continue
-
       const options = parseSendingOptions(sendingArt?.items || [])
       if (options.length === 0) continue
-
       const receivingLabel = receivingCourses
         .map(rc => `${(rc.prefix||'').trim()} ${(rc.courseNumber||rc.number||'').trim()}`)
         .join(' + ')
-
       matches.push({ ccName, ccId, receivingCourse: receivingLabel, receivingTitle: receivingCourses[0]?.courseTitle || '', options })
     }
-
     return matches
   } catch (e) {
     console.warn('parse error:', e)
@@ -444,18 +435,15 @@ export default function App() {
   }
 
   const courseFiltered = equivalents.filter(eq => {
-  if (!courseFilter || courseFilter === 'any') return true
-  const minCourses = Math.min(...eq.options.map(o => o.courses.length))
-  if (courseFilter === 'single') return minCourses <= 1
-  if (courseFilter === 'multi') return minCourses >= 2
-  return true
-})
+    if (!courseFilter || courseFilter === 'any') return true
+    const minCourses = Math.min(...eq.options.map(o => o.courses.length))
+    if (courseFilter === 'single') return minCourses <= 1
+    if (courseFilter === 'multi') return minCourses >= 2
+    return true
+  })
 
-const regionFiltered = selectedRegions.length > 0
-  ? equivalents.filter(eq => selectedRegions.some(r => ccMatchesRegion(eq.ccName, r))) : equivalents
-
-const filteredEquivalents = selectedRegions.length > 0
-  ? courseFiltered.filter(eq => selectedRegions.some(r => ccMatchesRegion(eq.ccName, r))) : courseFiltered
+  const filteredEquivalents = selectedRegions.length > 0
+    ? courseFiltered.filter(eq => selectedRegions.some(r => ccMatchesRegion(eq.ccName, r))) : courseFiltered
 
   const savedEquivalents = equivalents.filter(eq => savedCCs.has(eq.ccName))
 
@@ -519,7 +507,7 @@ const filteredEquivalents = selectedRegions.length > 0
       <div className="result-block" key={i}>
         <div className="result-header" onClick={() => toggleBlock(eq.ccName)}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1 }}>
-            <span onClick={e => toggleSave(eq.ccName, e)} style={{ fontSize: 16, cursor: 'pointer', flexShrink: 0, opacity: savedCCs.has(eq.ccName) ? 1 : 0.3 }}>💙</span>
+            <span onClick={e => toggleSave(eq.ccName, e)} style={{ fontSize: 16, cursor: 'pointer', flexShrink: 0, opacity: savedCCs.has(eq.ccName) ? 1 : 0.3, transition: 'opacity 0.15s' }}>💙</span>
             <div>
               <h3 style={{ margin: 0 }}>{eq.ccName}</h3>
               <div style={{ fontSize: 12, color: '#888', marginTop: 2 }}>
@@ -528,14 +516,14 @@ const filteredEquivalents = selectedRegions.length > 0
               </div>
             </div>
           </div>
-          <span style={{ fontSize: 12, color: '#888', flexShrink: 0 }}>{openBlocks[eq.ccName] ? '▲' : '▼'}</span>
+          <span style={{ fontSize: 11, color: '#aaa', flexShrink: 0 }}>{openBlocks[eq.ccName] ? '▲' : '▼'}</span>
         </div>
         {openBlocks[eq.ccName] && (
           <div className="result-body">
             {eq.options?.map((opt, j) => (
               <div key={j}>
-                {j > 0 && <div style={{ textAlign: 'center', fontSize: 12, color: '#888', padding: '6px 0', fontWeight: 600 }}>— OR —</div>}
-                {opt.courses.length > 1 && <div style={{ fontSize: 11, color: '#888', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>Take all together</div>}
+                {j > 0 && <div className="or-divider">or</div>}
+                {opt.courses.length > 1 && <div style={{ fontSize: 11, color: '#888', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>Take all together</div>}
                 {opt.groupNote && <div style={{ fontSize: 12, color: '#f57f17', marginBottom: 6 }}>⚠️ {opt.groupNote}</div>}
                 {opt.courses.map((c, k) => (
                   <div className="eq-row" key={k}>
@@ -554,8 +542,8 @@ const filteredEquivalents = selectedRegions.length > 0
                 ))}
               </div>
             ))}
-            <div style={{ marginTop: 12, display: 'flex', gap: 10, alignItems: 'center' }}>
-              <button className="btn-primary" style={{ width: 'auto', padding: '7px 14px', fontSize: 13 }} onClick={() => { setSelectedCC(eq); setStep(3) }}>Check schedule →</button>
+            <div style={{ marginTop: 12 }}>
+              <button className="btn-primary" style={{ width: 'auto', padding: '7px 16px', fontSize: 13 }} onClick={() => { setSelectedCC(eq); setStep(3) }}>Check schedule →</button>
             </div>
           </div>
         )}
@@ -570,43 +558,41 @@ const filteredEquivalents = selectedRegions.length > 0
 
   return (
     <div className={`app${activeTab === 'tab2' ? ' wide' : ''}`}>
-      <div style={{
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        marginBottom: 32,
-        paddingTop: 16,
-      }}>
+      {/* ── Header ── */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 32, paddingTop: 16 }}>
         {user ? (
           <div onClick={goHome} title="Go home" style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', flexShrink: 0 }}>
             <img src={kourzoLogo} alt="Kourzo icon" style={{ height: 40, width: 40, display: 'block' }} />
             <span style={{ fontSize: 24, fontWeight: 700, letterSpacing: '-0.5px', lineHeight: 1 }}>
-              <span style={{ color: '#6C5CE7' }}>K</span><span style={{ color: '#1a1a1a' }}>ourzo</span>
+              <span style={{ background: 'linear-gradient(135deg, #6C5CE7 0%, #a78bfa 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>K</span>
+              <span style={{ color: '#1a1a1a' }}>ourzo</span>
             </span>
           </div>
         ) : (
           <div style={{ textAlign: 'center', width: '100%' }}>
             <img src={kourzoLogo} alt="Kourzo icon" style={{ height: 64, width: 64, display: 'block', margin: '0 auto 18px' }} />
+            {/* Gradient title */}
             <div style={{ fontSize: 32, fontWeight: 700, letterSpacing: '-0.5px', marginBottom: 16 }}>
-              <span style={{ color: '#6C5CE7' }}>K</span><span style={{ color: '#1a1a1a' }}>ourzo</span>
+              <span style={{ background: 'linear-gradient(135deg, #6C5CE7 0%, #a78bfa 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>Kourzo</span>
             </div>
-            <p style={{ margin: '0 auto 48px', color: '#666', fontSize: 15, maxWidth: 380 }}>
+            <p style={{ margin: '0 auto 40px', color: '#666', fontSize: 15, maxWidth: 380, lineHeight: 1.6 }}>
               The fastest way to plan your California CC transfer — find course equivalents and map out your path to any UC or CSU.
             </p>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 32, textAlign: 'left' }}>
-              <div style={{ background: '#fff', border: '0.5px solid #e0e0e0', borderRadius: 12, padding: 22 }}>
-                <div style={{ width: 32, height: 32, borderRadius: 8, background: '#EEEDFE', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 10 }}>
-                  <span style={{ color: '#6C5CE7', fontSize: 17 }}>🔍</span>
+            {/* Feature cards */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 32, textAlign: 'left' }}>
+              <div className="feature-card">
+                <div className="feature-icon">
+                  <span style={{ fontSize: 17 }}>🔍</span>
                 </div>
-                <div style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a', marginBottom: 4 }}>Find CC equivalents</div>
-                <div style={{ fontSize: 12, color: '#888', lineHeight: 1.5 }}>Pick a UC or CSU course and instantly see which community colleges offer an equivalent.</div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a', marginBottom: 5 }}>Find CC equivalents</div>
+                <div style={{ fontSize: 12, color: '#888', lineHeight: 1.6 }}>Pick a UC or CSU course and instantly see which community colleges offer an equivalent.</div>
               </div>
-              <div style={{ background: '#fff', border: '0.5px solid #e0e0e0', borderRadius: 12, padding: 22 }}>
-                <div style={{ width: 32, height: 32, borderRadius: 8, background: '#EEEDFE', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 10 }}>
-                  <span style={{ color: '#6C5CE7', fontSize: 17 }}>🗺️</span>
+              <div className="feature-card">
+                <div className="feature-icon">
+                  <span style={{ fontSize: 17 }}>🗺️</span>
                 </div>
-                <div style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a', marginBottom: 4 }}>Plan across schools</div>
-                <div style={{ fontSize: 12, color: '#888', lineHeight: 1.5 }}>Add multiple transfer targets and find the CC courses that count toward all of them at once.</div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a', marginBottom: 5 }}>Plan across schools</div>
+                <div style={{ fontSize: 12, color: '#888', lineHeight: 1.6 }}>Add multiple transfer targets and find the CC courses that count toward all of them at once.</div>
               </div>
             </div>
           </div>
@@ -616,44 +602,24 @@ const filteredEquivalents = selectedRegions.length > 0
           <div ref={dropdownRef} style={{ position: 'relative' }}>
             <button
               onClick={() => setDropdownOpen(o => !o)}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 8,
-                background: 'none', border: '1px solid #ddd', borderRadius: 999,
-                padding: '6px 12px 6px 6px', cursor: 'pointer', fontSize: 13,
-              }}
+              style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'none', border: '1.5px solid #e0daf5', borderRadius: 999, padding: '6px 12px 6px 6px', cursor: 'pointer', fontSize: 13 }}
             >
-              <div style={{
-                width: 30, height: 30, borderRadius: '50%',
-                background: '#1a1a1a', color: '#fff',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontWeight: 600, fontSize: 14, flexShrink: 0,
-              }}>
+              <div style={{ width: 30, height: 30, borderRadius: '50%', background: 'linear-gradient(135deg, #6C5CE7, #a78bfa)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 14, flexShrink: 0 }}>
                 {getInitials(user.email)}
               </div>
-              <span style={{ maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#333' }}>
-                {user.email}
-              </span>
-              <span style={{ fontSize: 10, color: '#888' }}>▼</span>
+              <span style={{ maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#333' }}>{user.email}</span>
+              <span style={{ fontSize: 10, color: '#aaa' }}>▼</span>
             </button>
 
             {dropdownOpen && (
-              <div style={{
-                position: 'absolute', right: 0, top: 'calc(100% + 8px)',
-                background: '#fff', border: '1px solid #e0e0e0', borderRadius: 10,
-                boxShadow: '0 4px 16px rgba(0,0,0,0.1)', minWidth: 200, zIndex: 100,
-                overflow: 'hidden',
-              }}>
-                <div style={{ padding: '12px 16px', borderBottom: '1px solid #f0f0f0' }}>
-                  <div style={{ fontSize: 12, color: '#888', marginBottom: 2 }}>Signed in as</div>
+              <div style={{ position: 'absolute', right: 0, top: 'calc(100% + 8px)', background: '#fff', border: '1px solid #e8e4f5', borderRadius: 12, boxShadow: '0 6px 24px rgba(108,92,231,0.12)', minWidth: 200, zIndex: 100, overflow: 'hidden' }}>
+                <div style={{ padding: '12px 16px', borderBottom: '1px solid #f0eeff' }}>
+                  <div style={{ fontSize: 12, color: '#aaa', marginBottom: 2 }}>Signed in as</div>
                   <div style={{ fontSize: 13, fontWeight: 500, color: '#333', wordBreak: 'break-all' }}>{user.email}</div>
                 </div>
                 <button
                   onClick={async () => { await supabase.auth.signOut(); setDropdownOpen(false) }}
-                  style={{
-                    width: '100%', padding: '12px 16px', textAlign: 'left',
-                    background: 'none', border: 'none', cursor: 'pointer',
-                    fontSize: 13, color: '#d32f2f', fontWeight: 500,
-                  }}
+                  style={{ width: '100%', padding: '12px 16px', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, color: '#d32f2f', fontWeight: 500 }}
                 >
                   Sign out
                 </button>
@@ -663,15 +629,25 @@ const filteredEquivalents = selectedRegions.length > 0
         )}
       </div>
 
+      {/* ── Not signed in ── */}
       {!user ? (
-        <div className="card" style={{ textAlign: 'center', marginTop: 40 }}>
-          <h3 style={{ marginBottom: 4 }}>Sign in to get started</h3>
-          <p style={{ fontSize: 12, color: '#888', marginBottom: 16 }}>Free — takes a couple seconds</p>
-          <button onClick={signInWithGoogle}>Sign in with Google</button>
+        <div className="card" style={{ textAlign: 'center', borderTop: '3px solid #6C5CE7' }}>
+          <h3 style={{ marginBottom: 6, fontSize: 17 }}>Sign in to get started</h3>
+          <p style={{ fontSize: 13, color: '#aaa', marginBottom: 20 }}>Free — takes a couple seconds</p>
+          <button className="btn-google" onClick={signInWithGoogle}>
+            <svg width="18" height="18" viewBox="0 0 18 18" xmlns="http://www.w3.org/2000/svg">
+              <path d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.875 2.684-6.615z" fill="#4285F4"/>
+              <path d="M9 18c2.43 0 4.467-.806 5.956-2.184l-2.908-2.258c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332C2.438 15.983 5.482 18 9 18z" fill="#34A853"/>
+              <path d="M3.964 10.707c-.18-.54-.282-1.117-.282-1.707s.102-1.167.282-1.707V4.961H.957C.347 6.175 0 7.55 0 9s.348 2.826.957 4.039l3.007-2.332z" fill="#FBBC05"/>
+              <path d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0 5.482 0 2.438 2.017.957 4.961L3.964 7.293C4.672 5.166 6.656 3.58 9 3.58z" fill="#EA4335"/>
+            </svg>
+            Continue with Google
+          </button>
         </div>
       ) : (
         <>
-          <div style={{ display: 'flex', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
+          {/* ── Tab switcher ── */}
+          <div style={{ display: 'flex', gap: 10, marginBottom: 20, flexWrap: 'wrap' }}>
             {[['tab1', '🎯 Find CC equivalents for a university course'], ['tab2', '🗺️ Plan for multiple schools at once']].map(([id, label]) => (
               <div key={id} className={`pref-chip${activeTab === id ? ' selected' : ''}`} style={{ padding: '8px 16px', fontSize: 13 }} onClick={() => setActiveTab(id)}>{label}</div>
             ))}
@@ -688,7 +664,10 @@ const filteredEquivalents = selectedRegions.length > 0
                 <div className={`step-pill ${step === 2 ? 'active' : step > 2 ? 'done' : ''}`}>2 · Equivalents</div>
                 <div className={`step-pill ${step === 3 ? 'active' : ''}`}>3 · Schedule</div>
               </div>
+
               {error && <div className="error-box">{error}</div>}
+
+              {/* ── Step 1: Search ── */}
               {step === 1 && (
                 <div className="card">
                   <div className="field">
@@ -703,19 +682,29 @@ const filteredEquivalents = selectedRegions.length > 0
                     </select>
                   </div>
                   <div className="field-row">
-                    <div className="field"><label>Course prefix</label><input type="text" placeholder="e.g. COMPSCI" value={prefix} onChange={e => setPrefix(e.target.value.toUpperCase())} /></div>
-                    <div className="field"><label>Course number</label><input type="text" placeholder="e.g. 61A" value={courseNum} onChange={e => setCourseNum(e.target.value.toUpperCase())} /></div>
+                    <div className="field">
+                      <label>Course prefix</label>
+                      <input type="text" placeholder="e.g. COMPSCI" value={prefix} onChange={e => setPrefix(e.target.value.toUpperCase())} />
+                    </div>
+                    <div className="field">
+                      <label>Course number</label>
+                      <input type="text" placeholder="e.g. 61A" value={courseNum} onChange={e => setCourseNum(e.target.value.toUpperCase())} />
+                    </div>
                   </div>
                   {loading ? (
                     <div>
                       <div className="status"><div className="spinner" />{loadingMsg}</div>
-                      <div style={{ background: '#eee', borderRadius: 4, height: 6, marginTop: 8, overflow: 'hidden' }}>
-                        <div style={{ background: '#1a1a1a', height: '100%', width: `${loadingProgress}%`, transition: 'width 0.3s ease', borderRadius: 4 }} />
+                      <div className="progress-track">
+                        <div className="progress-fill" style={{ width: `${loadingProgress}%` }} />
                       </div>
                     </div>
-                  ) : <button className="btn-primary" onClick={handleSearch}>Find equivalent courses →</button>}
+                  ) : (
+                    <button className="btn-primary" onClick={handleSearch}>Find equivalent courses →</button>
+                  )}
                 </div>
               )}
+
+              {/* ── Step 2: Results ── */}
               {step === 2 && (
                 <>
                   <div className="top-row">
@@ -725,10 +714,12 @@ const filteredEquivalents = selectedRegions.length > 0
                     </div>
                     <button className="btn-secondary" onClick={() => { setStep(1); setEquivalents([]) }}>← New search</button>
                   </div>
-                  <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+
+                  <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
                     <div className={`pref-chip${!showSaved ? ' selected' : ''}`} style={{ padding: '6px 12px', fontSize: 12 }} onClick={() => setShowSaved(false)}>All colleges ({equivalents.length})</div>
                     <div className={`pref-chip${showSaved ? ' selected' : ''}`} style={{ padding: '6px 12px', fontSize: 12 }} onClick={() => setShowSaved(true)}>💙 Saved ({savedCCs.size})</div>
                   </div>
+
                   {!showSaved && (
                     <>
                       <div style={{ marginBottom: 12 }}>
@@ -739,7 +730,7 @@ const filteredEquivalents = selectedRegions.length > 0
                           ))}
                         </div>
                       </div>
-                      <div style={{ marginBottom: 12 }}>
+                      <div style={{ marginBottom: 14 }}>
                         <div className="section-label" style={{ marginBottom: 8 }}>Filter by region</div>
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                           <div className={`pref-chip${selectedRegions.length === 0 ? ' selected' : ''}`} style={{ padding: '6px 12px', fontSize: 12 }} onClick={() => setSelectedRegions([])}>All regions</div>
@@ -752,21 +743,27 @@ const filteredEquivalents = selectedRegions.length > 0
                       </div>
                     </>
                   )}
+
                   {showSaved && savedEquivalents.length === 0 && <div className="key-note">No saved colleges yet. Click 💙 on any college to save it.</div>}
                   {showSaved ? renderCCList(savedEquivalents) : renderCCList(filteredEquivalents)}
                 </>
               )}
+
+              {/* ── Step 3: Schedule ── */}
               {step === 3 && selectedCC && (
                 <>
                   <div className="top-row">
-                    <div className="top-row-info"><h2>{selectedCC.ccName}</h2><p>Equivalent for {prefix} {courseNum} at {uniName}</p></div>
+                    <div className="top-row-info">
+                      <h2>{selectedCC.ccName}</h2>
+                      <p>Equivalent for {prefix} {courseNum} at {uniName}</p>
+                    </div>
                     <button className="btn-secondary" onClick={() => setStep(2)}>← Back</button>
                   </div>
                   {selectedCC.options.map((opt, i) => (
                     <div key={i}>
-                      {i > 0 && <div style={{ textAlign: 'center', fontSize: 12, color: '#888', padding: '8px 0', fontWeight: 600 }}>— OR —</div>}
+                      {i > 0 && <div className="or-divider">or</div>}
                       <div className="avail-card">
-                        {opt.courses.length > 1 && <div style={{ fontSize: 11, fontWeight: 600, color: '#888', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>Take all of these together</div>}
+                        {opt.courses.length > 1 && <div style={{ fontSize: 11, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>Take all of these together</div>}
                         {opt.groupNote && <div style={{ fontSize: 12, color: '#f57f17', marginBottom: 8 }}>⚠️ {opt.groupNote}</div>}
                         {opt.courses.map((c, j) => (
                           <div key={j} style={{ marginBottom: j < opt.courses.length - 1 ? 10 : 12 }}>
@@ -778,17 +775,17 @@ const filteredEquivalents = selectedRegions.length > 0
                             {c.note && <div style={{ fontSize: 12, color: '#f57f17', marginTop: 4 }}>⚠️ {c.note}</div>}
                           </div>
                         ))}
-                        <div style={{ background: '#f5f4f0', borderRadius: 8, padding: '10px 12px', marginBottom: 12 }}>
-                          <div style={{ fontSize: 12, fontWeight: 600, color: '#555', marginBottom: 6 }}>💡 When you get to the schedule:</div>
+                        <div style={{ background: '#f5f3ff', borderRadius: 8, padding: '10px 12px', marginBottom: 14 }}>
+                          <div style={{ fontSize: 12, fontWeight: 600, color: '#6C5CE7', marginBottom: 6 }}>💡 When you get to the schedule:</div>
                           {opt.courses.length === 1
-                            ? <div style={{ fontSize: 13 }}>Search for <span style={{ fontFamily: 'monospace', fontWeight: 600 }}>{opt.courses[0].prefix} {opt.courses[0].number}</span></div>
-                            : <ol style={{ paddingLeft: 18, margin: 0 }}>{opt.courses.map((c, k) => <li key={k} style={{ fontSize: 13, marginBottom: 4 }}>Search for <span style={{ fontFamily: 'monospace', fontWeight: 600 }}>{c.prefix} {c.number}</span></li>)}</ol>
+                            ? <div style={{ fontSize: 13 }}>Search for <span style={{ fontFamily: 'monospace', fontWeight: 600, color: '#6C5CE7' }}>{opt.courses[0].prefix} {opt.courses[0].number}</span></div>
+                            : <ol style={{ paddingLeft: 18, margin: 0 }}>{opt.courses.map((c, k) => <li key={k} style={{ fontSize: 13, marginBottom: 4 }}>Search for <span style={{ fontFamily: 'monospace', fontWeight: 600, color: '#6C5CE7' }}>{c.prefix} {c.number}</span></li>)}</ol>
                           }
                         </div>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                          <a className="avail-link" href={getScheduleUrl(selectedCC.ccName)} target="_blank" rel="noreferrer" style={{ fontWeight: 500, fontSize: 14 }}>🔍 Search schedule at {selectedCC.ccName} ↗</a>
-                          <a className="avail-link" href="https://www.cccapply.org/" target="_blank" rel="noreferrer" style={{ color: '#888' }}>📋 Apply / Enroll via CCCApply ↗</a>
-                          <a className="avail-link" href={`https://assist.org/transfer/results?year=${YEAR_ID}&institution=${selectedCC.ccId}&agreement=${uniId}&agreementType=to&view=agreement&viewBy=major`} target="_blank" rel="noreferrer" style={{ color: '#888' }}>📄 View full agreement on ASSIST.org ↗</a>
+                          <a className="avail-link" href={getScheduleUrl(selectedCC.ccName)} target="_blank" rel="noreferrer" style={{ fontWeight: 600, fontSize: 14 }}>🔍 Search schedule at {selectedCC.ccName} ↗</a>
+                          <a className="avail-link" href="https://www.cccapply.org/" target="_blank" rel="noreferrer" style={{ color: '#aaa', fontWeight: 400 }}>📋 Apply / Enroll via CCCApply ↗</a>
+                          <a className="avail-link" href={`https://assist.org/transfer/results?year=${YEAR_ID}&institution=${selectedCC.ccId}&agreement=${uniId}&agreementType=to&view=agreement&viewBy=major`} target="_blank" rel="noreferrer" style={{ color: '#aaa', fontWeight: 400 }}>📄 View full agreement on ASSIST.org ↗</a>
                         </div>
                       </div>
                     </div>
@@ -799,18 +796,11 @@ const filteredEquivalents = selectedRegions.length > 0
           )}
         </>
       )}
-    <div style={{
-        marginTop: 48,
-        paddingTop: 16,
-        borderTop: '1px solid #e8e8e4',
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        flexWrap: 'wrap',
-        gap: 8,
-      }}>
-        <span style={{ fontSize: 18, color: '#070707ff' }}>Kourzo v1.0.0</span>
-        <a href="mailto:info@kourzo.com" style={{ fontSize: 18, color: '#070707ff', textDecoration: 'none' }}>info@kourzo.com</a>
+
+      {/* ── Footer ── */}
+      <div className="footer">
+        <span>Kourzo v1.0.0</span>
+        <a href="mailto:info@kourzo.com">info@kourzo.com</a>
       </div>
     </div>
   )
