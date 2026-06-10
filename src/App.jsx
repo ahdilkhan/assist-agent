@@ -578,7 +578,7 @@ export default function App() {
             </p>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 32, textAlign: 'left' }}>
               <div className="feature-card">
-                <div className="feature-icon"><span style={{ fontSize: 17 }}>🔍</span></div>
+                <div className="feature-icon"><span style={{ fontSize: 17 }}>🎯</span></div>
                 <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', marginBottom: 5 }}>Find CC equivalents</div>
                 <div style={{ fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.6 }}>Pick a UC or CSU course and instantly see which community colleges offer an equivalent.</div>
               </div>

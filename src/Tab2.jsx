@@ -1038,7 +1038,7 @@ export default function Tab2() {
                         return (
                           <div key={pi} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
                             {overlapData.programLabels.length > 1 && <div style={{ fontSize: 9, color: 'var(--text-muted)', textAlign: 'center', maxWidth: 48, lineHeight: 1.2 }}>{shortLabel(progLabel).split('\n')[0]}</div>}
-                            <span style={{ color: has ? '#a78bfa' : 'var(--border)', fontSize: 16, lineHeight: 1 }}>●</span>
+                            <span style={{ color: has ? '#a78bfa' : '#4a4a6a', fontSize: 16, lineHeight: 1 }}>{has ? '●' : '○'}</span>
                           </div>
                         )
                       })}
@@ -1085,7 +1085,7 @@ export default function Tab2() {
                     return (
                       <div key={pi} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
                         {overlapData.programLabels.length > 1 && <div style={{ fontSize: 9, color: 'var(--text-muted)', textAlign: 'center', maxWidth: 48, lineHeight: 1.2 }}>{shortLabel(progLabel).split('\n')[0]}</div>}
-                        <span style={{ color: has ? '#a78bfa' : 'var(--border)', fontSize: 16, lineHeight: 1 }}>●</span>
+                        <span style={{ color: has ? '#a78bfa' : '#4a4a6a', fontSize: 16, lineHeight: 1 }}>{has ? '●' : '○'}</span>
                       </div>
                     )
                   })}
@@ -1317,7 +1317,7 @@ export default function Tab2() {
               <div style={{ display: 'grid', gridTemplateColumns: isWide ? '1fr 1fr' : '1fr', gap: '8px 20px', marginBottom: 16 }}>
                 {[
                   { icon: '●', iconColor: '#a78bfa', label: 'Purple dot', desc: '— this program requires the course' },
-                  { icon: '●', iconColor: 'var(--border)', label: 'Grey dot', desc: '— not required by that program' },
+                  { icon: '○', iconColor: '#4a4a6a', label: 'Empty dot', desc: '— not required by that program' },
                   { icon: '🟡', iconColor: null, label: 'Yellow card', desc: '— choose from the group, you don\'t need all of them' },
                   { icon: '🔴', iconColor: null, label: 'Red row', desc: '— no equivalent course at your CC' },
                   { icon: '▼', iconColor: null, label: 'Tap any row', desc: '— see which university requirement it satisfies' },
