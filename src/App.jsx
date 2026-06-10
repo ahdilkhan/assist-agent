@@ -571,7 +571,7 @@ export default function App() {
           <div style={{ textAlign: 'center', width: '100%' }}>
             <img src={kourzoLogo} alt="Kourzo icon" style={{ height: 64, width: 64, display: 'block', margin: '0 auto 18px' }} />
             <div style={{ fontSize: 32, fontWeight: 700, letterSpacing: '-0.5px', marginBottom: 16 }}>
-              <span style={gradientText}>Kourzo</span>
+              <span style={gradientText}>K</span><span style={{ color: 'var(--text)' }}>ourzo</span>
             </div>
             <p style={{ margin: '0 auto 40px', color: 'var(--text-muted)', fontSize: 15, maxWidth: 380, lineHeight: 1.6 }}>
               The fastest way to plan your California CC transfer — find course equivalents and map out your path to any UC or CSU.
