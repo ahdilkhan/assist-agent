@@ -799,6 +799,19 @@ const filteredEquivalents = selectedRegions.length > 0
           )}
         </>
       )}
+    <div style={{
+        marginTop: 48,
+        paddingTop: 16,
+        borderTop: '1px solid #e8e8e4',
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        flexWrap: 'wrap',
+        gap: 8,
+      }}>
+        <span style={{ fontSize: 11, color: '#bbb' }}>Kourzo v1.0.0</span>
+        <a href="mailto:info@kourzo.com" style={{ fontSize: 11, color: '#bbb', textDecoration: 'none' }}>info@kourzo.com</a>
+      </div>
     </div>
   )
 }
