@@ -809,8 +809,8 @@ const filteredEquivalents = selectedRegions.length > 0
         flexWrap: 'wrap',
         gap: 8,
       }}>
-        <span style={{ fontSize: 11, color: '#bbb' }}>Kourzo v1.0.0</span>
-        <a href="mailto:info@kourzo.com" style={{ fontSize: 11, color: '#bbb', textDecoration: 'none' }}>info@kourzo.com</a>
+        <span style={{ fontSize: 18, color: '#070707ff' }}>Kourzo v1.0.0</span>
+        <a href="mailto:info@kourzo.com" style={{ fontSize: 18, color: '#070707ff', textDecoration: 'none' }}>info@kourzo.com</a>
       </div>
     </div>
   )
