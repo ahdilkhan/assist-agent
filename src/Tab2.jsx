@@ -21,7 +21,8 @@ const CAL_GETC_AREAS = [
   { code: '4', name: 'Social & Behavioral Sciences', desc: 'Three courses from different disciplines', slots: 3 },
   { code: '5A', name: 'Physical Sciences', desc: 'Chemistry, physics, or astronomy', slots: 1 },
   { code: '5B', name: 'Biological Sciences', desc: 'Biology or life sciences', slots: 1 },
-  { code: '5C', name: 'Science Lab', desc: 'Lab — often bundled with 5A or 5B', slots: 1 },
+  // FIX 1: Removed CC-specific "often bundled with 5A or 5B" description
+  { code: '5C', name: 'Science Lab', desc: 'A lab component course', slots: 1 },
   { code: '6', name: 'Ethnic Studies', desc: 'One ethnic studies course', slots: 1 },
 ]
 
@@ -334,7 +335,7 @@ function isRecommendedSection(label) {
 function pickGroupLabel(group) {
   const n = group.nRequired
   const total = group._totalOptions ?? group.rows.length
-  if (total <= 1) return null // don't show wrapper for single options
+  if (total <= 1) return null
   switch (group.pickType) {
     case 'units': return `Choose courses totaling ${n} unit${n !== 1 ? 's' : ''} from these ${total} options`
     case 'range': return group.pickMax
@@ -380,6 +381,7 @@ function topoSortCourses(courses) {
   return result
 }
 
+// FIX 2: Improved planner — multi-pass greedy so gaps get filled properly
 function buildSemesterPlan({ rows, completedCourses, geState, plannerStart, plannerEnd, includeSummer, maxUnitsPerSem = 15 }) {
   const GE_UNIT = 3
   const MAX_AREA4_PER_SEM = 1
@@ -393,7 +395,6 @@ function buildSemesterPlan({ rows, completedCourses, geState, plannerStart, plan
   const endIdx = termList.indexOf(plannerEnd)
   if (startIdx < 0 || endIdx <= startIdx) return []
 
-  const numSemesters = endIdx - startIdx
   const pending = []
   for (const row of rows) {
     if (completedCourses.has(row.ccKey)) continue
@@ -429,39 +430,51 @@ function buildSemesterPlan({ rows, completedCourses, geState, plannerStart, plan
     }
   }
 
-  // Calculate dynamic unit cap based on total work and available semesters
   const UNIT_CAP = maxUnitsPerSem
+  const numSemesters = endIdx - startIdx
 
-  const semesters = []
-  let geIdx = 0
+  // Build semester slots
+  const semSlots = []
+  for (let ti = startIdx; ti <= endIdx; ti++) {
+    semSlots.push({ term: termList[ti], courses: [], ge: [], units: 0 })
+  }
+
   const ready = new Set(
     rows.filter(r => completedCourses.has(r.ccKey))
       .flatMap(r => r.primaryCourses.map(c => `${c.prefix} ${c.number}`))
   )
 
-  for (let ti = startIdx; ti <= endIdx && (sorted.length > 0 || geNeeded.length > 0); ti++) {
-    const term = termList[ti]
-    const sem = { term, courses: [], ge: [], units: 0 }
-    const area4ThisSem = { count: 0 }
-
-    let changed = true
-    while (changed) {
-      changed = false
-      for (let i = 0; i < sorted.length; i++) {
-        const c = sorted[i]
-        const prereqKey = getPrereqKey(c)
-        const prereqOk = !prereqKey || ready.has(prereqKey)
-        if (!prereqOk) continue
-        if (sem.units + c.units > UNIT_CAP) continue
-        sem.courses.push(c)
-        sem.units += c.units
-        ready.add(`${c.prefix} ${c.number}`)
-        sorted.splice(i, 1)
-        changed = true
-        break
+  // Multi-pass: keep sweeping through all semesters until no more placements possible
+  // This ensures earlier semesters get filled if there's capacity after heavy courses are placed
+  let placed = true
+  while (placed && sorted.length > 0) {
+    placed = false
+    for (const sem of semSlots) {
+      let changed = true
+      while (changed) {
+        changed = false
+        for (let i = 0; i < sorted.length; i++) {
+          const c = sorted[i]
+          const prereqKey = getPrereqKey(c)
+          const prereqOk = !prereqKey || ready.has(prereqKey)
+          if (!prereqOk) continue
+          if (sem.units + c.units > UNIT_CAP) continue
+          sem.courses.push(c)
+          sem.units += c.units
+          ready.add(`${c.prefix} ${c.number}`)
+          sorted.splice(i, 1)
+          changed = true
+          placed = true
+          break
+        }
       }
     }
+  }
 
+  // Fill GE into available slots
+  let geIdx = 0
+  for (const sem of semSlots) {
+    const area4ThisSem = { count: 0 }
     let gi = 0
     while (gi < geNeeded.length && sem.units + GE_UNIT <= UNIT_CAP) {
       const g = geNeeded[gi]
@@ -471,11 +484,11 @@ function buildSemesterPlan({ rows, completedCourses, geState, plannerStart, plan
       sem.units += GE_UNIT
       geNeeded.splice(gi, 1)
     }
-
-    if (sem.courses.length > 0 || sem.ge.length > 0) semesters.push(sem)
   }
 
-  // Remaining courses that couldn't fit — attach to last semester with a tip flag
+  const semesters = semSlots.filter(s => s.courses.length > 0 || s.ge.length > 0)
+
+  // Remaining courses that couldn't fit
   if (sorted.length > 0 || geNeeded.length > 0) {
     semesters.push({
       term: 'Remaining',
@@ -508,7 +521,6 @@ export default function Tab2() {
   const [expandedRow, setExpandedRow] = useState(null)
   const [completedCourses, setCompletedCourses] = useState(new Set())
 
-  // Steps: 1 = setup, 2 = major courses, 3 = GE checklist, 4 = semester plan
   const [step, setStep] = useState(1)
   const [isWide, setIsWide] = useState(window.innerWidth > 768)
   const [showBanner, setShowBanner] = useState(() => localStorage.getItem('tab2_banner_dismissed') !== '1')
@@ -894,8 +906,7 @@ export default function Tab2() {
 
   // ─── STEP 2: Major courses ────────────────────────────────────────────────
   function renderStep2() {
-    const majorDone = overlapData.rows.filter(r => completedCourses.has(r.ccKey)).length
-    const majorTotal = overlapData.rows.length
+    // FIX 3: Only count required (non-recommended) rows for the progress counters
     const allRequired = overlapData.rows.filter(r => {
       const pe = r.programEntries[0]
       return !isRecommendedSection(pe?.groupTitle) && !isRecommendedSection(pe?.sectionLabel)
@@ -924,50 +935,28 @@ export default function Tab2() {
           </div>
         </div>
 
+        {/* FIX 4: Compact banner — single-column list, no nested grid */}
         {showBanner && (
-          <div style={{ background: 'var(--bg-hint)', border: '1px solid var(--border)', borderRadius: 12, padding: '16px 18px', marginBottom: 20 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
-              <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--text)' }}>How to read this</div>
-              <button onClick={() => { setShowBanner(false); localStorage.setItem('tab2_banner_dismissed', '1') }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: 20, lineHeight: 1, padding: 0 }}>×</button>
+          <div style={{ background: 'var(--bg-hint)', border: '1px solid var(--border)', borderRadius: 10, padding: '12px 14px', marginBottom: 20 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+              <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--text)' }}>How to read this</div>
+              <button onClick={() => { setShowBanner(false); localStorage.setItem('tab2_banner_dismissed', '1') }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: 18, lineHeight: 1, padding: 0 }}>×</button>
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: isWide ? '1fr 1fr' : '1fr', gap: '8px 20px' }}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
               {[
-                { icon: <span style={{ width: 12, height: 12, borderRadius: '50%', background: '#a78bfa', display: 'inline-block', flexShrink: 0 }} />, label: 'Purple dot', desc: '— this program requires the course' },
-                { icon: <span style={{ width: 12, height: 12, borderRadius: '50%', border: '2px solid #4a4a6a', display: 'inline-block', flexShrink: 0 }} />, label: 'Empty dot', desc: '— not required by that program' },
-              ].map(({ icon, label, desc }) => (
-                <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <span style={{ display: 'inline-flex', flexShrink: 0 }}>{icon}</span>
-                  <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                    <strong style={{ color: 'var(--text)' }}>{label}</strong> {desc}
-                  </div>
+                { icon: <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#a78bfa', display: 'inline-block' }} />, text: <><strong style={{ color: 'var(--text)' }}>Purple dot</strong> — program requires this course</> },
+                { icon: <span style={{ width: 10, height: 10, borderRadius: '50%', border: '2px solid #4a4a6a', display: 'inline-block' }} />, text: <><strong style={{ color: 'var(--text)' }}>Empty dot</strong> — not required by that program</> },
+                { icon: <span style={{ fontSize: 9, background: 'var(--bg-chip-selected)', color: '#a78bfa', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>ALL PROGRAMS</span>, text: 'Counts toward every program — take first' },
+                { icon: <span style={{ fontSize: 9, background: '#0d2a28', color: '#34d399', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>MULTIPLE</span>, text: 'Counts toward more than one program' },
+                { icon: <span style={{ fontSize: 9, background: '#0d1a2e', color: '#60a5fa', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>SCHOOL-SPECIFIC</span>, text: 'Only counts toward one program' },
+                { icon: <span style={{ fontSize: 9, background: '#221a05', color: '#fbbf24', border: '1px solid #5a4a10', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>CHOOSE 1</span>, text: 'Yellow group — pick one option, not all' },
+                { icon: <span style={{ fontSize: 9, background: '#2a1010', color: '#f87171', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>No equivalent</span>, text: 'No matching course at your CC' },
+              ].map(({ icon, text }, i) => (
+                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ display: 'inline-flex', flexShrink: 0, minWidth: 80, justifyContent: 'flex-end' }}>{icon}</span>
+                  <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{text}</span>
                 </div>
               ))}
-              <div style={{ borderTop: '1px solid var(--border)', paddingTop: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
-                <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Priority badges — take these first</div>
-                {[
-                  { badge: <span style={{ fontSize: 10, background: 'var(--bg-chip-selected)', color: '#a78bfa', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>ALL PROGRAMS</span>, desc: 'Counts toward every program you added — highest priority' },
-                  { badge: <span style={{ fontSize: 10, background: '#0d2a28', color: '#34d399', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>MULTIPLE</span>, desc: 'Counts toward more than one program — take before school-specific' },
-                  { badge: <span style={{ fontSize: 10, background: '#0d1a2e', color: '#60a5fa', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>SCHOOL-SPECIFIC</span>, desc: 'Only counts toward one of your programs' },
-                ].map(({ badge, desc }) => (
-                  <div key={desc} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <span style={{ flexShrink: 0 }}>{badge}</span>
-                    <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{desc}</div>
-                  </div>
-                ))}
-              </div>
-              <div style={{ borderTop: '1px solid var(--border)', paddingTop: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {[
-                  { badge: <span style={{ fontSize: 10, background: '#221a05', color: '#fbbf24', border: '1px solid #5a4a10', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>CHOOSE 1</span>, desc: 'Yellow group — you only need one of the listed options, not all' },
-                  { badge: <span style={{ fontSize: 10, background: '#2a1010', color: '#f87171', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>No equivalent</span>, desc: 'Red row — no matching course at your CC; may need to take after transfer' },
-                ].map(({ badge, desc }) => (
-                  <div key={desc} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <span style={{ flexShrink: 0 }}>{badge}</span>
-                    <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{desc}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
             </div>
           </div>
         )}
@@ -1004,7 +993,6 @@ export default function Tab2() {
           <button className="btn-secondary" style={{ fontSize: 12 }} onClick={() => setStep(2)}>← Back</button>
         </div>
 
-        {/* Progress */}
         <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 10, padding: '12px 16px', marginBottom: 20 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
             <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Areas completed</span>
@@ -1068,7 +1056,6 @@ export default function Tab2() {
           })}
         </div>
 
-        {/* Bottom CTA */}
         <div style={{ marginTop: 32, padding: '20px 0', borderTop: '1px solid var(--border)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
           {done < total && (
             <div style={{ fontSize: 12, color: 'var(--text-muted)', textAlign: 'center' }}>
@@ -1090,7 +1077,12 @@ export default function Tab2() {
 
   // ─── STEP 4: Semester Plan ────────────────────────────────────────────────
   function renderStep4() {
-    const majorLeft = overlapData.rows.filter(r => !completedCourses.has(r.ccKey)).length
+    // FIX 5: majorLeft only counts required (non-recommended) rows not yet completed
+    const requiredRows = overlapData.rows.filter(r => {
+      const pe = r.programEntries?.[0]
+      return !isRecommendedSection(pe?.groupTitle) && !isRecommendedSection(pe?.sectionLabel)
+    })
+    const majorLeft = requiredRows.filter(r => !completedCourses.has(r.ccKey)).length
     const geLeft = geTotal() - geDone()
 
     return (
@@ -1103,7 +1095,6 @@ export default function Tab2() {
           <button className="btn-secondary" style={{ fontSize: 12 }} onClick={() => setStep(3)}>← Back</button>
         </div>
 
-        {/* Stats */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: 20 }}>
           {[
             { label: 'Semesters', value: realSems.length },
@@ -1117,7 +1108,6 @@ export default function Tab2() {
           ))}
         </div>
 
-        {/* Overflow soft tip */}
         {overflowSem && (
           <div style={{ background: '#1a1505', border: '1px solid #5a4a10', borderRadius: 10, padding: '12px 16px', marginBottom: 16, display: 'flex', gap: 10, alignItems: 'flex-start' }}>
             <span style={{ fontSize: 16, flexShrink: 0 }}>💡</span>
@@ -1186,7 +1176,6 @@ export default function Tab2() {
           )
         })}
 
-        {/* Remaining courses tip (overflow) */}
         {overflowSem && (overflowSem.courses.length > 0 || overflowSem.ge.length > 0) && (
           <div style={{ border: '1px dashed #5a4a10', borderRadius: 10, marginBottom: 10, overflow: 'hidden', background: '#1a1505' }}>
             <div style={{ padding: '9px 14px', borderBottom: '1px dashed #5a4a10' }}>
@@ -1251,8 +1240,14 @@ export default function Tab2() {
       groupIdToGroup[groupId].rows.push(row)
     }
 
+    // FIX 6: Sort rows within each group: ALL > MULTIPLE > SCHOOL-SPECIFIC
     for (const g of Object.values(groupIdToGroup)) {
-      g.rows.sort((a, b) => b.coverage - a.coverage)
+      const coverageOrder = (row) => {
+        if (row.coverage >= (row.totalPrograms || 1)) return 0 // all
+        if (row.coverage > 1) return 1 // multi
+        return 2 // school-specific
+      }
+      g.rows.sort((a, b) => coverageOrder(a) - coverageOrder(b))
     }
 
     for (const na of inlineRequiredNoArt) {
@@ -1292,9 +1287,9 @@ export default function Tab2() {
       const isEffectivelyRequired = isPickN && group.rows.length <= 1 && noArtSiblingSlots === 0 && noArtSiblingsFlat === 0
       const displayLabel = group.sectionLabel || group.groupTitle || 'REQUIREMENTS'
       const totalPickOptions = group.rows.length + noArtSiblingSlots
-const groupLabel = isPickN
-  ? pickGroupLabel({ ...group, _totalOptions: totalPickOptions })
-  : null
+      const groupLabel = isPickN
+        ? pickGroupLabel({ ...group, _totalOptions: totalPickOptions })
+        : null
 
       if (displayLabel !== lastDisplayLabel) {
         lastDisplayLabel = displayLabel
@@ -1317,7 +1312,6 @@ const groupLabel = isPickN
         return (
           <div key={row.ccKey}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', cursor: 'pointer' }}>
-              {/* Checkbox — separate click handler, no stopPropagation */}
               <div
                 onClick={() => toggleCourse(row.ccKey)}
                 style={{ width: 18, height: 18, borderRadius: 5, flexShrink: 0, cursor: 'pointer', border: `2px solid ${isDone ? (inPickGroup ? '#fbbf24' : '#6C5CE7') : 'var(--border-input)'}`, background: isDone ? (inPickGroup ? '#fbbf24' : '#6C5CE7') : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.15s' }}
@@ -1325,7 +1319,6 @@ const groupLabel = isPickN
                 {isDone && <span style={{ color: '#fff', fontSize: 11 }}>✓</span>}
               </div>
 
-              {/* Row content — click to expand */}
               <div style={{ flex: 1, minWidth: 0 }} onClick={() => setExpandedRow(isExpanded ? null : row.ccKey)}>
                 <div style={{ fontWeight: 600, fontSize: 13, textDecoration: isDone ? 'line-through' : 'none', color: isDone ? 'var(--text-muted)' : 'var(--text)', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                   {label}
