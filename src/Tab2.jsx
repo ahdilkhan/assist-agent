@@ -3,7 +3,7 @@ import { supabase } from './lib/supabase'
 import { KNOWN_UNIVERSITIES, KNOWN_CCS } from './App'
 
 const ASSIST_BASE = import.meta.env.VITE_ASSIST_BASE
-const YEAR_ID = import.meta.env.VITE_ACADEMIC_YEAR_ID || 76
+const YEAR_ID = import.meta.env.VITE_ACADEMIC_YEAR_ID || 77
 
 const TERMS = [
   'Fall 2025', 'Spring 2026', 'Summer 2026',
@@ -117,11 +117,6 @@ async function fetchCalGetcMap(ccId) {
 function lookupCalGetc(calGetcMap, course) {
   const { map, byIdentifier } = calGetcMap
   const key = `${course.prefix} ${course.number}`.trim().toUpperCase()
-  
-  console.log('[debug] course object:', JSON.stringify(course, null, 2))
-  console.log('[debug] key built:', key)
-  console.log('[debug] byIdentifier has key?', !!byIdentifier[key])
-  console.log('[debug] byIdentifier keys sample:', Object.keys(byIdentifier).slice(0, 10))
 
   const idHit = course.courseIdentifierParentId ? map[course.courseIdentifierParentId] : null
   const strHit = byIdentifier[key]
@@ -597,9 +592,8 @@ export default function Tab2() {
     setCalGetcLoading(true)
     fetchCalGetcMap(ccId)
       .then(result => {
-        console.log('[CalGETC] map loaded for ccId', ccId, result)
-        setCalGetcMap(result)
-      })
+  setCalGetcMap(result)
+})
       .finally(() => setCalGetcLoading(false))
   }, [ccId])
 
