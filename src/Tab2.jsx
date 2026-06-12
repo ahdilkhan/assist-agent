@@ -457,7 +457,6 @@ function buildSemesterPlan({ rows, completedCourses, geState, plannerStart, plan
       .flatMap(r => r.primaryCourses.map(c => `${c.prefix} ${c.number}`))
   )
 
-  // FIX: cap loop at endIdx so schedule never runs past the chosen transfer goal term
   for (let ti = startIdx; ti <= endIdx && (courseIdx < sorted.length || geIdx < geNeeded.length); ti++) {
     const term = termList[ti]
     const sem = { term, courses: [], ge: [], units: 0, overflow: false }
@@ -495,7 +494,6 @@ function buildSemesterPlan({ rows, completedCourses, geState, plannerStart, plan
     if (sem.courses.length > 0 || sem.ge.length > 0) semesters.push(sem)
   }
 
-  // Overflow: anything that didn't fit within the transfer goal
   if (sorted.length > 0 || geNeeded.length > 0) {
     semesters.push({
       term: 'Overflow',
@@ -629,7 +627,6 @@ export default function Tab2() {
     }
 
     setAutoChecked(prev => {
-      // Find keys that were previously auto but are no longer
       const cleared = Object.keys(prev).filter(k => !newAutoChecked[k])
       setGeState(gs => {
         const next = { ...gs }
@@ -699,7 +696,6 @@ export default function Tab2() {
   async function generateOverlap() {
     if (!ccId || programs.length === 0) { setError('Select a CC and add at least one program.'); return }
     setError(''); setLoading(true); setOverlapData(null); setExpandedRow(null)
-    setCompletedCourses(new Set())
     try {
       const programArts = await Promise.all(programs.map(async prog => {
         const agreement = await getAgreement(prog.majorKey)
@@ -948,7 +944,7 @@ export default function Tab2() {
                   {TERMS.slice(0, -1).map(t => <option key={t} value={t}>{t}</option>)}
                 </select>
               </div>
-              <div style={{ color: 'var(--text-muted)', marginTop: 14 }}>-&gt;</div>
+              <div style={{ color: 'var(--text-muted)', marginTop: 14 }}>&gt;</div>
               <div style={{ flex: 1 }}>
                 <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 4 }}>Transfer goal</div>
                 <select value={plannerEnd} onChange={e => setPlannerEnd(e.target.value)} style={{ width: '100%', fontSize: 12, padding: '6px 8px' }}>
@@ -962,8 +958,11 @@ export default function Tab2() {
               </div>
               <span style={{ fontSize: 12, color: 'var(--text-muted)', cursor: 'pointer' }} onClick={() => setIncludeSummer(v => !v)}>Include summer</span>
             </div>
-            <button className="btn-primary" onClick={() => setSetupStep(2)}>
-              Next: Cal-GETC checklist
+            <button className="btn-primary" onClick={async () => {
+              await generateOverlap()
+              setSetupStep(2)
+            }}>
+              Next: Courses already completed
             </button>
           </div>
         )}
@@ -972,6 +971,58 @@ export default function Tab2() {
   }
 
   function renderStep2() {
+    return (
+      <div className="card">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+          <button className="btn-secondary" style={{ padding: '5px 12px', fontSize: 12 }} onClick={() => { setSetupStep(1) }}>&lt;- Back</button>
+          <div className="section-label" style={{ marginBottom: 0 }}>Courses already completed</div>
+        </div>
+        <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 16 }}>
+          Check off any major prep courses you've already taken. We'll use these to pre-fill your Cal-GETC checklist.
+        </div>
+
+        {loading && (
+          <div className="status" style={{ marginBottom: 12 }}><div className="spinner" />Loading your courses...</div>
+        )}
+
+        {overlapData && (
+          <>
+            {overlapData.rows.map(row => {
+              const isDone = completedCourses.has(row.ccKey)
+              const label = row.primaryCourses.map(c => `${c.prefix} ${c.number}`).join(' + ')
+              const subtitle = row.primaryCourses.map(c => c.title).filter(Boolean).join(' + ')
+              const units = row.primaryCourses.reduce((sum, c) => sum + (c.units || 0), 0)
+              return (
+                <div key={row.ccKey} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 0', borderBottom: '1px solid var(--border)' }}>
+                  <div
+                    onClick={() => toggleCourse(row.ccKey)}
+                    style={{
+                      width: 16, height: 16, borderRadius: 4, flexShrink: 0,
+                      border: `2px solid ${isDone ? '#6C5CE7' : 'var(--border-input)'}`,
+                      background: isDone ? '#6C5CE7' : 'transparent',
+                      cursor: 'pointer',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    }}
+                  >
+                    {isDone && <span style={{ color: '#fff', fontSize: 10, lineHeight: 1 }}>✓</span>}
+                  </div>
+                  <div style={{ flex: 1, opacity: isDone ? 0.5 : 1 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', textDecoration: isDone ? 'line-through' : 'none' }}>{label}</div>
+                    {subtitle && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>{subtitle}{units ? ` · ${units}u` : ''}</div>}
+                  </div>
+                </div>
+              )
+            })}
+            <button className="btn-primary" style={{ marginTop: 20 }} onClick={() => setSetupStep(3)}>
+              Next: Cal-GETC checklist
+            </button>
+          </>
+        )}
+      </div>
+    )
+  }
+
+  function renderStep3() {
     const done = geDone()
     const total = geTotal()
     const pct = Math.round((done / total) * 100)
@@ -979,11 +1030,11 @@ export default function Tab2() {
     return (
       <div className="card">
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
-          <button className="btn-secondary" style={{ padding: '5px 12px', fontSize: 12 }} onClick={() => setSetupStep(1)}>&lt;- Back</button>
+          <button className="btn-secondary" style={{ padding: '5px 12px', fontSize: 12 }} onClick={() => setSetupStep(2)}>&lt;- Back</button>
           <div className="section-label" style={{ marginBottom: 0 }}>Cal-GETC requirements</div>
         </div>
         <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 14 }}>
-          Check off areas you've already completed. We auto-detect anything your major prep covers.
+          Areas covered by courses you've already completed are pre-filled. Check off anything else you've completed (AP credits, courses at another school, etc).
         </div>
 
         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--text-muted)', marginBottom: 5 }}>
@@ -1023,7 +1074,7 @@ export default function Tab2() {
                         display: 'flex', alignItems: 'center', justifyContent: 'center',
                       }}
                     >
-                      {geState[k] && <span style={{ color: '#fff', fontSize: 10, lineHeight: 1 }}>v</span>}
+                      {geState[k] && <span style={{ color: '#fff', fontSize: 10, lineHeight: 1 }}>✓</span>}
                     </div>
                   )
                 })()}
@@ -1063,7 +1114,7 @@ export default function Tab2() {
                                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                               }}
                             >
-                              {geState[k] && <span style={{ color: '#fff', fontSize: 9 }}>v</span>}
+                              {geState[k] && <span style={{ color: '#fff', fontSize: 9 }}>✓</span>}
                             </div>
                             <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
                               {i + 1}{isAuto ? ' (auto)' : ''}
@@ -1082,8 +1133,8 @@ export default function Tab2() {
           )
         })}
 
-        <button className="btn-primary" style={{ marginTop: 20 }} onClick={() => { generateOverlap() }}>
-          Generate my plan
+        <button className="btn-primary" style={{ marginTop: 20 }} onClick={() => setSetupStep(4)}>
+          View my plan
         </button>
       </div>
     )
@@ -1105,12 +1156,11 @@ export default function Tab2() {
           summary.map((s, i) => {
             const pct = s.total === 0 ? 0 : Math.round((s.completed / s.total) * 100)
             const isTop = i === 0 && summary.length > 1
-            const showHeart = isTop && completedCourses.size > 0
             return (
               <div key={i} style={{ marginBottom: i < summary.length - 1 ? 14 : 0 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
                   <div style={{ fontSize: 12, fontWeight: isTop ? 600 : 400, color: 'var(--text)', flex: 1, marginRight: 8 }}>
-                    {showHeart && <span>heart </span>}{s.label}
+                    {s.label}
                   </div>
                   <div style={{ fontSize: 11, color: 'var(--text-muted)', flexShrink: 0 }}>{s.completed}/{s.total}</div>
                 </div>
@@ -1203,7 +1253,7 @@ export default function Tab2() {
                       display: 'flex', alignItems: 'center', justifyContent: 'center',
                     }}
                   >
-                    {completedCourses.has(c.ccKey) && <span style={{ color: '#fff', fontSize: 9 }}>v</span>}
+                    {completedCourses.has(c.ccKey) && <span style={{ color: '#fff', fontSize: 9 }}>✓</span>}
                   </div>
                   <div style={{ flex: 1, opacity: completedCourses.has(c.ccKey) ? 0.45 : 1 }}>
                     <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)', textDecoration: completedCourses.has(c.ccKey) ? 'line-through' : 'none' }}>
@@ -1233,7 +1283,7 @@ export default function Tab2() {
 
               {sem.overflow && (
                 <div style={{ padding: '10px 14px', background: '#2a1010', display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-                  <span style={{ color: '#f87171', flexShrink: 0 }}>warning</span>
+                  <span style={{ color: '#f87171', flexShrink: 0 }}>⚠</span>
                   <span style={{ fontSize: 12, color: '#fca5a5', lineHeight: 1.5 }}>
                     These courses don't fit before your transfer goal. Try extending your target date or reducing school-specific courses.
                   </span>
@@ -1349,7 +1399,7 @@ export default function Tab2() {
           <div key={`group-${group.groupId}`} style={{ border: '1.5px solid #5a4a10', borderRadius: 10, marginBottom: 12, overflow: 'hidden', background: '#1a1505' }}>
             <div style={{ padding: '9px 14px', borderBottom: '1px solid #5a4a10', background: '#221a05' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ fontSize: 14 }}>v</span>
+                <span style={{ fontSize: 14 }}>✓</span>
                 <span style={{ fontSize: 12, fontWeight: 700, color: '#fbbf24' }}>{pickGroupLabel(group)}</span>
                 <span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 4 }}>- you don't need all of them</span>
               </div>
@@ -1364,7 +1414,7 @@ export default function Tab2() {
                   <div key={`noart-${label}`} style={{ borderTop: '1px dashed #5a2020', background: '#1a0a0a' }}>
                     <div style={{ textAlign: 'center', fontSize: 11, fontWeight: 700, color: '#f87171', padding: '4px 0', letterSpacing: '0.05em' }}>OR</div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px' }}>
-                      <span style={{ color: '#f87171', fontSize: 14, flexShrink: 0 }}>X</span>
+                      <span style={{ color: '#f87171', fontSize: 14, flexShrink: 0 }}>✕</span>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontWeight: 600, fontSize: 13, color: '#fca5a5', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                           {label}
@@ -1471,7 +1521,7 @@ export default function Tab2() {
           rendered.push(
             <div key={`noart-inline-${na.uniReq.prefix}-${na.uniReq.number}-${na.program}`} style={{ border: '1px solid #5a2020', borderRadius: 8, marginBottom: 6, background: '#1a0a0a', overflow: 'hidden' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px' }}>
-                <span style={{ color: '#f87171', fontSize: 14, flexShrink: 0 }}>X</span>
+                <span style={{ color: '#f87171', fontSize: 14, flexShrink: 0 }}>✕</span>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontWeight: 600, fontSize: 13, color: '#fca5a5', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                     {na.uniReq.prefix} {na.uniReq.number}
@@ -1508,7 +1558,7 @@ export default function Tab2() {
           rendered.push(
             <div key={`noart-req-${na.uniReq.prefix}-${na.uniReq.number}-${na.program}`} style={{ border: '1px solid #5a2020', borderRadius: 8, marginBottom: 6, background: '#1a0a0a', overflow: 'hidden' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px' }}>
-                <span style={{ color: '#f87171', fontSize: 14, flexShrink: 0 }}>X</span>
+                <span style={{ color: '#f87171', fontSize: 14, flexShrink: 0 }}>✕</span>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontWeight: 600, fontSize: 13, color: '#fca5a5', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                     {na.uniReq.prefix} {na.uniReq.number}
@@ -1577,27 +1627,30 @@ export default function Tab2() {
     )
   }
 
+  const showPlan = overlapData && setupStep === 4
+
   return (
     <div>
       {error && <div className="error-box">{error}</div>}
 
-      {!overlapData && setupStep === 1 && renderStep1()}
-      {!overlapData && setupStep === 2 && renderStep2()}
+      {setupStep === 1 && renderStep1()}
+      {setupStep === 2 && renderStep2()}
+      {setupStep === 3 && renderStep3()}
 
-      {loading && (
+      {loading && setupStep === 1 && (
         <div className="card" style={{ textAlign: 'center' }}>
-          <div className="status"><div className="spinner" />{loadingMsg || 'Generating your plan...'}</div>
+          <div className="status"><div className="spinner" />{loadingMsg || 'Loading your courses...'}</div>
         </div>
       )}
 
-      {overlapData && (
+      {showPlan && (
         <>
           <div className="top-row">
             <div className="top-row-info">
               <h2>Your course plan - {ccName}</h2>
               <p>{programs.map(p => `${p.uniName} - ${p.majorLabel}`).join(' / ')}</p>
             </div>
-            <button className="btn-secondary" onClick={() => { setOverlapData(null); setExpandedRow(null); setSetupStep(1) }}>&lt;- Edit</button>
+            <button className="btn-secondary" onClick={() => { setOverlapData(null); setExpandedRow(null); setSetupStep(1); setCompletedCourses(new Set()) }}>&lt;- Edit</button>
           </div>
 
           {showBanner && (
@@ -1605,19 +1658,19 @@ export default function Tab2() {
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}>
                 <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--text)' }}>How to read this</div>
                 <button onClick={() => { setShowBanner(false); localStorage.setItem('tab2_banner_dismissed', '1') }}
-                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: 20, lineHeight: 1, padding: 0, flexShrink: 0 }} aria-label="Dismiss">x</button>
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: 20, lineHeight: 1, padding: 0, flexShrink: 0 }} aria-label="Dismiss">✕</button>
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: isWide ? '1fr 1fr' : '1fr', gap: '8px 20px' }}>
                 {[
-  { icon: <span style={{ width: 12, height: 12, borderRadius: '50%', background: '#a78bfa', display: 'inline-block', marginTop: 3 }} />, label: 'Purple dot', desc: '- this program requires the course' },
-  { icon: <span style={{ width: 12, height: 12, borderRadius: '50%', border: '2px solid #4a4a6a', display: 'inline-block', marginTop: 3 }} />, label: 'Empty dot', desc: '- not required by that program' },
-  { icon: <span style={{ width: 12, height: 12, borderRadius: 2, background: '#fbbf24', display: 'inline-block', marginTop: 3 }} />, label: 'Yellow card', desc: '- choose from the group, not all required' },
-  { icon: <span style={{ width: 12, height: 12, borderRadius: 2, background: '#f87171', display: 'inline-block', marginTop: 3 }} />, label: 'Red row', desc: '- no equivalent at your CC' },
-  { icon: <span style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2, display: 'inline-block' }}>▼</span>, label: 'Tap any row', desc: '- see which requirement it satisfies' },
-  { icon: <span style={{ width: 13, height: 13, borderRadius: 3, border: '2px solid #6C5CE7', background: '#6C5CE7', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginTop: 2 }}><span style={{ color: '#fff', fontSize: 9, lineHeight: 1 }}>✓</span></span>, label: 'Check it off', desc: '- progress saves automatically' },
-].map(({ icon, label, desc }) => (
-  <div key={label} style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-    <span style={{ display: 'inline-flex', flexShrink: 0 }}>{icon}</span>
+                  { icon: <span style={{ width: 12, height: 12, borderRadius: '50%', background: '#a78bfa', display: 'inline-block', marginTop: 3 }} />, label: 'Purple dot', desc: '- this program requires the course' },
+                  { icon: <span style={{ width: 12, height: 12, borderRadius: '50%', border: '2px solid #4a4a6a', display: 'inline-block', marginTop: 3 }} />, label: 'Empty dot', desc: '- not required by that program' },
+                  { icon: <span style={{ width: 12, height: 12, borderRadius: 2, background: '#fbbf24', display: 'inline-block', marginTop: 3 }} />, label: 'Yellow card', desc: '- choose from the group, not all required' },
+                  { icon: <span style={{ width: 12, height: 12, borderRadius: 2, background: '#f87171', display: 'inline-block', marginTop: 3 }} />, label: 'Red row', desc: '- no equivalent at your CC' },
+                  { icon: <span style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2, display: 'inline-block' }}>▼</span>, label: 'Tap any row', desc: '- see which requirement it satisfies' },
+                  { icon: <span style={{ width: 13, height: 13, borderRadius: 3, border: '2px solid #6C5CE7', background: '#6C5CE7', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginTop: 2 }}><span style={{ color: '#fff', fontSize: 9, lineHeight: 1 }}>✓</span></span>, label: 'Check it off', desc: '- progress saves automatically' },
+                ].map(({ icon, label, desc }) => (
+                  <div key={label} style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                    <span style={{ display: 'inline-flex', flexShrink: 0 }}>{icon}</span>
                     <div style={{ fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.5 }}>
                       <strong style={{ color: 'var(--text)' }}>{label}</strong> {desc}
                     </div>
