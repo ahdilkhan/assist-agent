@@ -333,7 +333,7 @@ function isRecommendedSection(label) {
 
 function pickGroupLabel(group) {
   const n = group.nRequired
-  const total = group.rows.length
+  const total = group._totalOptions ?? group.rows.length
   if (total <= 1) return null // don't show wrapper for single options
   switch (group.pickType) {
     case 'units': return `Choose courses totaling ${n} unit${n !== 1 ? 's' : ''} from these ${total} options`
@@ -1254,7 +1254,10 @@ export default function Tab2() {
       const noArtSiblingsFlat = (noArtByGroupIdFlat[group.groupId] || []).length
       const isEffectivelyRequired = isPickN && group.rows.length <= 1 && noArtSiblingSlots === 0 && noArtSiblingsFlat === 0
       const displayLabel = group.sectionLabel || group.groupTitle || 'REQUIREMENTS'
-      const groupLabel = pickGroupLabel(group)
+      const totalPickOptions = group.rows.length + noArtSiblingSlots
+const groupLabel = isPickN
+  ? pickGroupLabel({ ...group, _totalOptions: totalPickOptions })
+  : null
 
       if (displayLabel !== lastDisplayLabel) {
         lastDisplayLabel = displayLabel
@@ -1314,7 +1317,7 @@ export default function Tab2() {
         )
       }
 
-      if (isPickN && !isEffectivelyRequired && groupLabel) {
+      if (isPickN && !isEffectivelyRequired && (groupLabel || noArtSiblingSlots > 0)) {
         rendered.push(
           <div key={`group-${group.groupId}`} style={{ border: '1.5px solid #5a4a10', borderRadius: 10, marginBottom: 12, overflow: 'hidden', background: '#1a1505' }}>
             <div style={{ padding: '9px 14px', borderBottom: '1px solid #5a4a10', background: '#221a05' }}>
