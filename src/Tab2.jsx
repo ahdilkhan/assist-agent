@@ -82,7 +82,8 @@ async function fetchCalGetcMap(ccId) {
     }
     const data = await res.json()
     const courseList = data.courseInformationList || []
-    console.log('[CalGETC] total courses from transferability API:', courseList.length)
+console.log('[CalGETC] total courses from transferability API:', courseList.length)
+console.log('[calgetc] sample item:', JSON.stringify(courseList[0], null, 2))
 
     const map = {}
     const byIdentifier = {}
