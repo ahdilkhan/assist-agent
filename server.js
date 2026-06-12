@@ -44,9 +44,9 @@ app.use("/transferablecourselist", async (req, res) => {
   }
 })
 
-app.use("/transferability/api", async (req, res) => {
+app.use("/api/transferability", async (req, res) => {
   try {
-    const url = `${ASSIST_BASE}${req.originalUrl}`
+    const url = `${ASSIST_ORG}/api/transferability${req.url}`
     const response = await axios.get(url, {
       headers: { ...browserHeaders, accept: "application/json" },
     })

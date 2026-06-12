@@ -73,7 +73,7 @@ async function getAgreement(key) {
 async function fetchCalGetcMap(ccId) {
   try {
     const res = await fetch(
-      `${ASSIST_BASE}/transferability/api/courses?institutionId=${ccId}&academicYearId=${YEAR_ID}&listType=CALGETC`,
+      `${ASSIST_BASE}/api/transferability/courses?institutionId=${ccId}&academicYearId=${YEAR_ID}&listType=CALGETC`,
       { headers: { accept: 'application/json' } }
     )
     if (!res.ok) {
