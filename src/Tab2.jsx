@@ -594,28 +594,14 @@ export default function Tab2() {
       })
   }, [overlapData])
 
-  // Auto-detect Cal-GETC areas covered by major prep courses
+  // Auto-mark Cal-GETC areas when major courses are checked off
   useEffect(() => {
-    if (!overlapData || Object.keys(calGetcMap).length === 0) return
+    if (Object.keys(calGetcMap).length === 0 || !overlapData) return
+
     const newAutoChecked = {}
-    const newGeState = { ...geState }
-
-    // DEBUG: log ID matching to diagnose missed auto-detections
-    const artIds = new Set()
-    for (const row of overlapData.rows) {
-      for (const opt of (row.programEntries?.[0]?.options || [])) {
-        for (const course of opt.courses) {
-          if (course.courseIdentifierParentId) artIds.add(course.courseIdentifierParentId)
-        }
-      }
-    }
-    const mapIds = new Set(Object.keys(calGetcMap))
-    console.log('[Cal-GETC auto-detect] articulation IDs:', [...artIds])
-    console.log('[Cal-GETC auto-detect] calGetcMap IDs (sample):', [...mapIds].slice(0, 10))
-    console.log('[Cal-GETC auto-detect] matched:', [...artIds].filter(id => mapIds.has(id)))
-    console.log('[Cal-GETC auto-detect] missed (no Cal-GETC area):', [...artIds].filter(id => !mapIds.has(id)))
 
     for (const row of overlapData.rows) {
+      if (!completedCourses.has(row.ccKey)) continue
       for (const opt of (row.programEntries?.[0]?.options || [])) {
         for (const course of opt.courses) {
           const id = course.courseIdentifierParentId
@@ -625,15 +611,13 @@ export default function Tab2() {
             const area = CAL_GETC_AREAS.find(a => a.code === areaCode)
             if (!area) continue
             if (area.slots === 1) {
-              if (!newGeState[areaCode]) {
-                newGeState[areaCode] = true
+              if (!newAutoChecked[areaCode]) {
                 newAutoChecked[areaCode] = { identifier, title }
               }
             } else {
               for (let i = 0; i < area.slots; i++) {
                 const slotKey = `${areaCode}_${i}`
-                if (!newGeState[slotKey] && !newAutoChecked[slotKey]) {
-                  newGeState[slotKey] = true
+                if (!newAutoChecked[slotKey]) {
                   newAutoChecked[slotKey] = { identifier, title }
                   break
                 }
@@ -644,9 +628,18 @@ export default function Tab2() {
       }
     }
 
-    setAutoChecked(newAutoChecked)
-    setGeState(newGeState)
-  }, [overlapData, calGetcMap])
+    setAutoChecked(prev => {
+      // Find keys that were previously auto but are no longer
+      const cleared = Object.keys(prev).filter(k => !newAutoChecked[k])
+      setGeState(gs => {
+        const next = { ...gs }
+        for (const k of cleared) next[k] = false
+        for (const k of Object.keys(newAutoChecked)) next[k] = true
+        return next
+      })
+      return newAutoChecked
+    })
+  }, [completedCourses, calGetcMap, overlapData])
 
   async function saveProgress(newCompleted, progs) {
     if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current)
@@ -1416,12 +1409,12 @@ export default function Tab2() {
                         return (
                           <div key={pi} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
                             {overlapData.programLabels.length > 1 && <div style={{ fontSize: 9, color: 'var(--text-muted)', textAlign: 'center', maxWidth: 48, lineHeight: 1.2 }}>{shortLabel(progLabel).split('\n')[0]}</div>}
-                            <span style={{ color: has ? '#a78bfa' : '#4a4a6a', fontSize: 16, lineHeight: 1 }}>{has ? 'filled' : 'empty'}</span>
+                            <span style={{ width: 10, height: 10, borderRadius: '50%', background: has ? '#a78bfa' : 'transparent', border: has ? 'none' : '2px solid #4a4a6a', display: 'inline-block' }} />
                           </div>
                         )
                       })}
                     </div>
-                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{isExpanded ? 'up' : 'down'}</div>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{isExpanded ? '▲' : '▼'}</div>
                   </div>
                   {isExpanded && renderExpandedRow(row)}
                 </div>
@@ -1461,12 +1454,12 @@ export default function Tab2() {
                     return (
                       <div key={pi} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
                         {overlapData.programLabels.length > 1 && <div style={{ fontSize: 9, color: 'var(--text-muted)', textAlign: 'center', maxWidth: 48, lineHeight: 1.2 }}>{shortLabel(progLabel).split('\n')[0]}</div>}
-                        <span style={{ color: has ? '#a78bfa' : '#4a4a6a', fontSize: 16, lineHeight: 1 }}>{has ? 'filled' : 'empty'}</span>
+                        <span style={{ width: 10, height: 10, borderRadius: '50%', background: has ? '#a78bfa' : 'transparent', border: has ? 'none' : '2px solid #4a4a6a', display: 'inline-block' }} />
                       </div>
                     )
                   })}
                 </div>
-                <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{isExpanded ? 'up' : 'down'}</div>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{isExpanded ? '▲' : '▼'}</div>
               </div>
               {isExpanded && renderExpandedRow(row, isEffectivelyRequired)}
             </div>
@@ -1616,15 +1609,15 @@ export default function Tab2() {
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: isWide ? '1fr 1fr' : '1fr', gap: '8px 20px' }}>
                 {[
-                  { icon: 'filled', iconColor: '#a78bfa', label: 'Purple dot', desc: '- this program requires the course' },
-                  { icon: 'empty', iconColor: '#4a4a6a', label: 'Empty dot', desc: '- not required by that program' },
-                  { icon: 'yellow', iconColor: null, label: 'Yellow card', desc: '- choose from the group, not all required' },
-                  { icon: 'red', iconColor: null, label: 'Red row', desc: '- no equivalent at your CC' },
-                  { icon: 'down', iconColor: null, label: 'Tap any row', desc: '- see which requirement it satisfies' },
-                  { icon: 'check', iconColor: null, label: 'Check it off', desc: '- progress saves automatically' },
-                ].map(({ icon, iconColor, label, desc }) => (
-                  <div key={label} style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-                    <span style={{ color: iconColor || 'inherit', fontSize: iconColor ? 18 : 14, lineHeight: 1, flexShrink: 0, marginTop: 1 }}>{icon}</span>
+  { icon: <span style={{ width: 12, height: 12, borderRadius: '50%', background: '#a78bfa', display: 'inline-block', marginTop: 3 }} />, label: 'Purple dot', desc: '- this program requires the course' },
+  { icon: <span style={{ width: 12, height: 12, borderRadius: '50%', border: '2px solid #4a4a6a', display: 'inline-block', marginTop: 3 }} />, label: 'Empty dot', desc: '- not required by that program' },
+  { icon: <span style={{ width: 12, height: 12, borderRadius: 2, background: '#fbbf24', display: 'inline-block', marginTop: 3 }} />, label: 'Yellow card', desc: '- choose from the group, not all required' },
+  { icon: <span style={{ width: 12, height: 12, borderRadius: 2, background: '#f87171', display: 'inline-block', marginTop: 3 }} />, label: 'Red row', desc: '- no equivalent at your CC' },
+  { icon: <span style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2, display: 'inline-block' }}>▼</span>, label: 'Tap any row', desc: '- see which requirement it satisfies' },
+  { icon: <span style={{ width: 13, height: 13, borderRadius: 3, border: '2px solid #6C5CE7', background: '#6C5CE7', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginTop: 2 }}><span style={{ color: '#fff', fontSize: 9, lineHeight: 1 }}>✓</span></span>, label: 'Check it off', desc: '- progress saves automatically' },
+].map(({ icon, label, desc }) => (
+  <div key={label} style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+    <span style={{ display: 'inline-flex', flexShrink: 0 }}>{icon}</span>
                     <div style={{ fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.5 }}>
                       <strong style={{ color: 'var(--text)' }}>{label}</strong> {desc}
                     </div>
