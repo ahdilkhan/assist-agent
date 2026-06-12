@@ -70,20 +70,23 @@ async function getAgreement(key) {
   return assistGet(`/articulation/api/Agreements?Key=${encodeURIComponent(key)}`)
 }
 
-// FIX: returns { map, byIdentifier } instead of a flat object
-// map: keyed by courseIdentifierParentId
-// byIdentifier: keyed by "PREFIX NUMBER" uppercase string (fallback)
 async function fetchCalGetcMap(ccId) {
   try {
     const res = await fetch(
       `${ASSIST_BASE}/transferability/api/courses?institutionId=${ccId}&academicYearId=${YEAR_ID}&listType=CALGETC`,
       { headers: { accept: 'application/json' } }
     )
-    if (!res.ok) return { map: {}, byIdentifier: {} }
+    if (!res.ok) {
+      console.warn('[CalGETC] fetch failed:', res.status)
+      return { map: {}, byIdentifier: {} }
+    }
     const data = await res.json()
+    const courseList = data.courseInformationList || []
+    console.log('[CalGETC] total courses from transferability API:', courseList.length)
+
     const map = {}
     const byIdentifier = {}
-    for (const course of (data.courseInformationList || [])) {
+    for (const course of courseList) {
       const areas = (course.transferAreas || []).map(a => a.code)
       if (areas.length === 0) continue
       const entry = {
@@ -94,25 +97,38 @@ async function fetchCalGetcMap(ccId) {
       if (course.courseIdentifierParentId) {
         map[course.courseIdentifierParentId] = entry
       }
-      // Build fallback key from identifier string e.g. "CHEM 120"
       if (course.identifier) {
-        byIdentifier[course.identifier.trim().toUpperCase()] = entry
+        const key = course.identifier.trim().toUpperCase()
+        byIdentifier[key] = entry
       }
     }
+
+    console.log('[CalGETC] byIdentifier sample (first 20 keys):', Object.keys(byIdentifier).slice(0, 20))
+    console.log('[CalGETC] map size (by parentId):', Object.keys(map).length)
+    console.log('[CalGETC] byIdentifier size:', Object.keys(byIdentifier).length)
+
     return { map, byIdentifier }
-  } catch {
+  } catch (e) {
+    console.error('[CalGETC] fetchCalGetcMap error:', e)
     return { map: {}, byIdentifier: {} }
   }
 }
 
-// FIX: two-pass lookup — try ID first, fall back to "PREFIX NUMBER" string
 function lookupCalGetc(calGetcMap, course) {
   const { map, byIdentifier } = calGetcMap
-  if (course.courseIdentifierParentId && map[course.courseIdentifierParentId]) {
-    return map[course.courseIdentifierParentId]
-  }
   const key = `${course.prefix} ${course.number}`.trim().toUpperCase()
-  return byIdentifier[key] || null
+
+  const idHit = course.courseIdentifierParentId ? map[course.courseIdentifierParentId] : null
+  const strHit = byIdentifier[key]
+
+  console.log('[CalGETC] lookup:', key, {
+    parentId: course.courseIdentifierParentId,
+    idHit: !!idHit,
+    strHit: !!strHit,
+    areas: (idHit || strHit)?.areas || null,
+  })
+
+  return idHit || strHit || null
 }
 
 function extractCourse(c) {
@@ -470,14 +486,13 @@ function buildSemesterPlan({ rows, completedCourses, geState, plannerStart, plan
   }
 
   const semesters = []
-  let courseIdx = 0
   let geIdx = 0
   const ready = new Set(
     rows.filter(r => completedCourses.has(r.ccKey))
       .flatMap(r => r.primaryCourses.map(c => `${c.prefix} ${c.number}`))
   )
 
-  for (let ti = startIdx; ti <= endIdx && (courseIdx < sorted.length || geIdx < geNeeded.length); ti++) {
+  for (let ti = startIdx; ti <= endIdx && (sorted.length > 0 || geNeeded.length > 0); ti++) {
     const term = termList[ti]
     const sem = { term, courses: [], ge: [], units: 0, overflow: false }
     const area4ThisSem = { count: 0 }
@@ -485,7 +500,7 @@ function buildSemesterPlan({ rows, completedCourses, geState, plannerStart, plan
     let changed = true
     while (changed) {
       changed = false
-      for (let i = courseIdx; i < sorted.length; i++) {
+      for (let i = 0; i < sorted.length; i++) {
         const c = sorted[i]
         const prereqKey = getPrereqKey(c)
         const prereqOk = !prereqKey || ready.has(prereqKey)
@@ -500,7 +515,7 @@ function buildSemesterPlan({ rows, completedCourses, geState, plannerStart, plan
       }
     }
 
-    let gi = geIdx
+    let gi = 0
     while (gi < geNeeded.length && sem.units + GE_UNIT <= UNIT_CAP) {
       const g = geNeeded[gi]
       if (g.areaCode === '4' && area4ThisSem.count >= MAX_AREA4_PER_SEM) { gi++; continue }
@@ -509,7 +524,6 @@ function buildSemesterPlan({ rows, completedCourses, geState, plannerStart, plan
       sem.units += GE_UNIT
       geNeeded.splice(gi, 1)
     }
-    geIdx = 0
 
     if (sem.courses.length > 0 || sem.ge.length > 0) semesters.push(sem)
   }
@@ -540,18 +554,17 @@ export default function Tab2() {
 
   const [geState, setGeState] = useState(initGeState)
   const [autoChecked, setAutoChecked] = useState({})
-  // FIX: calGetcMap now holds { map, byIdentifier } instead of a flat object
   const [calGetcMap, setCalGetcMap] = useState({ map: {}, byIdentifier: {} })
   const [calGetcLoading, setCalGetcLoading] = useState(false)
+  const [showGePanel, setShowGePanel] = useState(false)
 
   const [loading, setLoading] = useState(false)
-  const [loadingMsg, setLoadingMsg] = useState('')
   const [error, setError] = useState('')
   const [overlapData, setOverlapData] = useState(null)
   const [expandedRow, setExpandedRow] = useState(null)
   const [completedCourses, setCompletedCourses] = useState(new Set())
 
-  // FLOW CHANGE: only 2 setup steps now (1=configure, 2=Cal-GETC), then plan view
+  // Only 2 states now: setup (1) and plan (2)
   const [setupStep, setSetupStep] = useState(1)
   const [activeTab, setActiveTab] = useState('list')
   const [isWide, setIsWide] = useState(window.innerWidth > 768)
@@ -585,7 +598,10 @@ export default function Tab2() {
     if (!ccId) { setCalGetcMap({ map: {}, byIdentifier: {} }); return }
     setCalGetcLoading(true)
     fetchCalGetcMap(ccId)
-      .then(result => setCalGetcMap(result))
+      .then(result => {
+        console.log('[CalGETC] map loaded for ccId', ccId, result)
+        setCalGetcMap(result)
+      })
       .finally(() => setCalGetcLoading(false))
   }, [ccId])
 
@@ -614,19 +630,30 @@ export default function Tab2() {
       })
   }, [overlapData])
 
-  // FIX: auto-mark Cal-GETC using two-pass lookupCalGetc instead of direct map access
+  // Auto-detect Cal-GETC from completed major courses
   useEffect(() => {
-    const hasData = Object.keys(calGetcMap.map).length > 0 || Object.keys(calGetcMap.byIdentifier).length > 0
-    if (!hasData || !overlapData) return
+    const hasData = Object.keys(calGetcMap.byIdentifier).length > 0 || Object.keys(calGetcMap.map).length > 0
+    if (!hasData || !overlapData) {
+      console.log('[CalGETC] auto-detect skipped — no calGetcMap data or no overlapData')
+      return
+    }
+
+    console.log('[CalGETC] auto-detect running, completedCourses:', [...completedCourses])
 
     const newAutoChecked = {}
 
     for (const row of overlapData.rows) {
       if (!completedCourses.has(row.ccKey)) continue
-      for (const opt of (row.programEntries?.[0]?.options || [])) {
+
+      // Check all options across all program entries, not just [0]
+      const allOptions = row.programEntries.flatMap(pe => pe.options || [])
+      for (const opt of allOptions) {
         for (const course of opt.courses) {
           const hit = lookupCalGetc(calGetcMap, course)
           if (!hit) continue
+
+          console.log('[CalGETC] HIT for completed course', `${course.prefix} ${course.number}`, '→ areas:', hit.areas)
+
           const { areas, identifier, title } = hit
           for (const areaCode of areas) {
             const area = CAL_GETC_AREAS.find(a => a.code === areaCode)
@@ -648,6 +675,8 @@ export default function Tab2() {
         }
       }
     }
+
+    console.log('[CalGETC] newAutoChecked result:', newAutoChecked)
 
     setAutoChecked(prev => {
       const cleared = Object.keys(prev).filter(k => !newAutoChecked[k])
@@ -849,6 +878,24 @@ export default function Tab2() {
     })
   }
 
+  // Build a map of ccKey -> Cal-GETC areas for badge display on course rows
+  function buildCourseGeMap() {
+    if (!overlapData) return {}
+    const result = {}
+    for (const row of overlapData.rows) {
+      const allOptions = row.programEntries.flatMap(pe => pe.options || [])
+      const areas = new Set()
+      for (const opt of allOptions) {
+        for (const course of opt.courses) {
+          const hit = lookupCalGetc(calGetcMap, course)
+          if (hit) hit.areas.forEach(a => areas.add(a))
+        }
+      }
+      if (areas.size > 0) result[row.ccKey] = [...areas]
+    }
+    return result
+  }
+
   function shortLabel(label) {
     const parts = label.split(' - ')
     const uni = parts[0]?.replace('UC ', '').replace('CSU ', '').replace(' State', '').replace(' University', '')
@@ -857,6 +904,8 @@ export default function Tab2() {
   }
 
   const summary = computeAttainability()
+  // Only compute once per render — used in course list and sidebar
+  const courseGeMap = overlapData ? buildCourseGeMap() : {}
 
   function geTotal() {
     return CAL_GETC_AREAS.reduce((s, a) => s + a.slots, 0)
@@ -872,14 +921,7 @@ export default function Tab2() {
   }
 
   const semesterPlan = overlapData
-    ? buildSemesterPlan({
-        rows: overlapData.rows,
-        completedCourses,
-        geState,
-        plannerStart,
-        plannerEnd,
-        includeSummer,
-      })
+    ? buildSemesterPlan({ rows: overlapData.rows, completedCourses, geState, plannerStart, plannerEnd, includeSummer })
     : []
 
   const realSems = semesterPlan.filter(s => !s.overflow)
@@ -891,7 +933,7 @@ export default function Tab2() {
     return ['load-heavy', 'Heavy']
   }
 
-  // ─── STEP 1: Configure CC + programs + timeline ──────────────────────────
+  // ─── STEP 1: Configure ────────────────────────────────────────────────────
   function renderStep1() {
     return (
       <>
@@ -986,133 +1028,11 @@ export default function Tab2() {
               await generateOverlap()
               setSetupStep(2)
             }} disabled={loading}>
-              {loading ? 'Loading...' : 'Next: Cal-GETC checklist'}
+              {loading ? 'Loading...' : 'View my plan →'}
             </button>
           </div>
         )}
       </>
-    )
-  }
-
-  // ─── STEP 2: Cal-GETC checklist (was step 3) ─────────────────────────────
-  // Note: completed courses are now checked off in the plan view itself,
-  // so the Cal-GETC step comes first and shows what's auto-detected
-  // from prior session data, plus lets users add AP/other-school credits.
-  function renderStep2() {
-    const done = geDone()
-    const total = geTotal()
-    const pct = Math.round((done / total) * 100)
-
-    return (
-      <div className="card">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
-          <button className="btn-secondary" style={{ padding: '5px 12px', fontSize: 12 }} onClick={() => setSetupStep(1)}>&lt;- Back</button>
-          <div className="section-label" style={{ marginBottom: 0 }}>Cal-GETC requirements</div>
-        </div>
-        <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 14 }}>
-          Check off Cal-GETC areas you've already completed — AP credits, courses at another school, etc. As you check off major prep courses in your plan, any that also count for Cal-GETC will be auto-detected here in green.
-        </div>
-
-        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--text-muted)', marginBottom: 5 }}>
-          <span>{done} of {total} areas complete</span>
-          <span>{pct}%</span>
-        </div>
-        <div style={{ background: 'var(--progress-track)', borderRadius: 4, height: 5, overflow: 'hidden', marginBottom: 16 }}>
-          <div style={{ background: '#6C5CE7', height: '100%', width: `${pct}%`, borderRadius: 4, transition: 'width 0.3s' }} />
-        </div>
-
-        {calGetcLoading && (
-          <div className="status" style={{ marginBottom: 12 }}><div className="spinner" />Loading Cal-GETC data...</div>
-        )}
-
-        {CAL_GETC_AREAS.map(area => {
-          const isMulti = area.slots > 1
-          const slotKeys = Array.from({ length: area.slots }, (_, i) =>
-            isMulti ? `${area.code}_${i}` : area.code
-          )
-          const allDone = slotKeys.every(k => geState[k])
-          const anyAuto = slotKeys.some(k => autoChecked[k])
-
-          return (
-            <div key={area.code} style={{ borderBottom: '1px solid var(--border)', padding: '10px 0', opacity: allDone ? 0.6 : 1 }}>
-              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-                {!isMulti && (() => {
-                  const k = area.code
-                  const isAuto = !!autoChecked[k]
-                  return (
-                    <div
-                      onClick={() => !isAuto && toggleGeSlot(k)}
-                      style={{
-                        width: 16, height: 16, borderRadius: 4, flexShrink: 0, marginTop: 2,
-                        border: `2px solid ${geState[k] ? (isAuto ? '#1D9E75' : '#6C5CE7') : 'var(--border-input)'}`,
-                        background: geState[k] ? (isAuto ? '#1D9E75' : '#6C5CE7') : 'transparent',
-                        cursor: isAuto ? 'default' : 'pointer',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      }}
-                    >
-                      {geState[k] && <span style={{ color: '#fff', fontSize: 10, lineHeight: 1 }}>✓</span>}
-                    </div>
-                  )
-                })()}
-                {isMulti && <div style={{ width: 16, flexShrink: 0 }} />}
-
-                <div style={{ flex: 1 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                    <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)' }}>Area {area.code}</span>
-                    <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)' }}>{area.name}</span>
-                    {anyAuto && (
-                      <span style={{ fontSize: 10, background: '#0d2a1a', color: '#4ade80', borderRadius: 4, padding: '2px 7px', fontWeight: 600 }}>
-                        auto-detected
-                      </span>
-                    )}
-                  </div>
-                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>{area.desc}</div>
-
-                  {anyAuto && slotKeys.filter(k => autoChecked[k]).map(k => (
-                    <div key={k} style={{ fontSize: 11, color: '#4ade80', marginTop: 4 }}>
-                      via {autoChecked[k].identifier} - {autoChecked[k].title}
-                    </div>
-                  ))}
-
-                  {isMulti && (
-                    <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 8, flexWrap: 'wrap' }}>
-                      {slotKeys.map((k, i) => {
-                        const isAuto = !!autoChecked[k]
-                        return (
-                          <div key={k} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                            <div
-                              onClick={() => !isAuto && toggleGeSlot(k)}
-                              style={{
-                                width: 15, height: 15, borderRadius: 3, flexShrink: 0,
-                                border: `2px solid ${geState[k] ? (isAuto ? '#1D9E75' : '#6C5CE7') : 'var(--border-input)'}`,
-                                background: geState[k] ? (isAuto ? '#1D9E75' : '#6C5CE7') : 'transparent',
-                                cursor: isAuto ? 'default' : 'pointer',
-                                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                              }}
-                            >
-                              {geState[k] && <span style={{ color: '#fff', fontSize: 9 }}>✓</span>}
-                            </div>
-                            <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                              {i + 1}{isAuto ? ' (auto)' : ''}
-                            </span>
-                          </div>
-                        )
-                      })}
-                      <span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 4 }}>
-                        {slotKeys.filter(k => geState[k]).length} of {area.slots} complete
-                      </span>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          )
-        })}
-
-        <button className="btn-primary" style={{ marginTop: 20 }} onClick={() => setSetupStep(3)}>
-          View my plan
-        </button>
-      </div>
     )
   }
 
@@ -1136,9 +1056,7 @@ export default function Tab2() {
             return (
               <div key={i} style={{ marginBottom: i < summary.length - 1 ? 14 : 0 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                  <div style={{ fontSize: 12, fontWeight: isTop ? 600 : 400, color: 'var(--text)', flex: 1, marginRight: 8 }}>
-                    {s.label}
-                  </div>
+                  <div style={{ fontSize: 12, fontWeight: isTop ? 600 : 400, color: 'var(--text)', flex: 1, marginRight: 8 }}>{s.label}</div>
                   <div style={{ fontSize: 11, color: 'var(--text-muted)', flexShrink: 0 }}>{s.completed}/{s.total}</div>
                 </div>
                 <div style={{ background: 'var(--progress-track)', borderRadius: 4, height: 6, overflow: 'hidden' }}>
@@ -1149,21 +1067,100 @@ export default function Tab2() {
           })
         )}
 
+        {/* Cal-GETC section in sidebar */}
         <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-            <div style={{ fontSize: 12, color: 'var(--text)' }}>Cal-GETC</div>
-            <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{done}/{total} areas</div>
+            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)' }}>Cal-GETC</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{done}/{total}</div>
+              <button
+                onClick={() => setShowGePanel(v => !v)}
+                style={{ fontSize: 11, color: '#a78bfa', background: 'none', border: 'none', cursor: 'pointer', padding: '2px 4px' }}
+              >
+                {showGePanel ? 'hide' : 'edit'}
+              </button>
+            </div>
           </div>
           <div style={{ background: 'var(--progress-track)', borderRadius: 4, height: 6, overflow: 'hidden', marginBottom: 10 }}>
             <div style={{ background: gePct === 100 ? '#4ade80' : '#a78bfa', height: '100%', width: `${gePct}%`, borderRadius: 4, transition: 'width 0.3s ease' }} />
           </div>
 
+          {/* Live auto-detect feed — shows which courses triggered which areas */}
+          {Object.keys(autoChecked).length > 0 && (
+            <div style={{ marginBottom: 10 }}>
+              {Object.entries(autoChecked).map(([key, { identifier, title }]) => {
+                const areaCode = key.includes('_') ? key.split('_')[0] : key
+                const area = CAL_GETC_AREAS.find(a => a.code === areaCode)
+                return (
+                  <div key={key} style={{ display: 'flex', alignItems: 'flex-start', gap: 6, marginBottom: 5 }}>
+                    <span style={{ fontSize: 10, background: '#0d2a1a', color: '#4ade80', borderRadius: 3, padding: '2px 5px', fontWeight: 600, flexShrink: 0, marginTop: 1 }}>auto</span>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.4 }}>
+                      <span style={{ color: '#4ade80', fontWeight: 500 }}>Area {areaCode}</span>
+                      {area ? ` · ${area.name}` : ''}
+                      <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 1 }}>via {identifier}</div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+
+          {/* Manual GE edit panel */}
+          {showGePanel && (
+            <div style={{ background: 'var(--bg-step)', borderRadius: 8, padding: '10px 12px', marginBottom: 8 }}>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 10 }}>
+                Check areas completed via AP, IB, or another school.
+              </div>
+              {CAL_GETC_AREAS.map(area => {
+                const isMulti = area.slots > 1
+                const slotKeys = Array.from({ length: area.slots }, (_, i) =>
+                  isMulti ? `${area.code}_${i}` : area.code
+                )
+                return (
+                  <div key={area.code} style={{ marginBottom: 8 }}>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text)', marginBottom: 4 }}>
+                      Area {area.code} · {area.name}
+                    </div>
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                      {slotKeys.map((k, i) => {
+                        const isAuto = !!autoChecked[k]
+                        return (
+                          <div key={k} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                            <div
+                              onClick={() => !isAuto && toggleGeSlot(k)}
+                              style={{
+                                width: 15, height: 15, borderRadius: 3, flexShrink: 0,
+                                border: `2px solid ${geState[k] ? (isAuto ? '#1D9E75' : '#6C5CE7') : 'var(--border-input)'}`,
+                                background: geState[k] ? (isAuto ? '#1D9E75' : '#6C5CE7') : 'transparent',
+                                cursor: isAuto ? 'default' : 'pointer',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              }}
+                            >
+                              {geState[k] && <span style={{ color: '#fff', fontSize: 9 }}>✓</span>}
+                            </div>
+                            {isMulti && (
+                              <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>
+                                {i + 1}{isAuto ? ' (auto)' : ''}
+                              </span>
+                            )}
+                            {!isMulti && isAuto && (
+                              <span style={{ fontSize: 10, color: '#4ade80' }}>auto</span>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+
           {overlapData && (
             <div style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.6 }}>
               {realSems.length} semester{realSems.length !== 1 ? 's' : ''} planned
-              {hasOverflow && ' (some courses overflow - adjust your end term)'}
-              {' - '}
-              {plannerStart} to {plannerEnd}
+              {hasOverflow && ' (some overflow — extend end term)'}
+              {' · '}{plannerStart} → {plannerEnd}
             </div>
           )}
         </div>
@@ -1171,12 +1168,12 @@ export default function Tab2() {
     )
   }
 
-  // ─── SEMESTER PLAN TAB ────────────────────────────────────────────────────
+  // ─── SEMESTER PLAN ────────────────────────────────────────────────────────
   function renderSemesterPlan() {
     if (semesterPlan.length === 0) {
       return (
         <div style={{ fontSize: 13, color: 'var(--text-muted)', padding: '20px 0', textAlign: 'center' }}>
-          No courses left to schedule - you're all done!
+          No courses left to schedule — you're all done!
         </div>
       )
     }
@@ -1199,57 +1196,38 @@ export default function Tab2() {
         {semesterPlan.map((sem, si) => {
           const [lClass, lLabel] = sem.overflow ? ['load-heavy', 'Overflow'] : loadBadge(sem.units)
           const totalU = sem.courses.reduce((s, c) => s + c.units, 0) + sem.ge.length * 3
-
           return (
-            <div key={si} style={{
-              border: `1px solid ${sem.overflow ? '#5a2020' : 'var(--border)'}`,
-              borderRadius: 10, marginBottom: 10, overflow: 'hidden',
-              background: sem.overflow ? '#1a0a0a' : 'var(--bg-card)',
-            }}>
+            <div key={si} style={{ border: `1px solid ${sem.overflow ? '#5a2020' : 'var(--border)'}`, borderRadius: 10, marginBottom: 10, overflow: 'hidden', background: sem.overflow ? '#1a0a0a' : 'var(--bg-card)' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '9px 14px', background: 'var(--bg-step)', borderBottom: '1px solid var(--border)' }}>
                 <div>
                   <div style={{ fontSize: 13, fontWeight: 600, color: sem.overflow ? '#f87171' : 'var(--text)' }}>{sem.term}</div>
-                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>
-                    {sem.courses.length} major - {sem.ge.length} GE - {Math.round(totalU)}u
-                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>{sem.courses.length} major · {sem.ge.length} GE · {Math.round(totalU)}u</div>
                 </div>
-                <span style={{
-                  fontSize: 10, fontWeight: 600, padding: '3px 8px', borderRadius: 4,
-                  background: lClass === 'load-ok' ? '#0d2a1a' : lClass === 'load-busy' ? '#2a2010' : '#2a1010',
-                  color: lClass === 'load-ok' ? '#4ade80' : lClass === 'load-busy' ? '#fbbf24' : '#f87171',
-                }}>{lLabel}</span>
+                <span style={{ fontSize: 10, fontWeight: 600, padding: '3px 8px', borderRadius: 4, background: lClass === 'load-ok' ? '#0d2a1a' : lClass === 'load-busy' ? '#2a2010' : '#2a1010', color: lClass === 'load-ok' ? '#4ade80' : lClass === 'load-busy' ? '#fbbf24' : '#f87171' }}>{lLabel}</span>
               </div>
-
-              {sem.courses.map((c, ci) => (
-                <div key={ci} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 14px', borderBottom: '1px solid var(--border)' }}>
-                  <div
-                    onClick={() => toggleCourse(c.ccKey)}
-                    style={{
-                      width: 14, height: 14, borderRadius: 3, flexShrink: 0, cursor: 'pointer',
-                      border: `2px solid ${completedCourses.has(c.ccKey) ? '#6C5CE7' : 'var(--border-input)'}`,
-                      background: completedCourses.has(c.ccKey) ? '#6C5CE7' : 'transparent',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    }}
-                  >
-                    {completedCourses.has(c.ccKey) && <span style={{ color: '#fff', fontSize: 9 }}>✓</span>}
-                  </div>
-                  <div style={{ flex: 1, opacity: completedCourses.has(c.ccKey) ? 0.45 : 1 }}>
-                    <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)', textDecoration: completedCourses.has(c.ccKey) ? 'line-through' : 'none' }}>
-                      {c.prefix} {c.number}
+              {sem.courses.map((c, ci) => {
+                const geAreas = courseGeMap[c.ccKey] || []
+                return (
+                  <div key={ci} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 14px', borderBottom: '1px solid var(--border)' }}>
+                    <div onClick={() => toggleCourse(c.ccKey)} style={{ width: 14, height: 14, borderRadius: 3, flexShrink: 0, cursor: 'pointer', border: `2px solid ${completedCourses.has(c.ccKey) ? '#6C5CE7' : 'var(--border-input)'}`, background: completedCourses.has(c.ccKey) ? '#6C5CE7' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      {completedCourses.has(c.ccKey) && <span style={{ color: '#fff', fontSize: 9 }}>✓</span>}
                     </div>
-                    {c.title && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>{c.title}</div>}
+                    <div style={{ flex: 1, opacity: completedCourses.has(c.ccKey) ? 0.45 : 1 }}>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)', textDecoration: completedCourses.has(c.ccKey) ? 'line-through' : 'none', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                        {c.prefix} {c.number}
+                        {geAreas.map(a => (
+                          <span key={a} style={{ fontSize: 9, fontWeight: 600, padding: '1px 5px', borderRadius: 3, background: '#0d2a1a', color: '#4ade80' }}>GE {a}</span>
+                        ))}
+                      </div>
+                      {c.title && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>{c.title}</div>}
+                    </div>
+                    <span style={{ fontSize: 9, fontWeight: 600, padding: '2px 5px', borderRadius: 4, flexShrink: 0, background: c.badge === 'all' ? 'var(--bg-chip-selected)' : c.badge === 'multi' ? '#0d2a28' : '#0d1a2e', color: c.badge === 'all' ? '#a78bfa' : c.badge === 'multi' ? '#34d399' : '#60a5fa' }}>
+                      {c.badge === 'all' ? 'ALL' : c.badge === 'multi' ? 'MULTI' : 'SCHOOL'}
+                    </span>
+                    <span style={{ fontSize: 11, color: 'var(--text-muted)', flexShrink: 0 }}>{c.units}u</span>
                   </div>
-                  <span style={{
-                    fontSize: 9, fontWeight: 600, padding: '2px 5px', borderRadius: 4, flexShrink: 0,
-                    background: c.badge === 'all' ? 'var(--bg-chip-selected)' : c.badge === 'multi' ? '#0d2a28' : '#0d1a2e',
-                    color: c.badge === 'all' ? '#a78bfa' : c.badge === 'multi' ? '#34d399' : '#60a5fa',
-                  }}>
-                    {c.badge === 'all' ? 'ALL' : c.badge === 'multi' ? 'MULTI' : 'SCHOOL'}
-                  </span>
-                  <span style={{ fontSize: 11, color: 'var(--text-muted)', flexShrink: 0 }}>{c.units}u</span>
-                </div>
-              ))}
-
+                )
+              })}
               {sem.ge.map((g, gi) => (
                 <div key={gi} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 14px', borderBottom: '1px dashed var(--border)', opacity: 0.6 }}>
                   <div style={{ width: 14, height: 14, borderRadius: 3, border: '1.5px dashed var(--border-input)', flexShrink: 0 }} />
@@ -1258,13 +1236,10 @@ export default function Tab2() {
                   <span style={{ fontSize: 11, color: 'var(--text-muted)', flexShrink: 0 }}>3u</span>
                 </div>
               ))}
-
               {sem.overflow && (
                 <div style={{ padding: '10px 14px', background: '#2a1010', display: 'flex', gap: 8, alignItems: 'flex-start' }}>
                   <span style={{ color: '#f87171', flexShrink: 0 }}>⚠</span>
-                  <span style={{ fontSize: 12, color: '#fca5a5', lineHeight: 1.5 }}>
-                    These courses don't fit before your transfer goal. Try extending your target date or reducing school-specific courses.
-                  </span>
+                  <span style={{ fontSize: 12, color: '#fca5a5', lineHeight: 1.5 }}>These courses don't fit before your transfer goal. Try extending your target date or reducing school-specific courses.</span>
                 </div>
               )}
             </div>
@@ -1274,7 +1249,7 @@ export default function Tab2() {
     )
   }
 
-  // ─── COURSE LIST TAB ──────────────────────────────────────────────────────
+  // ─── COURSE LIST ──────────────────────────────────────────────────────────
   function renderCourseList() {
     const groups = []
     const groupIdToGroup = {}
@@ -1304,13 +1279,7 @@ export default function Tab2() {
     for (const row of overlapData.rows) {
       const groupId = row.groupId ?? `singleton_${row.ccKey}`
       if (!groupIdToGroup[groupId]) {
-        const g = {
-          groupId, groupTitle: row.groupTitle || 'MAJOR REQUIREMENTS',
-          sectionLabel: row.sectionLabel || '',
-          nRequired: row.nRequired ?? null, pickType: row.pickType ?? null,
-          pickMin: row.pickMin ?? null, pickMax: row.pickMax ?? null,
-          isSectionBundled: row.isSectionBundled || false, rows: [],
-        }
+        const g = { groupId, groupTitle: row.groupTitle || 'MAJOR REQUIREMENTS', sectionLabel: row.sectionLabel || '', nRequired: row.nRequired ?? null, pickType: row.pickType ?? null, pickMin: row.pickMin ?? null, pickMax: row.pickMax ?? null, isSectionBundled: row.isSectionBundled || false, rows: [] }
         groupIdToGroup[groupId] = g
         groups.push(g)
       }
@@ -1324,13 +1293,7 @@ export default function Tab2() {
     for (const na of inlineRequiredNoArt) {
       const groupId = na.groupId ?? `noart_${na.uniReq.prefix}_${na.uniReq.number}`
       if (!groupIdToGroup[groupId]) {
-        const g = {
-          groupId, groupTitle: na.groupTitle || 'MAJOR REQUIREMENTS',
-          sectionLabel: na.sectionLabel || '',
-          nRequired: null, pickType: null, pickMin: null, pickMax: null,
-          isSectionBundled: false, rows: [], noArtRows: [],
-          _groupPosition: na.groupPosition ?? 999, _sectionPosition: na.sectionPosition ?? 999,
-        }
+        const g = { groupId, groupTitle: na.groupTitle || 'MAJOR REQUIREMENTS', sectionLabel: na.sectionLabel || '', nRequired: null, pickType: null, pickMin: null, pickMax: null, isSectionBundled: false, rows: [], noArtRows: [], _groupPosition: na.groupPosition ?? 999, _sectionPosition: na.sectionPosition ?? 999 }
         groupIdToGroup[groupId] = g
         groups.push(g)
       }
@@ -1373,6 +1336,59 @@ export default function Tab2() {
         )
       }
 
+      const renderCourseRow = (row, rowIdx, inPickGroup = false) => {
+        const isDone = completedCourses.has(row.ccKey)
+        const isExpanded = expandedRow === row.ccKey
+        const label = row.primaryCourses.map(c => `${c.prefix} ${c.number}`).join(' + ')
+        const subtitle = row.primaryCourses.map(c => c.title).filter(Boolean).join(' + ')
+        const units = row.primaryCourses.reduce((sum, c) => sum + (c.units || 0), 0)
+        const coverageAll = row.coverage === overlapData.totalPrograms
+        const coverageMost = row.coverage > 1 && !coverageAll
+        const isSchoolSpecific = row.coverage === 1 && overlapData.totalPrograms > 1
+        const geAreas = courseGeMap[row.ccKey] || []
+
+        const rowContent = (
+          <>
+            <div onClick={e => { e.stopPropagation(); toggleCourse(row.ccKey) }}>
+              <input type="checkbox" checked={isDone} onChange={() => toggleCourse(row.ccKey)} style={{ width: 15, height: 15, cursor: 'pointer', accentColor: inPickGroup ? '#fbbf24' : '#a78bfa' }} />
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontWeight: 600, fontSize: 13, textDecoration: isDone ? 'line-through' : 'none', color: isDone ? 'var(--text-muted)' : 'var(--text)', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                {label}
+                {coverageAll && <span style={{ fontSize: 10, background: 'var(--bg-chip-selected)', color: '#a78bfa', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>ALL PROGRAMS</span>}
+                {coverageMost && <span style={{ fontSize: 10, background: '#0d2a28', color: '#34d399', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>MULTIPLE</span>}
+                {isSchoolSpecific && <span style={{ fontSize: 10, borderRadius: 4, padding: '2px 6px', fontWeight: 600, background: '#0d1a2e', color: '#60a5fa' }}>SCHOOL-SPECIFIC</span>}
+                {geAreas.map(a => (
+                  <span key={a} style={{ fontSize: 10, fontWeight: 600, padding: '2px 6px', borderRadius: 4, background: '#0d2a1a', color: '#4ade80' }}>GE {a}</span>
+                ))}
+              </div>
+              {subtitle && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>{subtitle}{units ? ` · ${units} units` : ''}</div>}
+            </div>
+            <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+              {overlapData.programLabels.map((progLabel, pi) => {
+                const has = row.programEntries.some(pe => pe.program === progLabel)
+                return (
+                  <div key={pi} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+                    {overlapData.programLabels.length > 1 && <div style={{ fontSize: 9, color: 'var(--text-muted)', textAlign: 'center', maxWidth: 48, lineHeight: 1.2 }}>{shortLabel(progLabel).split('\n')[0]}</div>}
+                    <span style={{ width: 10, height: 10, borderRadius: '50%', background: has ? '#a78bfa' : 'transparent', border: has ? 'none' : '2px solid #4a4a6a', display: 'inline-block' }} />
+                  </div>
+                )
+              })}
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{isExpanded ? '▲' : '▼'}</div>
+          </>
+        )
+
+        return (
+          <div key={row.ccKey}>
+            <div onClick={() => setExpandedRow(isExpanded ? null : row.ccKey)} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', cursor: 'pointer' }}>
+              {rowContent}
+            </div>
+            {isExpanded && renderExpandedRow(row, isEffectivelyRequired)}
+          </div>
+        )
+      }
+
       if (isPickN && !isEffectivelyRequired) {
         rendered.push(
           <div key={`group-${group.groupId}`} style={{ border: '1.5px solid #5a4a10', borderRadius: 10, marginBottom: 12, overflow: 'hidden', background: '#1a1505' }}>
@@ -1409,43 +1425,10 @@ export default function Tab2() {
               }
               const row = rowOrNa
               const isDone = completedCourses.has(row.ccKey)
-              const isExpanded = expandedRow === row.ccKey
-              const label = row.primaryCourses.map(c => `${c.prefix} ${c.number}`).join(' + ')
-              const subtitle = row.primaryCourses.map(c => c.title).filter(Boolean).join(' + ')
-              const units = row.primaryCourses.reduce((sum, c) => sum + (c.units || 0), 0)
-              const coverageAll = row.coverage === overlapData.totalPrograms
-              const coverageMost = row.coverage > 1 && !coverageAll
-              const isSchoolSpecific = row.coverage === 1 && overlapData.totalPrograms > 1
               return (
                 <div key={row.ccKey} style={{ borderTop: rowIdx > 0 ? '1px dashed #3a3010' : 'none', background: isDone ? '#141208' : '#1a1505', opacity: isDone ? 0.6 : 1 }}>
                   {rowIdx > 0 && <div style={{ textAlign: 'center', fontSize: 11, fontWeight: 700, color: '#5a4a10', padding: '4px 0', letterSpacing: '0.05em' }}>OR</div>}
-                  <div onClick={() => setExpandedRow(isExpanded ? null : row.ccKey)} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', cursor: 'pointer' }}>
-                    <div onClick={e => e.stopPropagation()}>
-                      <input type="checkbox" checked={isDone} onChange={() => toggleCourse(row.ccKey)} style={{ width: 15, height: 15, cursor: 'pointer', accentColor: '#fbbf24' }} />
-                    </div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontWeight: 600, fontSize: 13, textDecoration: isDone ? 'line-through' : 'none', color: isDone ? 'var(--text-muted)' : 'var(--text)', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                        {label}
-                        {coverageAll && <span style={{ fontSize: 10, background: 'var(--bg-chip-selected)', color: '#a78bfa', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>ALL PROGRAMS</span>}
-                        {coverageMost && <span style={{ fontSize: 10, background: '#0d2a28', color: '#34d399', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>MULTIPLE</span>}
-                        {isSchoolSpecific && <span style={{ fontSize: 10, borderRadius: 4, padding: '2px 6px', fontWeight: 600, background: '#0d1a2e', color: '#60a5fa' }}>SCHOOL-SPECIFIC</span>}
-                      </div>
-                      {subtitle && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>{subtitle}{units ? ` - ${units} units` : ''}</div>}
-                    </div>
-                    <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-                      {overlapData.programLabels.map((progLabel, pi) => {
-                        const has = row.programEntries.some(pe => pe.program === progLabel)
-                        return (
-                          <div key={pi} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-                            {overlapData.programLabels.length > 1 && <div style={{ fontSize: 9, color: 'var(--text-muted)', textAlign: 'center', maxWidth: 48, lineHeight: 1.2 }}>{shortLabel(progLabel).split('\n')[0]}</div>}
-                            <span style={{ width: 10, height: 10, borderRadius: '50%', background: has ? '#a78bfa' : 'transparent', border: has ? 'none' : '2px solid #4a4a6a', display: 'inline-block' }} />
-                          </div>
-                        )
-                      })}
-                    </div>
-                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{isExpanded ? '▲' : '▼'}</div>
-                  </div>
-                  {isExpanded && renderExpandedRow(row)}
+                  {renderCourseRow(row, rowIdx, true)}
                 </div>
               )
             })}
@@ -1455,42 +1438,9 @@ export default function Tab2() {
         const effectiveNoArtRows = isEffectivelyRequired ? (noArtByGroupIdFlat[group.groupId] || []) : (group.noArtRows || [])
         group.rows.forEach(row => {
           const isDone = completedCourses.has(row.ccKey)
-          const isExpanded = expandedRow === row.ccKey
-          const label = row.primaryCourses.map(c => `${c.prefix} ${c.number}`).join(' + ')
-          const subtitle = row.primaryCourses.map(c => c.title).filter(Boolean).join(' + ')
-          const units = row.primaryCourses.reduce((sum, c) => sum + (c.units || 0), 0)
-          const coverageAll = row.coverage === overlapData.totalPrograms
-          const coverageMost = row.coverage > 1 && !coverageAll
-          const isSchoolSpecific = row.coverage === 1 && overlapData.totalPrograms > 1
           rendered.push(
             <div key={row.ccKey} style={{ border: '1px solid var(--border)', borderRadius: 8, marginBottom: 6, background: isDone ? 'var(--bg-step)' : 'var(--bg-card)', opacity: isDone ? 0.55 : 1, overflow: 'hidden' }}>
-              <div onClick={() => setExpandedRow(isExpanded ? null : row.ccKey)} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', cursor: 'pointer' }}>
-                <div onClick={e => e.stopPropagation()}>
-                  <input type="checkbox" checked={isDone} onChange={() => toggleCourse(row.ccKey)} style={{ width: 15, height: 15, cursor: 'pointer', accentColor: '#a78bfa' }} />
-                </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontWeight: 600, fontSize: 13, textDecoration: isDone ? 'line-through' : 'none', color: isDone ? 'var(--text-muted)' : 'var(--text)', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                    {label}
-                    {coverageAll && <span style={{ fontSize: 10, background: 'var(--bg-chip-selected)', color: '#a78bfa', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>ALL PROGRAMS</span>}
-                    {coverageMost && <span style={{ fontSize: 10, background: '#0d2a28', color: '#34d399', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>MULTIPLE</span>}
-                    {isSchoolSpecific && <span style={{ fontSize: 10, borderRadius: 4, padding: '2px 6px', fontWeight: 600, background: '#0d1a2e', color: '#60a5fa' }}>SCHOOL-SPECIFIC</span>}
-                  </div>
-                  {subtitle && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>{subtitle}{units ? ` - ${units} units` : ''}</div>}
-                </div>
-                <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-                  {overlapData.programLabels.map((progLabel, pi) => {
-                    const has = row.programEntries.some(pe => pe.program === progLabel)
-                    return (
-                      <div key={pi} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-                        {overlapData.programLabels.length > 1 && <div style={{ fontSize: 9, color: 'var(--text-muted)', textAlign: 'center', maxWidth: 48, lineHeight: 1.2 }}>{shortLabel(progLabel).split('\n')[0]}</div>}
-                        <span style={{ width: 10, height: 10, borderRadius: '50%', background: has ? '#a78bfa' : 'transparent', border: has ? 'none' : '2px solid #4a4a6a', display: 'inline-block' }} />
-                      </div>
-                    )
-                  })}
-                </div>
-                <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{isExpanded ? '▲' : '▼'}</div>
-              </div>
-              {isExpanded && renderExpandedRow(row, isEffectivelyRequired)}
+              {renderCourseRow(row, 0, false)}
             </div>
           )
         })
@@ -1506,7 +1456,7 @@ export default function Tab2() {
                     {na.uniReq.prefix} {na.uniReq.number}
                     {na.uniReq.title && <span style={{ fontWeight: 400, color: '#f87171' }}>- {na.uniReq.title}</span>}
                   </div>
-                  {na.uniReq.units && <div style={{ fontSize: 11, color: '#f87171', marginTop: 1 }}>{na.uniReq.units} units - {na.program}</div>}
+                  {na.uniReq.units && <div style={{ fontSize: 11, color: '#f87171', marginTop: 1 }}>{na.uniReq.units} units · {na.program}</div>}
                   {na.reason && <div style={{ fontSize: 11, color: '#f87171', marginTop: 2 }}>{na.reason}</div>}
                 </div>
                 <span style={{ fontSize: 11, background: '#2a1010', color: '#f87171', borderRadius: 4, padding: '2px 8px', fontWeight: 600, flexShrink: 0 }}>No equivalent at {ccName}</span>
@@ -1543,7 +1493,7 @@ export default function Tab2() {
                     {na.uniReq.prefix} {na.uniReq.number}
                     {na.uniReq.title && <span style={{ fontWeight: 400, color: '#f87171' }}>- {na.uniReq.title}</span>}
                   </div>
-                  {na.uniReq.units && <div style={{ fontSize: 11, color: '#f87171', marginTop: 1 }}>{na.uniReq.units} units - {na.program}</div>}
+                  {na.uniReq.units && <div style={{ fontSize: 11, color: '#f87171', marginTop: 1 }}>{na.uniReq.units} units · {na.program}</div>}
                   {na.reason && <div style={{ fontSize: 11, color: '#f87171', marginTop: 2 }}>{na.reason}</div>}
                 </div>
                 <span style={{ fontSize: 11, background: '#2a1010', color: '#f87171', borderRadius: 4, padding: '2px 8px', fontWeight: 600, flexShrink: 0 }}>No equivalent at {ccName}</span>
@@ -1567,7 +1517,7 @@ export default function Tab2() {
           </div>
         )}
         {row.programEntries.map((pe, i) => (
-          <div key={i} style={{ marginBottom: i < row.programEntries.length - 1 ? 14 : 0, paddingBottom: i < row.programEntries.length - 1 ? 14 : 0, borderBottom: i < row.programEntries.length - 1 ? `1px solid var(--border)` : 'none' }}>
+          <div key={i} style={{ marginBottom: i < row.programEntries.length - 1 ? 14 : 0, paddingBottom: i < row.programEntries.length - 1 ? 14 : 0, borderBottom: i < row.programEntries.length - 1 ? '1px solid var(--border)' : 'none' }}>
             <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 4 }}>{pe.program}</div>
             {(() => {
               const isRec = isRecommendedSection(pe.groupTitle) || isRecommendedSection(pe.sectionLabel)
@@ -1586,7 +1536,7 @@ export default function Tab2() {
             )}
             {pe.options.map((opt, j) => (
               <div key={j}>
-                {j > 0 && <div style={{ fontSize: 11, color: 'var(--text-muted)', padding: '6px 0', borderTop: `1px dashed var(--border)`, marginTop: 6, marginBottom: 2 }}>or instead:</div>}
+                {j > 0 && <div style={{ fontSize: 11, color: 'var(--text-muted)', padding: '6px 0', borderTop: '1px dashed var(--border)', marginTop: 6, marginBottom: 2 }}>or instead:</div>}
                 {opt.courses.length > 1 && <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>Take all together</div>}
                 {opt.groupNote && <div style={{ fontSize: 11, color: '#f59e0b', marginBottom: 4 }}>Note: {opt.groupNote}</div>}
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
@@ -1608,19 +1558,16 @@ export default function Tab2() {
   }
 
   // ─── RENDER ───────────────────────────────────────────────────────────────
-  // setupStep 1 = configure, 2 = Cal-GETC, 3 = plan view
-  const showPlan = overlapData && setupStep === 3
+  const showPlan = overlapData && setupStep === 2
 
   return (
     <div>
       {error && <div className="error-box">{error}</div>}
-
       {setupStep === 1 && renderStep1()}
-      {setupStep === 2 && renderStep2()}
 
       {loading && setupStep === 1 && (
         <div className="card" style={{ textAlign: 'center' }}>
-          <div className="status"><div className="spinner" />{loadingMsg || 'Loading your courses...'}</div>
+          <div className="status"><div className="spinner" />Loading your courses...</div>
         </div>
       )}
 
@@ -1628,7 +1575,7 @@ export default function Tab2() {
         <>
           <div className="top-row">
             <div className="top-row-info">
-              <h2>Your course plan - {ccName}</h2>
+              <h2>Your course plan · {ccName}</h2>
               <p>{programs.map(p => `${p.uniName} - ${p.majorLabel}`).join(' / ')}</p>
             </div>
             <button className="btn-secondary" onClick={() => { setOverlapData(null); setExpandedRow(null); setSetupStep(1); setCompletedCourses(new Set()) }}>&lt;- Edit</button>
@@ -1638,8 +1585,7 @@ export default function Tab2() {
             <div style={{ background: 'var(--bg-hint)', border: '1px solid var(--border)', borderRadius: 12, padding: '16px 18px', marginBottom: 20 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}>
                 <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--text)' }}>How to read this</div>
-                <button onClick={() => { setShowBanner(false); localStorage.setItem('tab2_banner_dismissed', '1') }}
-                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: 20, lineHeight: 1, padding: 0, flexShrink: 0 }} aria-label="Dismiss">✕</button>
+                <button onClick={() => { setShowBanner(false); localStorage.setItem('tab2_banner_dismissed', '1') }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: 20, lineHeight: 1, padding: 0, flexShrink: 0 }} aria-label="Dismiss">✕</button>
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: isWide ? '1fr 1fr' : '1fr', gap: '8px 20px' }}>
                 {[
@@ -1647,8 +1593,8 @@ export default function Tab2() {
                   { icon: <span style={{ width: 12, height: 12, borderRadius: '50%', border: '2px solid #4a4a6a', display: 'inline-block', marginTop: 3 }} />, label: 'Empty dot', desc: '- not required by that program' },
                   { icon: <span style={{ width: 12, height: 12, borderRadius: 2, background: '#fbbf24', display: 'inline-block', marginTop: 3 }} />, label: 'Yellow card', desc: '- choose from the group, not all required' },
                   { icon: <span style={{ width: 12, height: 12, borderRadius: 2, background: '#f87171', display: 'inline-block', marginTop: 3 }} />, label: 'Red row', desc: '- no equivalent at your CC' },
-                  { icon: <span style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2, display: 'inline-block' }}>▼</span>, label: 'Tap any row', desc: '- see which requirement it satisfies' },
-                  { icon: <span style={{ width: 13, height: 13, borderRadius: 3, border: '2px solid #6C5CE7', background: '#6C5CE7', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginTop: 2 }}><span style={{ color: '#fff', fontSize: 9, lineHeight: 1 }}>✓</span></span>, label: 'Check it off', desc: '- Cal-GETC auto-detects, progress saves automatically' },
+                  { icon: <span style={{ fontSize: 10, background: '#0d2a1a', color: '#4ade80', borderRadius: 3, padding: '2px 5px', fontWeight: 600, display: 'inline-block', marginTop: 2 }}>GE 5A</span>, label: 'Green GE badge', desc: '- this course also counts for Cal-GETC' },
+                  { icon: <span style={{ width: 13, height: 13, borderRadius: 3, border: '2px solid #6C5CE7', background: '#6C5CE7', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginTop: 2 }}><span style={{ color: '#fff', fontSize: 9, lineHeight: 1 }}>✓</span></span>, label: 'Check it off', desc: '- GE auto-updates in sidebar, progress saves automatically' },
                 ].map(({ icon, label, desc }) => (
                   <div key={label} style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
                     <span style={{ display: 'inline-flex', flexShrink: 0 }}>{icon}</span>
@@ -1663,16 +1609,7 @@ export default function Tab2() {
 
           <div style={{ display: 'flex', gap: 0, marginBottom: 16, border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden', alignSelf: 'flex-start', width: 'fit-content' }}>
             {[['list', 'Course list'], ['plan', 'Semester plan']].map(([tab, label]) => (
-              <button
-                key={tab}
-                onClick={() => setActiveTab(tab)}
-                style={{
-                  padding: '7px 18px', fontSize: 13, fontWeight: activeTab === tab ? 600 : 400,
-                  background: activeTab === tab ? 'var(--bg-chip-selected)' : 'transparent',
-                  color: activeTab === tab ? '#a78bfa' : 'var(--text-muted)',
-                  border: 'none', cursor: 'pointer', transition: 'all 0.15s',
-                }}
-              >
+              <button key={tab} onClick={() => setActiveTab(tab)} style={{ padding: '7px 18px', fontSize: 13, fontWeight: activeTab === tab ? 600 : 400, background: activeTab === tab ? 'var(--bg-chip-selected)' : 'transparent', color: activeTab === tab ? '#a78bfa' : 'var(--text-muted)', border: 'none', cursor: 'pointer', transition: 'all 0.15s' }}>
                 {label}
               </button>
             ))}
