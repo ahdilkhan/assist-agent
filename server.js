@@ -44,6 +44,19 @@ app.use("/transferablecourselist", async (req, res) => {
   }
 })
 
+app.use("/transferability/api", async (req, res) => {
+  try {
+    const url = `${ASSIST_ORG}${req.originalUrl}`
+    const response = await axios.get(url, {
+      headers: { ...browserHeaders, accept: "application/json" },
+    })
+    res.set("Cache-Control", "no-store")
+    res.json(response.data)
+  } catch (err) {
+    res.status(err.response?.status || 500).json({ error: err.message })
+  }
+})
+
 app.get("/", (req, res) => {
   res.json({ status: "ok", message: "Backend running" })
 })
