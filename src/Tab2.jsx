@@ -70,29 +70,49 @@ async function getAgreement(key) {
   return assistGet(`/articulation/api/Agreements?Key=${encodeURIComponent(key)}`)
 }
 
+// FIX: returns { map, byIdentifier } instead of a flat object
+// map: keyed by courseIdentifierParentId
+// byIdentifier: keyed by "PREFIX NUMBER" uppercase string (fallback)
 async function fetchCalGetcMap(ccId) {
   try {
     const res = await fetch(
       `${ASSIST_BASE}/transferability/api/courses?institutionId=${ccId}&academicYearId=${YEAR_ID}&listType=CALGETC`,
       { headers: { accept: 'application/json' } }
     )
-    if (!res.ok) return {}
+    if (!res.ok) return { map: {}, byIdentifier: {} }
     const data = await res.json()
     const map = {}
+    const byIdentifier = {}
     for (const course of (data.courseInformationList || [])) {
       const areas = (course.transferAreas || []).map(a => a.code)
-      if (areas.length > 0) {
-        map[course.courseIdentifierParentId] = {
-          areas,
-          identifier: course.identifier,
-          title: course.courseTitle,
-        }
+      if (areas.length === 0) continue
+      const entry = {
+        areas,
+        identifier: course.identifier,
+        title: course.courseTitle,
+      }
+      if (course.courseIdentifierParentId) {
+        map[course.courseIdentifierParentId] = entry
+      }
+      // Build fallback key from identifier string e.g. "CHEM 120"
+      if (course.identifier) {
+        byIdentifier[course.identifier.trim().toUpperCase()] = entry
       }
     }
-    return map
+    return { map, byIdentifier }
   } catch {
-    return {}
+    return { map: {}, byIdentifier: {} }
   }
+}
+
+// FIX: two-pass lookup — try ID first, fall back to "PREFIX NUMBER" string
+function lookupCalGetc(calGetcMap, course) {
+  const { map, byIdentifier } = calGetcMap
+  if (course.courseIdentifierParentId && map[course.courseIdentifierParentId]) {
+    return map[course.courseIdentifierParentId]
+  }
+  const key = `${course.prefix} ${course.number}`.trim().toUpperCase()
+  return byIdentifier[key] || null
 }
 
 function extractCourse(c) {
@@ -520,7 +540,8 @@ export default function Tab2() {
 
   const [geState, setGeState] = useState(initGeState)
   const [autoChecked, setAutoChecked] = useState({})
-  const [calGetcMap, setCalGetcMap] = useState({})
+  // FIX: calGetcMap now holds { map, byIdentifier } instead of a flat object
+  const [calGetcMap, setCalGetcMap] = useState({ map: {}, byIdentifier: {} })
   const [calGetcLoading, setCalGetcLoading] = useState(false)
 
   const [loading, setLoading] = useState(false)
@@ -530,6 +551,7 @@ export default function Tab2() {
   const [expandedRow, setExpandedRow] = useState(null)
   const [completedCourses, setCompletedCourses] = useState(new Set())
 
+  // FLOW CHANGE: only 2 setup steps now (1=configure, 2=Cal-GETC), then plan view
   const [setupStep, setSetupStep] = useState(1)
   const [activeTab, setActiveTab] = useState('list')
   const [isWide, setIsWide] = useState(window.innerWidth > 768)
@@ -560,10 +582,10 @@ export default function Tab2() {
   }, [])
 
   useEffect(() => {
-    if (!ccId) { setCalGetcMap({}); return }
+    if (!ccId) { setCalGetcMap({ map: {}, byIdentifier: {} }); return }
     setCalGetcLoading(true)
     fetchCalGetcMap(ccId)
-      .then(map => setCalGetcMap(map))
+      .then(result => setCalGetcMap(result))
       .finally(() => setCalGetcLoading(false))
   }, [ccId])
 
@@ -592,9 +614,10 @@ export default function Tab2() {
       })
   }, [overlapData])
 
-  // Auto-mark Cal-GETC areas when major courses are checked off
+  // FIX: auto-mark Cal-GETC using two-pass lookupCalGetc instead of direct map access
   useEffect(() => {
-    if (Object.keys(calGetcMap).length === 0 || !overlapData) return
+    const hasData = Object.keys(calGetcMap.map).length > 0 || Object.keys(calGetcMap.byIdentifier).length > 0
+    if (!hasData || !overlapData) return
 
     const newAutoChecked = {}
 
@@ -602,9 +625,9 @@ export default function Tab2() {
       if (!completedCourses.has(row.ccKey)) continue
       for (const opt of (row.programEntries?.[0]?.options || [])) {
         for (const course of opt.courses) {
-          const id = course.courseIdentifierParentId
-          if (!id || !calGetcMap[id]) continue
-          const { areas, identifier, title } = calGetcMap[id]
+          const hit = lookupCalGetc(calGetcMap, course)
+          if (!hit) continue
+          const { areas, identifier, title } = hit
           for (const areaCode of areas) {
             const area = CAL_GETC_AREAS.find(a => a.code === areaCode)
             if (!area) continue
@@ -868,6 +891,7 @@ export default function Tab2() {
     return ['load-heavy', 'Heavy']
   }
 
+  // ─── STEP 1: Configure CC + programs + timeline ──────────────────────────
   function renderStep1() {
     return (
       <>
@@ -961,8 +985,8 @@ export default function Tab2() {
             <button className="btn-primary" onClick={async () => {
               await generateOverlap()
               setSetupStep(2)
-            }}>
-              Next: Courses already completed
+            }} disabled={loading}>
+              {loading ? 'Loading...' : 'Next: Cal-GETC checklist'}
             </button>
           </div>
         )}
@@ -970,59 +994,11 @@ export default function Tab2() {
     )
   }
 
+  // ─── STEP 2: Cal-GETC checklist (was step 3) ─────────────────────────────
+  // Note: completed courses are now checked off in the plan view itself,
+  // so the Cal-GETC step comes first and shows what's auto-detected
+  // from prior session data, plus lets users add AP/other-school credits.
   function renderStep2() {
-    return (
-      <div className="card">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
-          <button className="btn-secondary" style={{ padding: '5px 12px', fontSize: 12 }} onClick={() => { setSetupStep(1) }}>&lt;- Back</button>
-          <div className="section-label" style={{ marginBottom: 0 }}>Courses already completed</div>
-        </div>
-        <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 16 }}>
-          Check off any major prep courses you've already taken. We'll use these to pre-fill your Cal-GETC checklist.
-        </div>
-
-        {loading && (
-          <div className="status" style={{ marginBottom: 12 }}><div className="spinner" />Loading your courses...</div>
-        )}
-
-        {overlapData && (
-          <>
-            {overlapData.rows.map(row => {
-              const isDone = completedCourses.has(row.ccKey)
-              const label = row.primaryCourses.map(c => `${c.prefix} ${c.number}`).join(' + ')
-              const subtitle = row.primaryCourses.map(c => c.title).filter(Boolean).join(' + ')
-              const units = row.primaryCourses.reduce((sum, c) => sum + (c.units || 0), 0)
-              return (
-                <div key={row.ccKey} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 0', borderBottom: '1px solid var(--border)' }}>
-                  <div
-                    onClick={() => toggleCourse(row.ccKey)}
-                    style={{
-                      width: 16, height: 16, borderRadius: 4, flexShrink: 0,
-                      border: `2px solid ${isDone ? '#6C5CE7' : 'var(--border-input)'}`,
-                      background: isDone ? '#6C5CE7' : 'transparent',
-                      cursor: 'pointer',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    }}
-                  >
-                    {isDone && <span style={{ color: '#fff', fontSize: 10, lineHeight: 1 }}>✓</span>}
-                  </div>
-                  <div style={{ flex: 1, opacity: isDone ? 0.5 : 1 }}>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', textDecoration: isDone ? 'line-through' : 'none' }}>{label}</div>
-                    {subtitle && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>{subtitle}{units ? ` · ${units}u` : ''}</div>}
-                  </div>
-                </div>
-              )
-            })}
-            <button className="btn-primary" style={{ marginTop: 20 }} onClick={() => setSetupStep(3)}>
-              Next: Cal-GETC checklist
-            </button>
-          </>
-        )}
-      </div>
-    )
-  }
-
-  function renderStep3() {
     const done = geDone()
     const total = geTotal()
     const pct = Math.round((done / total) * 100)
@@ -1030,11 +1006,11 @@ export default function Tab2() {
     return (
       <div className="card">
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
-          <button className="btn-secondary" style={{ padding: '5px 12px', fontSize: 12 }} onClick={() => setSetupStep(2)}>&lt;- Back</button>
+          <button className="btn-secondary" style={{ padding: '5px 12px', fontSize: 12 }} onClick={() => setSetupStep(1)}>&lt;- Back</button>
           <div className="section-label" style={{ marginBottom: 0 }}>Cal-GETC requirements</div>
         </div>
         <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 14 }}>
-          Areas covered by courses you've already completed are pre-filled. Check off anything else you've completed (AP credits, courses at another school, etc).
+          Check off Cal-GETC areas you've already completed — AP credits, courses at another school, etc. As you check off major prep courses in your plan, any that also count for Cal-GETC will be auto-detected here in green.
         </div>
 
         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--text-muted)', marginBottom: 5 }}>
@@ -1133,13 +1109,14 @@ export default function Tab2() {
           )
         })}
 
-        <button className="btn-primary" style={{ marginTop: 20 }} onClick={() => setSetupStep(4)}>
+        <button className="btn-primary" style={{ marginTop: 20 }} onClick={() => setSetupStep(3)}>
           View my plan
         </button>
       </div>
     )
   }
 
+  // ─── SIDEBAR ──────────────────────────────────────────────────────────────
   function renderSidebar() {
     const done = geDone()
     const total = geTotal()
@@ -1194,6 +1171,7 @@ export default function Tab2() {
     )
   }
 
+  // ─── SEMESTER PLAN TAB ────────────────────────────────────────────────────
   function renderSemesterPlan() {
     if (semesterPlan.length === 0) {
       return (
@@ -1296,6 +1274,7 @@ export default function Tab2() {
     )
   }
 
+  // ─── COURSE LIST TAB ──────────────────────────────────────────────────────
   function renderCourseList() {
     const groups = []
     const groupIdToGroup = {}
@@ -1578,6 +1557,7 @@ export default function Tab2() {
     return rendered
   }
 
+  // ─── EXPANDED ROW ─────────────────────────────────────────────────────────
   function renderExpandedRow(row, isEffectivelyRequired = false) {
     return (
       <div style={{ borderTop: '1px solid var(--border)', background: 'var(--bg-step)', padding: '12px 14px 14px 38px' }}>
@@ -1627,7 +1607,9 @@ export default function Tab2() {
     )
   }
 
-  const showPlan = overlapData && setupStep === 4
+  // ─── RENDER ───────────────────────────────────────────────────────────────
+  // setupStep 1 = configure, 2 = Cal-GETC, 3 = plan view
+  const showPlan = overlapData && setupStep === 3
 
   return (
     <div>
@@ -1635,7 +1617,6 @@ export default function Tab2() {
 
       {setupStep === 1 && renderStep1()}
       {setupStep === 2 && renderStep2()}
-      {setupStep === 3 && renderStep3()}
 
       {loading && setupStep === 1 && (
         <div className="card" style={{ textAlign: 'center' }}>
@@ -1667,7 +1648,7 @@ export default function Tab2() {
                   { icon: <span style={{ width: 12, height: 12, borderRadius: 2, background: '#fbbf24', display: 'inline-block', marginTop: 3 }} />, label: 'Yellow card', desc: '- choose from the group, not all required' },
                   { icon: <span style={{ width: 12, height: 12, borderRadius: 2, background: '#f87171', display: 'inline-block', marginTop: 3 }} />, label: 'Red row', desc: '- no equivalent at your CC' },
                   { icon: <span style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2, display: 'inline-block' }}>▼</span>, label: 'Tap any row', desc: '- see which requirement it satisfies' },
-                  { icon: <span style={{ width: 13, height: 13, borderRadius: 3, border: '2px solid #6C5CE7', background: '#6C5CE7', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginTop: 2 }}><span style={{ color: '#fff', fontSize: 9, lineHeight: 1 }}>✓</span></span>, label: 'Check it off', desc: '- progress saves automatically' },
+                  { icon: <span style={{ width: 13, height: 13, borderRadius: 3, border: '2px solid #6C5CE7', background: '#6C5CE7', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginTop: 2 }}><span style={{ color: '#fff', fontSize: 9, lineHeight: 1 }}>✓</span></span>, label: 'Check it off', desc: '- Cal-GETC auto-detects, progress saves automatically' },
                 ].map(({ icon, label, desc }) => (
                   <div key={label} style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
                     <span style={{ display: 'inline-flex', flexShrink: 0 }}>{icon}</span>
