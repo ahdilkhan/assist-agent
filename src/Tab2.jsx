@@ -117,16 +117,14 @@ async function fetchCalGetcMap(ccId) {
 function lookupCalGetc(calGetcMap, course) {
   const { map, byIdentifier } = calGetcMap
   const key = `${course.prefix} ${course.number}`.trim().toUpperCase()
+  
+  console.log('[debug] course object:', JSON.stringify(course, null, 2))
+  console.log('[debug] key built:', key)
+  console.log('[debug] byIdentifier has key?', !!byIdentifier[key])
+  console.log('[debug] byIdentifier keys sample:', Object.keys(byIdentifier).slice(0, 10))
 
   const idHit = course.courseIdentifierParentId ? map[course.courseIdentifierParentId] : null
   const strHit = byIdentifier[key]
-
-  console.log('[CalGETC] lookup:', key, {
-    parentId: course.courseIdentifierParentId,
-    idHit: !!idHit,
-    strHit: !!strHit,
-    areas: (idHit || strHit)?.areas || null,
-  })
 
   return idHit || strHit || null
 }
