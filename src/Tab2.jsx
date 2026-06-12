@@ -36,7 +36,10 @@ function initGeState() {
 }
 
 async function assistGet(path) {
-  const res = await fetch(`${ASSIST_BASE}${path}`, { headers: { accept: 'application/json' } })
+  const res = await fetch(
+  `https://assist.org/transferability/api/courses?institutionId=${ccId}&academicYearId=${YEAR_ID}&listType=CALGETC`,
+  { headers: { accept: 'application/json' } }
+)
   if (!res.ok) throw new Error(`ASSIST ${res.status}: ${path}`)
   const data = await res.json()
   if (!data.isSuccessful) throw new Error(data.validationFailure || 'ASSIST error')
