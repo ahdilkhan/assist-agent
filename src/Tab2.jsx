@@ -380,9 +380,13 @@ function topoSortCourses(courses) {
   return result
 }
 
-function buildSemesterPlan({ rows, completedCourses, geState, plannerStart, plannerEnd, includeSummer }) {
+function buildSemesterPlan({ rows, completedCourses, geState, plannerStart, plannerEnd, includeSummer, maxUnitsPerSem = 15 }) {
   const GE_UNIT = 3
   const MAX_AREA4_PER_SEM = 1
+  rows = rows.filter(r => {
+    const pe = r.programEntries?.[0]
+    return !isRecommendedSection(pe?.groupTitle) && !isRecommendedSection(pe?.sectionLabel)
+  })
 
   const termList = includeSummer ? TERMS : TERMS.filter(t => !t.startsWith('Summer'))
   const startIdx = termList.indexOf(plannerStart)
@@ -426,9 +430,7 @@ function buildSemesterPlan({ rows, completedCourses, geState, plannerStart, plan
   }
 
   // Calculate dynamic unit cap based on total work and available semesters
-  const totalUnits = sorted.reduce((s, c) => s + c.units, 0) + geNeeded.length * GE_UNIT
-  const rawCap = numSemesters > 0 ? Math.ceil(totalUnits / numSemesters) : 15
-  const UNIT_CAP = Math.max(12, Math.min(rawCap, 19)) // keep between 12-19 units
+  const UNIT_CAP = maxUnitsPerSem
 
   const semesters = []
   let geIdx = 0
@@ -514,6 +516,7 @@ export default function Tab2() {
   const [plannerStart, setPlannerStart] = useState(TERMS[0])
   const [plannerEnd, setPlannerEnd] = useState(TERMS[4])
   const [includeSummer, setIncludeSummer] = useState(false)
+  const [maxUnitsPerSem, setMaxUnitsPerSem] = useState(15)
 
   const saveTimeoutRef = useRef(null)
 
@@ -768,7 +771,7 @@ export default function Tab2() {
   }
 
   const semesterPlan = overlapData
-    ? buildSemesterPlan({ rows: overlapData.rows, completedCourses, geState, plannerStart, plannerEnd, includeSummer })
+    ? buildSemesterPlan({ rows: overlapData.rows, completedCourses, geState, plannerStart, plannerEnd, includeSummer, maxUnitsPerSem })
     : []
 
   const realSems = semesterPlan.filter(s => !s.overflow)
@@ -860,6 +863,17 @@ export default function Tab2() {
                 </select>
               </div>
             </div>
+            <div style={{ marginBottom: 14 }}>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 4 }}>Max units per semester</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <input
+                  type="range" min={9} max={25} step={1} value={maxUnitsPerSem}
+                  onChange={e => setMaxUnitsPerSem(Number(e.target.value))}
+                  style={{ flex: 1, accentColor: '#6C5CE7' }}
+                />
+                <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', minWidth: 28 }}>{maxUnitsPerSem}u</span>
+              </div>
+            </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
               <div onClick={() => setIncludeSummer(v => !v)} style={{ width: 32, height: 18, borderRadius: 9, cursor: 'pointer', flexShrink: 0, background: includeSummer ? '#6C5CE7' : 'var(--border)', position: 'relative', transition: 'background 0.2s' }}>
                 <div style={{ position: 'absolute', top: 2, left: includeSummer ? 16 : 2, width: 14, height: 14, borderRadius: '50%', background: '#fff', transition: 'left 0.2s' }} />
@@ -902,11 +916,11 @@ export default function Tab2() {
         {/* Progress bar */}
         <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 10, padding: '12px 16px', marginBottom: 20 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Courses checked off</span>
-            <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)' }}>{majorDone} / {majorTotal}</span>
+            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Required courses checked off</span>
+            <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)' }}>{requiredDone} / {allRequired.length}</span>
           </div>
           <div style={{ background: 'var(--progress-track)', borderRadius: 4, height: 6, overflow: 'hidden' }}>
-            <div style={{ background: '#6C5CE7', height: '100%', width: `${majorTotal === 0 ? 0 : Math.round((majorDone / majorTotal) * 100)}%`, borderRadius: 4, transition: 'width 0.3s ease' }} />
+            <div style={{ background: '#6C5CE7', height: '100%', width: `${allRequired.length === 0 ? 0 : Math.round((requiredDone / allRequired.length) * 100)}%`, borderRadius: 4, transition: 'width 0.3s ease' }} />
           </div>
         </div>
 
@@ -917,20 +931,43 @@ export default function Tab2() {
               <button onClick={() => { setShowBanner(false); localStorage.setItem('tab2_banner_dismissed', '1') }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: 20, lineHeight: 1, padding: 0 }}>×</button>
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: isWide ? '1fr 1fr' : '1fr', gap: '8px 20px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {[
-                { icon: <span style={{ width: 12, height: 12, borderRadius: '50%', background: '#a78bfa', display: 'inline-block' }} />, label: 'Purple dot', desc: '— this program requires the course' },
-                { icon: <span style={{ width: 12, height: 12, borderRadius: '50%', border: '2px solid #4a4a6a', display: 'inline-block' }} />, label: 'Empty dot', desc: '— not required by that program' },
-                { icon: <span style={{ fontSize: 10, background: 'var(--bg-chip-selected)', color: '#a78bfa', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>ALL PROGRAMS</span>, label: 'ALL PROGRAMS', desc: '— satisfies every program you added' },
-                { icon: <span style={{ fontSize: 10, background: '#1a3a2a', color: '#fbbf24', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>CHOOSE 1</span>, label: 'Yellow group', desc: '— pick from the options, not all required' },
-                { icon: <span style={{ fontSize: 10, background: '#2a1010', color: '#f87171', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>No equivalent</span>, label: 'Red row', desc: '— no matching course at your CC' },
+                { icon: <span style={{ width: 12, height: 12, borderRadius: '50%', background: '#a78bfa', display: 'inline-block', flexShrink: 0 }} />, label: 'Purple dot', desc: '— this program requires the course' },
+                { icon: <span style={{ width: 12, height: 12, borderRadius: '50%', border: '2px solid #4a4a6a', display: 'inline-block', flexShrink: 0 }} />, label: 'Empty dot', desc: '— not required by that program' },
               ].map(({ icon, label, desc }) => (
-                <div key={label} style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-                  <span style={{ display: 'inline-flex', flexShrink: 0, marginTop: 2 }}>{icon}</span>
-                  <div style={{ fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.5 }}>
+                <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <span style={{ display: 'inline-flex', flexShrink: 0 }}>{icon}</span>
+                  <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
                     <strong style={{ color: 'var(--text)' }}>{label}</strong> {desc}
                   </div>
                 </div>
               ))}
+              <div style={{ borderTop: '1px solid var(--border)', paddingTop: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Priority badges — take these first</div>
+                {[
+                  { badge: <span style={{ fontSize: 10, background: 'var(--bg-chip-selected)', color: '#a78bfa', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>ALL PROGRAMS</span>, desc: 'Counts toward every program you added — highest priority' },
+                  { badge: <span style={{ fontSize: 10, background: '#0d2a28', color: '#34d399', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>MULTIPLE</span>, desc: 'Counts toward more than one program — take before school-specific' },
+                  { badge: <span style={{ fontSize: 10, background: '#0d1a2e', color: '#60a5fa', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>SCHOOL-SPECIFIC</span>, desc: 'Only counts toward one of your programs' },
+                ].map(({ badge, desc }) => (
+                  <div key={desc} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <span style={{ flexShrink: 0 }}>{badge}</span>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{desc}</div>
+                  </div>
+                ))}
+              </div>
+              <div style={{ borderTop: '1px solid var(--border)', paddingTop: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {[
+                  { badge: <span style={{ fontSize: 10, background: '#221a05', color: '#fbbf24', border: '1px solid #5a4a10', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>CHOOSE 1</span>, desc: 'Yellow group — you only need one of the listed options, not all' },
+                  { badge: <span style={{ fontSize: 10, background: '#2a1010', color: '#f87171', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>No equivalent</span>, desc: 'Red row — no matching course at your CC; may need to take after transfer' },
+                ].map(({ badge, desc }) => (
+                  <div key={desc} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <span style={{ flexShrink: 0 }}>{badge}</span>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{desc}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
             </div>
           </div>
         )}
@@ -1089,7 +1126,7 @@ export default function Tab2() {
                 {overflowSem.courses.length + overflowSem.ge.length} course{overflowSem.courses.length + overflowSem.ge.length !== 1 ? 's' : ''} couldn't fit in your timeline
               </div>
               <div style={{ fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.6 }}>
-                Consider{!includeSummer ? ' toggling summer semesters on,' : ''} extending your transfer goal past {plannerEnd}, or checking off courses you've already completed.
+                Consider{!includeSummer ? ' toggling summer semesters on,' : ''} raising your max units above {maxUnitsPerSem}u, extending your transfer goal past {plannerEnd}, or checking off courses you've already completed.
               </div>
               <button
                 onClick={() => setStep(1)}
