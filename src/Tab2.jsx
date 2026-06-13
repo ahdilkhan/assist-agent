@@ -474,13 +474,40 @@ function buildSemesterPlan({ rows, completedCourses, geState, plannerStart, plan
       .flatMap(r => r.primaryCourses.map(c => `${c.prefix} ${c.number}`))
   )
 
-  // Multi-pass: keep sweeping through all semesters until no more placements possible.
-  // Both major courses and GE slots are filled in the same pass so gaps get backfilled.
+  // How many GE slots to reserve per semester so they get interleaved with majors.
+  // We spread remaining GE evenly across semesters, capped at 2 per sem so majors
+  // still get placed. In the last semester we use whatever's left.
+  const numSemSlots = semSlots.length
+  const GE_PER_SEM = Math.min(2, Math.ceil(geNeeded.length / Math.max(numSemSlots, 1)))
+
+  // Multi-pass: interleave GE and major courses each semester.
+  // Each pass: reserve GE slots first, then fill remaining capacity with majors.
   let anyPlaced = true
   while (anyPlaced && (sorted.length > 0 || geNeeded.length > 0)) {
     anyPlaced = false
-    for (const sem of semSlots) {
-      // Fill major courses
+    for (let si = 0; si < semSlots.length; si++) {
+      const sem = semSlots[si]
+      const isLastSem = si === semSlots.length - 1
+
+      // Step 1: Fill GE first — reserve space for interleaving
+      // In the last semester, take all remaining GE; otherwise cap at GE_PER_SEM per pass
+      const geTarget = isLastSem ? geNeeded.length : GE_PER_SEM
+      const area4ThisSem = sem.ge.filter(g => g.areaCode === '4').length
+      let area4Count = area4ThisSem
+      let gi = 0
+      let geThisSem = sem.ge.length
+      while (gi < geNeeded.length && geThisSem < geTarget && sem.units + GE_UNIT <= UNIT_CAP) {
+        const g = geNeeded[gi]
+        if (g.areaCode === '4' && area4Count >= MAX_AREA4_PER_SEM) { gi++; continue }
+        if (g.areaCode === '4') area4Count++
+        sem.ge.push(geNeeded[gi])
+        sem.units += GE_UNIT
+        geNeeded.splice(gi, 1)
+        geThisSem++
+        anyPlaced = true
+      }
+
+      // Step 2: Fill remaining capacity with major courses
       let changed = true
       while (changed) {
         changed = false
@@ -499,10 +526,10 @@ function buildSemesterPlan({ rows, completedCourses, geState, plannerStart, plan
           break
         }
       }
-      // Fill GE into remaining capacity for this semester
-      const area4ThisSem = sem.ge.filter(g => g.areaCode === '4').length
-      let area4Count = area4ThisSem
-      let gi = 0
+
+      // Step 3: If there's still room after majors, fill more GE
+      area4Count = sem.ge.filter(g => g.areaCode === '4').length
+      gi = 0
       while (gi < geNeeded.length && sem.units + GE_UNIT <= UNIT_CAP) {
         const g = geNeeded[gi]
         if (g.areaCode === '4' && area4Count >= MAX_AREA4_PER_SEM) { gi++; continue }
