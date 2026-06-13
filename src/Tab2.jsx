@@ -46,7 +46,7 @@ async function assistGet(path) {
 
 async function getMajorsForUni(uniId, ccId) {
   try {
-    for (const yearId of [YEAR_ID, 75, 74]) {
+    for (const yearId of [77, 76, 75, 74]) {
       try {
         const result = await assistGet(
           `/articulation/api/Agreements/Published/for/${uniId}/to/${ccId}/in/${yearId}?types=Major&types=Department`
@@ -71,6 +71,28 @@ async function getAgreement(key) {
   return assistGet(`/articulation/api/Agreements?Key=${encodeURIComponent(key)}`)
 }
 
+function isCourseExpired(c) {
+  const end = (c.end || '').trim()
+  if (!end) return false
+  // ASSIST end dates are like "Su2025", "F2024", "Sp2023"
+  // Parse term + year and compare to current date
+  const match = end.match(/^(F|Su|Sp|S|W)(\d{4})$/)
+  if (!match) return false
+  const [, term, yearStr] = match
+  const year = parseInt(yearStr)
+  const now = new Date()
+  const currentYear = now.getFullYear()
+  if (year < currentYear) return true
+  if (year > currentYear) return false
+  // Same year — check term
+  const month = now.getMonth() // 0-indexed
+  if (term === 'Sp' || term === 'S') return month > 4  // Spring ends ~May
+  if (term === 'Su') return month > 7                  // Summer ends ~Aug
+  if (term === 'F') return month > 11                  // Fall ends ~Dec
+  if (term === 'W') return month > 1                   // Winter ends ~Feb
+  return false
+}
+
 function extractCourse(c) {
   const prefix = (c.prefix || '').trim()
   const number = (c.courseNumber || c.number || '').trim()
@@ -81,6 +103,7 @@ function extractCourse(c) {
     units: c.maxUnits || c.minUnits || 3,
     note: c.attributes?.[0]?.content || null,
     courseIdentifierParentId: c.courseIdentifierParentId || null,
+    expired: isCourseExpired(c),
   }
 }
 
@@ -93,11 +116,14 @@ function parseSendingOptions(topItems) {
     const groupNote = group.attributes?.[0]?.content || null
     if (subItems.length === 0) continue
     if (conjunction === 'or') {
+      // Courses within this group are alternatives — each becomes its own separate option
       for (const course of subItems) {
         const c = extractCourse(course)
         if (c) options.push({ courses: [c], groupNote: course.attributes?.[0]?.content || null })
       }
     } else {
+      // Courses within this group must be taken together (AND).
+      // Each top-level group is always its own separate option.
       const courses = subItems.map(extractCourse).filter(Boolean)
       if (courses.length) options.push({ courses, groupNote })
     }
@@ -192,7 +218,6 @@ function parseAllForProgram(agreement, programLabel) {
   try {
     const arts = typeof agreement.articulations === 'string'
       ? JSON.parse(agreement.articulations) : agreement.articulations || []
-      console.log('RAW ARTS', programLabel, JSON.stringify(arts, null, 2))
 
     const cellMap = buildCellMap(agreement.templateAssets)
     const results = []
@@ -1317,6 +1342,7 @@ export default function Tab2() {
         const units = row.primaryCourses.reduce((sum, c) => sum + (c.units || 0), 0)
         const coverageAll = row.coverage === overlapData.totalPrograms
         const coverageMost = row.coverage > 1 && !coverageAll
+        const hasExpired = row.primaryCourses.some(c => c.expired)
 
         return (
           <div key={row.ccKey}>
@@ -1334,6 +1360,7 @@ export default function Tab2() {
                   {coverageAll && <span style={{ fontSize: 10, background: 'var(--bg-chip-selected)', color: '#a78bfa', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>ALL PROGRAMS</span>}
                   {coverageMost && <span style={{ fontSize: 10, background: '#0d2a28', color: '#34d399', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>MULTIPLE</span>}
                   {row.coverage === 1 && overlapData.totalPrograms > 1 && <span style={{ fontSize: 10, borderRadius: 4, padding: '2px 6px', fontWeight: 600, background: '#0d1a2e', color: '#60a5fa' }}>SCHOOL-SPECIFIC</span>}
+                  {hasExpired && <span style={{ fontSize: 10, background: '#1a1200', color: '#f59e0b', border: '1px solid #5a4a00', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>⚠ Verify with counselor</span>}
                 </div>
                 {subtitle && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>{subtitle}{units ? ` · ${units} units` : ''}</div>}
               </div>
@@ -1470,10 +1497,11 @@ export default function Tab2() {
                 {opt.groupNote && <div style={{ fontSize: 11, color: '#f59e0b', marginBottom: 4 }}>Note: {opt.groupNote}</div>}
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                   {opt.courses.map((c, k) => (
-                    <div key={k} style={{ background: 'var(--bg-input)', borderRadius: 6, padding: '4px 10px', fontSize: 12 }}>
-                      <span style={{ fontFamily: 'monospace', fontWeight: 600, color: '#a78bfa' }}>{c.prefix} {c.number}</span>
+                    <div key={k} style={{ background: c.expired ? '#1a1200' : 'var(--bg-input)', border: c.expired ? '1px solid #5a4a00' : 'none', borderRadius: 6, padding: '4px 10px', fontSize: 12 }}>
+                      <span style={{ fontFamily: 'monospace', fontWeight: 600, color: c.expired ? '#f59e0b' : '#a78bfa' }}>{c.prefix} {c.number}</span>
                       {c.title && <span style={{ color: 'var(--text-muted)', marginLeft: 6 }}>{c.title}</span>}
                       {c.units && <span style={{ color: 'var(--text-muted)', marginLeft: 6 }}>{c.units}u</span>}
+                      {c.expired && <div style={{ fontSize: 10, color: '#f59e0b', marginTop: 4, fontWeight: 600 }}>⚠ May no longer be offered — verify with your counselor</div>}
                       {c.note && <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 4 }}>Note: {c.note}</div>}
                     </div>
                   ))}
