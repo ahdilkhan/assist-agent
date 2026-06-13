@@ -431,11 +431,15 @@ function buildSemesterPlan({ rows, completedCourses, geState, plannerStart, plan
   }
 
   const UNIT_CAP = maxUnitsPerSem
-  const numSemesters = endIdx - startIdx
 
-  // Build semester slots
+  // plannerEnd is the transfer term itself — don't schedule into it.
+  // Schedule only up to (but not including) that term.
+  const scheduleEndIdx = endIdx - 1
+  if (scheduleEndIdx < startIdx) return []
+
+  // Build semester slots (exclusive of transfer term)
   const semSlots = []
-  for (let ti = startIdx; ti <= endIdx; ti++) {
+  for (let ti = startIdx; ti <= scheduleEndIdx; ti++) {
     semSlots.push({ term: termList[ti], courses: [], ge: [], units: 0 })
   }
 
@@ -444,12 +448,13 @@ function buildSemesterPlan({ rows, completedCourses, geState, plannerStart, plan
       .flatMap(r => r.primaryCourses.map(c => `${c.prefix} ${c.number}`))
   )
 
-  // Multi-pass: keep sweeping through all semesters until no more placements possible
-  // This ensures earlier semesters get filled if there's capacity after heavy courses are placed
-  let placed = true
-  while (placed && sorted.length > 0) {
-    placed = false
+  // Multi-pass: keep sweeping through all semesters until no more placements possible.
+  // Both major courses and GE slots are filled in the same pass so gaps get backfilled.
+  let anyPlaced = true
+  while (anyPlaced && (sorted.length > 0 || geNeeded.length > 0)) {
+    anyPlaced = false
     for (const sem of semSlots) {
+      // Fill major courses
       let changed = true
       while (changed) {
         changed = false
@@ -464,25 +469,23 @@ function buildSemesterPlan({ rows, completedCourses, geState, plannerStart, plan
           ready.add(`${c.prefix} ${c.number}`)
           sorted.splice(i, 1)
           changed = true
-          placed = true
+          anyPlaced = true
           break
         }
       }
-    }
-  }
-
-  // Fill GE into available slots
-  let geIdx = 0
-  for (const sem of semSlots) {
-    const area4ThisSem = { count: 0 }
-    let gi = 0
-    while (gi < geNeeded.length && sem.units + GE_UNIT <= UNIT_CAP) {
-      const g = geNeeded[gi]
-      if (g.areaCode === '4' && area4ThisSem.count >= MAX_AREA4_PER_SEM) { gi++; continue }
-      if (g.areaCode === '4') area4ThisSem.count++
-      sem.ge.push(geNeeded[gi])
-      sem.units += GE_UNIT
-      geNeeded.splice(gi, 1)
+      // Fill GE into remaining capacity for this semester
+      const area4ThisSem = sem.ge.filter(g => g.areaCode === '4').length
+      let area4Count = area4ThisSem
+      let gi = 0
+      while (gi < geNeeded.length && sem.units + GE_UNIT <= UNIT_CAP) {
+        const g = geNeeded[gi]
+        if (g.areaCode === '4' && area4Count >= MAX_AREA4_PER_SEM) { gi++; continue }
+        if (g.areaCode === '4') area4Count++
+        sem.ge.push(geNeeded[gi])
+        sem.units += GE_UNIT
+        geNeeded.splice(gi, 1)
+        anyPlaced = true
+      }
     }
   }
 
@@ -869,11 +872,14 @@ export default function Tab2() {
               </div>
               <div style={{ color: 'var(--text-muted)', marginTop: 14 }}>→</div>
               <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 4 }}>Transfer goal</div>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 4 }}>Transfer term</div>
                 <select value={plannerEnd} onChange={e => setPlannerEnd(e.target.value)} style={{ width: '100%', fontSize: 12, padding: '6px 8px' }}>
                   {TERMS.slice(1).map(t => <option key={t} value={t}>{t}</option>)}
                 </select>
               </div>
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 14, background: 'var(--bg-step)', borderRadius: 6, padding: '7px 10px' }}>
+              Classes will be scheduled up to the semester <em>before</em> your transfer term — since you'll be starting at the university that semester, not taking CC classes.
             </div>
             <div style={{ marginBottom: 14 }}>
               <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 4 }}>Max units per semester</div>
@@ -1090,7 +1096,9 @@ export default function Tab2() {
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
           <div>
             <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: 'var(--text)' }}>Semester plan</h2>
-            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>{plannerStart} → {plannerEnd}{includeSummer ? ' (with summers)' : ''}</div>
+            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
+              {plannerStart} → transferring {plannerEnd}{includeSummer ? ' (with summers)' : ''}
+            </div>
           </div>
           <button className="btn-secondary" style={{ fontSize: 12 }} onClick={() => setStep(3)}>← Back</button>
         </div>
@@ -1116,7 +1124,7 @@ export default function Tab2() {
                 {overflowSem.courses.length + overflowSem.ge.length} course{overflowSem.courses.length + overflowSem.ge.length !== 1 ? 's' : ''} couldn't fit in your timeline
               </div>
               <div style={{ fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.6 }}>
-                Consider{!includeSummer ? ' toggling summer semesters on,' : ''} raising your max units above {maxUnitsPerSem}u, extending your transfer goal past {plannerEnd}, or checking off courses you've already completed.
+                Consider{!includeSummer ? ' toggling summer semesters on,' : ''} raising your max units above {maxUnitsPerSem}u, pushing your transfer term past {plannerEnd}, or checking off courses you've already completed.
               </div>
               <button
                 onClick={() => setStep(1)}
@@ -1179,7 +1187,7 @@ export default function Tab2() {
         {overflowSem && (overflowSem.courses.length > 0 || overflowSem.ge.length > 0) && (
           <div style={{ border: '1px dashed #5a4a10', borderRadius: 10, marginBottom: 10, overflow: 'hidden', background: '#1a1505' }}>
             <div style={{ padding: '9px 14px', borderBottom: '1px dashed #5a4a10' }}>
-              <div style={{ fontSize: 13, fontWeight: 600, color: '#fbbf24' }}>Couldn't schedule before {plannerEnd}</div>
+              <div style={{ fontSize: 13, fontWeight: 600, color: '#fbbf24' }}>Couldn't complete before transferring {plannerEnd}</div>
               <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>{overflowSem.courses.length} major · {overflowSem.ge.length} GE</div>
             </div>
             {overflowSem.courses.map((c, ci) => (
