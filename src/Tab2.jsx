@@ -1248,7 +1248,8 @@ export default function Tab2() {
     for (const na of (overlapData.noArticulation || [])) {
       if (na.partOfPickGroup) {
         if (!noArtByGroupId[na.groupId]) noArtByGroupId[na.groupId] = {}
-        const secKey = na.sectionPosition ?? 'unknown'
+        // Use course identity as key so each unarticulated course gets its own slot
+        const secKey = `${na.uniReq.prefix}_${na.uniReq.number}`
         if (!noArtByGroupId[na.groupId][secKey]) {
           noArtByGroupId[na.groupId][secKey] = { courses: [], reason: na.reason, sectionPosition: na.sectionPosition }
         }
