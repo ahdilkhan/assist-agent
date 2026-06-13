@@ -996,29 +996,29 @@ export default function Tab2() {
 
         {/* FIX 4: Compact banner — single-column list, no nested grid */}
         {showBanner && (
-  <div style={{ background: 'var(--bg-hint)', border: '1px solid var(--border)', borderRadius: 10, padding: '12px 14px', marginBottom: 20 }}>
-    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-      <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--text)' }}>How to read this</div>
-      <button onClick={() => { setShowBanner(false); localStorage.setItem('tab2_banner_dismissed', '1') }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: 18, lineHeight: 1, padding: 0 }}>×</button>
-    </div>
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-      {[
-        { icon: <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#a78bfa', display: 'inline-block' }} />, text: <><strong style={{ color: 'var(--text)' }}>Purple dot</strong> — program requires this course</> },
-        { icon: <span style={{ width: 10, height: 10, borderRadius: '50%', border: '2px solid #4a4a6a', display: 'inline-block' }} />, text: <><strong style={{ color: 'var(--text)' }}>Empty dot</strong> — not required by that program</> },
-        { icon: <span style={{ fontSize: 9, background: 'var(--bg-chip-selected)', color: '#a78bfa', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>ALL PROGRAMS</span>, text: 'Counts toward every program — take first' },
-        { icon: <span style={{ fontSize: 9, background: '#0d2a28', color: '#34d399', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>MULTIPLE</span>, text: 'Counts toward more than one program' },
-        { icon: <span style={{ fontSize: 9, background: '#0d1a2e', color: '#60a5fa', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>SCHOOL-SPECIFIC</span>, text: 'Only counts toward one program' },
-        { icon: <span style={{ fontSize: 9, background: '#221a05', color: '#fbbf24', border: '1px solid #5a4a10', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>CHOOSE N</span>, text: 'Yellow group — you only need some, not all' },
-        { icon: <span style={{ fontSize: 9, background: '#2a1010', color: '#f87171', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>No equivalent</span>, text: 'No matching course at your CC' },
-      ].map(({ icon, text }, i) => (
-        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ display: 'inline-flex', flexShrink: 0, minWidth: 0, justifyContent: 'flex-start' }}>{icon}</span>
-          <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{text}</span>
-        </div>
-      ))}
-    </div>
-  </div>
-)}
+          <div style={{ background: 'var(--bg-hint)', border: '1px solid var(--border)', borderRadius: 10, padding: '12px 14px', marginBottom: 20 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+              <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--text)' }}>How to read this</div>
+              <button onClick={() => { setShowBanner(false); localStorage.setItem('tab2_banner_dismissed', '1') }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: 18, lineHeight: 1, padding: 0 }}>×</button>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+              {[
+                { icon: <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#a78bfa', display: 'inline-block' }} />, text: <><strong style={{ color: 'var(--text)' }}>Purple dot</strong> — program requires this course</> },
+                { icon: <span style={{ width: 10, height: 10, borderRadius: '50%', border: '2px solid #4a4a6a', display: 'inline-block' }} />, text: <><strong style={{ color: 'var(--text)' }}>Empty dot</strong> — not required by that program</> },
+                { icon: <span style={{ fontSize: 9, background: 'var(--bg-chip-selected)', color: '#a78bfa', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>ALL PROGRAMS</span>, text: 'Counts toward every program — take first' },
+                { icon: <span style={{ fontSize: 9, background: '#0d2a28', color: '#34d399', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>MULTIPLE</span>, text: 'Counts toward more than one program' },
+                { icon: <span style={{ fontSize: 9, background: '#0d1a2e', color: '#60a5fa', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>SCHOOL-SPECIFIC</span>, text: 'Only counts toward one program' },
+                { icon: <span style={{ fontSize: 9, background: '#221a05', color: '#fbbf24', border: '1px solid #5a4a10', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>CHOOSE 1</span>, text: 'Yellow group — pick one option, not all' },
+                { icon: <span style={{ fontSize: 9, background: '#2a1010', color: '#f87171', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>No equivalent</span>, text: 'No matching course at your CC' },
+              ].map(({ icon, text }, i) => (
+                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ display: 'inline-flex', flexShrink: 0, minWidth: 80, justifyContent: 'flex-end' }}>{icon}</span>
+                  <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{text}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {renderCourseList()}
 
@@ -1272,11 +1272,19 @@ export default function Tab2() {
     const noArtByGroupIdFlat = {}
     const inlineRequiredNoArt = []
 
+    // Which groupIds have at least one articulated CC course (i.e. appear in overlapData.rows)
+    const articulatedGroupIds = new Set(overlapData.rows.map(r => r.groupId).filter(Boolean))
+
     for (const na of (overlapData.noArticulation || [])) {
       if (na.partOfPickGroup) {
         if (!noArtByGroupId[na.groupId]) noArtByGroupId[na.groupId] = {}
-        // Use course identity as key so each unarticulated course gets its own slot
-        const secKey = `${na.uniReq.prefix}_${na.uniReq.number}`
+        // If this group has articulated siblings, each unarticulated course is its own OR option.
+        // If the entire group is unarticulated (e.g. POLI 5 + POLI 30 both have no CC equivalent),
+        // bundle by sectionPosition so they show as one combined slot.
+        const hasArticulatedSibling = articulatedGroupIds.has(na.groupId)
+        const secKey = hasArticulatedSibling
+          ? `${na.uniReq.prefix}_${na.uniReq.number}`
+          : `sec_${na.sectionPosition ?? 'unknown'}`
         if (!noArtByGroupId[na.groupId][secKey]) {
           noArtByGroupId[na.groupId][secKey] = { courses: [], reason: na.reason, sectionPosition: na.sectionPosition }
         }
