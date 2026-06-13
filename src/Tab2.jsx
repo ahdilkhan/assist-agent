@@ -242,7 +242,7 @@ function parseAllForProgram(agreement, programLabel) {
       const primary = receivingCourses[0]
       const sendingArt = art.sendingArticulation
       const hasArt = sendingArt && !sendingArt.noArticulationReason
-      const entry = { art, cellContext, receivingCourses, primary, sendingArt }
+      const entry = { art, cellContext, receivingCourses, primary, sendingArt, templateCellId: item.templateCellId }
       if (hasArt) groupRegistry[gid].articulated.push(entry)
       else groupRegistry[gid].unarticulated.push(entry)
     }
@@ -271,7 +271,7 @@ function parseAllForProgram(agreement, programLabel) {
         })
       }
 
-      for (const { cellContext, receivingCourses, primary, sendingArt } of grp.unarticulated) {
+      for (const { cellContext, receivingCourses, primary, sendingArt, templateCellId } of grp.unarticulated) {
         const allCourseLabels = receivingCourses.map(rc =>
           `${(rc.prefix || '').trim()} ${(rc.courseNumber || rc.number || '').trim()}`
         )
@@ -288,7 +288,7 @@ function parseAllForProgram(agreement, programLabel) {
   reason: sendingArt?.noArticulationReason || null,
   partOfPickGroup: isPickN,
   coveredByAnotherOption: isPickN && hasArticulatedSibling,
-  templateCellId: item.templateCellId,
+  templateCellId,
   ...cellContext,
 })
       }
@@ -318,9 +318,10 @@ function parseAllForProgram(agreement, programLabel) {
                 allCourseLabels: [`${(course.prefix || '').trim()} ${(course.courseNumber || course.number || '').trim()}`],
               },
               noArticulation: true, reason: null,
-              partOfPickGroup: isPickN,
-              coveredByAnotherOption: isPickN && siblingArticulated,
-              ...ctx,
+partOfPickGroup: isPickN,
+coveredByAnotherOption: isPickN && siblingArticulated,
+templateCellId: cell.id,
+...ctx,
             })
           }
         }
