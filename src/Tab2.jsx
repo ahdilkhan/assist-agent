@@ -21,7 +21,6 @@ const CAL_GETC_AREAS = [
   { code: '4', name: 'Social & Behavioral Sciences', desc: 'Three courses from different disciplines', slots: 3 },
   { code: '5A', name: 'Physical Sciences', desc: 'Chemistry, physics, or astronomy', slots: 1 },
   { code: '5B', name: 'Biological Sciences', desc: 'Biology or life sciences', slots: 1 },
-  // FIX 1: Removed CC-specific "often bundled with 5A or 5B" description
   { code: '5C', name: 'Science Lab', desc: 'A lab component course', slots: 1 },
   { code: '6', name: 'Ethnic Studies', desc: 'One ethnic studies course', slots: 1 },
 ]
@@ -74,8 +73,6 @@ async function getAgreement(key) {
 function isCourseExpired(c) {
   const end = (c.end || '').trim()
   if (!end) return false
-  // ASSIST end dates are like "Su2025", "F2024", "Sp2023"
-  // Parse term + year and compare to current date
   const match = end.match(/^(F|Su|Sp|S|W)(\d{4})$/)
   if (!match) return false
   const [, term, yearStr] = match
@@ -84,12 +81,11 @@ function isCourseExpired(c) {
   const currentYear = now.getFullYear()
   if (year < currentYear) return true
   if (year > currentYear) return false
-  // Same year — check term
-  const month = now.getMonth() // 0-indexed
-  if (term === 'Sp' || term === 'S') return month > 4  // Spring ends ~May
-  if (term === 'Su') return month > 7                  // Summer ends ~Aug
-  if (term === 'F') return month > 11                  // Fall ends ~Dec
-  if (term === 'W') return month > 1                   // Winter ends ~Feb
+  const month = now.getMonth()
+  if (term === 'Sp' || term === 'S') return month > 4
+  if (term === 'Su') return month > 7
+  if (term === 'F') return month > 11
+  if (term === 'W') return month > 1
   return false
 }
 
@@ -116,14 +112,11 @@ function parseSendingOptions(topItems) {
     const groupNote = group.attributes?.[0]?.content || null
     if (subItems.length === 0) continue
     if (conjunction === 'or') {
-      // Courses within this group are alternatives — each becomes its own separate option
       for (const course of subItems) {
         const c = extractCourse(course)
         if (c) options.push({ courses: [c], groupNote: course.attributes?.[0]?.content || null })
       }
     } else {
-      // Courses within this group must be taken together (AND).
-      // Each top-level group is always its own separate option.
       const courses = subItems.map(extractCourse).filter(Boolean)
       if (courses.length) options.push({ courses, groupNote })
     }
@@ -344,6 +337,8 @@ function getPlanSaveKey(programs) {
   return 'tab2_progress_' + programs.map(p => p.majorKey).sort().join('|')
 }
 
+// FIX 1: Expanded isRecommendedSection to catch all recommended section labels
+// including "HIGHLY RECOMMENDED" groupTitle and "RECOMMENDED TO COMPLETE PRIOR TO TRANSFER"
 function isRecommendedSection(label) {
   if (!label) return false
   const lower = label.toLowerCase().trim()
@@ -354,7 +349,8 @@ function isRecommendedSection(label) {
     lower === 'strongly recommended courses' || lower === 'highly recommended' ||
     lower === 'departmental recommendations' ||
     lower.includes('strongly recommended') || lower.includes('highly recommended') ||
-    lower.includes('recommended but not required') || lower.includes('departmental recommendation')
+    lower.includes('recommended but not required') || lower.includes('departmental recommendation') ||
+    lower.includes('recommended to complete') || lower.includes('recommended prior to transfer')
   )
 }
 
@@ -407,7 +403,6 @@ function topoSortCourses(courses) {
   return result
 }
 
-// FIX 2: Improved planner — multi-pass greedy so gaps get filled properly
 function buildSemesterPlan({ rows, completedCourses, geState, plannerStart, plannerEnd, includeSummer, maxUnitsPerSem = 15 }) {
   const GE_UNIT = 3
   const MAX_AREA4_PER_SEM = 1
@@ -457,13 +452,9 @@ function buildSemesterPlan({ rows, completedCourses, geState, plannerStart, plan
   }
 
   const UNIT_CAP = maxUnitsPerSem
-
-  // plannerEnd is the transfer term itself — don't schedule into it.
-  // Schedule only up to (but not including) that term.
   const scheduleEndIdx = endIdx - 1
   if (scheduleEndIdx < startIdx) return []
 
-  // Build semester slots (exclusive of transfer term)
   const semSlots = []
   for (let ti = startIdx; ti <= scheduleEndIdx; ti++) {
     semSlots.push({ term: termList[ti], courses: [], ge: [], units: 0 })
@@ -474,14 +465,9 @@ function buildSemesterPlan({ rows, completedCourses, geState, plannerStart, plan
       .flatMap(r => r.primaryCourses.map(c => `${c.prefix} ${c.number}`))
   )
 
-  // How many GE slots to reserve per semester so they get interleaved with majors.
-  // We spread remaining GE evenly across semesters, capped at 2 per sem so majors
-  // still get placed. In the last semester we use whatever's left.
   const numSemSlots = semSlots.length
   const GE_PER_SEM = Math.min(2, Math.ceil(geNeeded.length / Math.max(numSemSlots, 1)))
 
-  // Multi-pass: interleave GE and major courses each semester.
-  // Each pass: reserve GE slots first, then fill remaining capacity with majors.
   let anyPlaced = true
   while (anyPlaced && (sorted.length > 0 || geNeeded.length > 0)) {
     anyPlaced = false
@@ -489,8 +475,6 @@ function buildSemesterPlan({ rows, completedCourses, geState, plannerStart, plan
       const sem = semSlots[si]
       const isLastSem = si === semSlots.length - 1
 
-      // Step 1: Fill GE first — reserve space for interleaving
-      // In the last semester, take all remaining GE; otherwise cap at GE_PER_SEM per pass
       const geTarget = isLastSem ? geNeeded.length : GE_PER_SEM
       const area4ThisSem = sem.ge.filter(g => g.areaCode === '4').length
       let area4Count = area4ThisSem
@@ -507,7 +491,6 @@ function buildSemesterPlan({ rows, completedCourses, geState, plannerStart, plan
         anyPlaced = true
       }
 
-      // Step 2: Fill remaining capacity with major courses
       let changed = true
       while (changed) {
         changed = false
@@ -527,7 +510,6 @@ function buildSemesterPlan({ rows, completedCourses, geState, plannerStart, plan
         }
       }
 
-      // Step 3: If there's still room after majors, fill more GE
       area4Count = sem.ge.filter(g => g.areaCode === '4').length
       gi = 0
       while (gi < geNeeded.length && sem.units + GE_UNIT <= UNIT_CAP) {
@@ -544,7 +526,6 @@ function buildSemesterPlan({ rows, completedCourses, geState, plannerStart, plan
 
   const semesters = semSlots.filter(s => s.courses.length > 0 || s.ge.length > 0)
 
-  // Remaining courses that couldn't fit
   if (sorted.length > 0 || geNeeded.length > 0) {
     semesters.push({
       term: 'Remaining',
@@ -846,7 +827,6 @@ export default function Tab2() {
   const overflowSem = semesterPlan.find(s => s.overflow)
   const summary = computeAttainability()
 
-  // ─── STEP 1: Setup ────────────────────────────────────────────────────────
   function renderStep1() {
     return (
       <>
@@ -963,9 +943,7 @@ export default function Tab2() {
     )
   }
 
-  // ─── STEP 2: Major courses ────────────────────────────────────────────────
   function renderStep2() {
-    // FIX 3: Only count required (non-recommended) rows for the progress counters
     const allRequired = overlapData.rows.filter(r => {
       const pe = r.programEntries[0]
       return !isRecommendedSection(pe?.groupTitle) && !isRecommendedSection(pe?.sectionLabel)
@@ -974,7 +952,6 @@ export default function Tab2() {
 
     return (
       <div>
-        {/* Header */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
           <div>
             <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: 'var(--text)' }}>Major requirements</h2>
@@ -983,7 +960,6 @@ export default function Tab2() {
           <button className="btn-secondary" style={{ fontSize: 12 }} onClick={() => { setOverlapData(null); setStep(1); setCompletedCourses(new Set()) }}>← Edit</button>
         </div>
 
-        {/* Progress bar */}
         <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 10, padding: '12px 16px', marginBottom: 20 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
             <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Required courses checked off</span>
@@ -994,7 +970,6 @@ export default function Tab2() {
           </div>
         </div>
 
-        {/* FIX 4: Compact banner — single-column list, no nested grid */}
         {showBanner && (
           <div style={{ background: 'var(--bg-hint)', border: '1px solid var(--border)', borderRadius: 10, padding: '12px 14px', marginBottom: 20 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
@@ -1022,7 +997,6 @@ export default function Tab2() {
 
         {renderCourseList()}
 
-        {/* Bottom CTA */}
         <div style={{ marginTop: 32, padding: '20px 0', borderTop: '1px solid var(--border)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
           {requiredDone < allRequired.length && (
             <div style={{ fontSize: 12, color: 'var(--text-muted)', textAlign: 'center' }}>
@@ -1037,7 +1011,6 @@ export default function Tab2() {
     )
   }
 
-  // ─── STEP 3: GE Checklist ─────────────────────────────────────────────────
   function renderStep3() {
     const done = geDone()
     const total = geTotal()
@@ -1134,9 +1107,7 @@ export default function Tab2() {
     )
   }
 
-  // ─── STEP 4: Semester Plan ────────────────────────────────────────────────
   function renderStep4() {
-    // FIX 5: majorLeft only counts required (non-recommended) rows not yet completed
     const requiredRows = overlapData.rows.filter(r => {
       const pe = r.programEntries?.[0]
       return !isRecommendedSection(pe?.groupTitle) && !isRecommendedSection(pe?.sectionLabel)
@@ -1264,7 +1235,6 @@ export default function Tab2() {
     )
   }
 
-  // ─── COURSE LIST (used in step 2) ─────────────────────────────────────────
   function renderCourseList() {
     const groups = []
     const groupIdToGroup = {}
@@ -1272,19 +1242,17 @@ export default function Tab2() {
     const noArtByGroupIdFlat = {}
     const inlineRequiredNoArt = []
 
-    // Which groupIds have at least one articulated CC course (i.e. appear in overlapData.rows)
     const articulatedGroupIds = new Set(overlapData.rows.map(r => r.groupId).filter(Boolean))
 
     for (const na of (overlapData.noArticulation || [])) {
       if (na.partOfPickGroup) {
         if (!noArtByGroupId[na.groupId]) noArtByGroupId[na.groupId] = {}
-        // If this group has articulated siblings, each unarticulated course is its own OR option.
-        // If the entire group is unarticulated (e.g. POLI 5 + POLI 30 both have no CC equivalent),
-        // bundle by sectionPosition so they show as one combined slot.
-        const hasArticulatedSibling = articulatedGroupIds.has(na.groupId)
-        const secKey = hasArticulatedSibling
-          ? `${na.uniReq.prefix}_${na.uniReq.number}`
-          : `sec_${na.sectionPosition ?? 'unknown'}`
+
+        // FIX 2: Always bundle no-articulation courses by sectionPosition so that
+        // AND pairs (like POLI 5 + POLI 30) always appear as one combined slot,
+        // regardless of whether articulated siblings exist in the group.
+        const secKey = `sec_${na.sectionPosition ?? 'unknown'}`
+
         if (!noArtByGroupId[na.groupId][secKey]) {
           noArtByGroupId[na.groupId][secKey] = { courses: [], reason: na.reason, sectionPosition: na.sectionPosition }
         }
@@ -1310,12 +1278,11 @@ export default function Tab2() {
       groupIdToGroup[groupId].rows.push(row)
     }
 
-    // FIX 6: Sort rows within each group: ALL > MULTIPLE > SCHOOL-SPECIFIC
     for (const g of Object.values(groupIdToGroup)) {
       const coverageOrder = (row) => {
-        if (row.coverage >= (row.totalPrograms || 1)) return 0 // all
-        if (row.coverage > 1) return 1 // multi
-        return 2 // school-specific
+        if (row.coverage >= (row.totalPrograms || 1)) return 0
+        if (row.coverage > 1) return 1
+        return 2
       }
       g.rows.sort((a, b) => coverageOrder(a) - coverageOrder(b))
     }
@@ -1499,7 +1466,6 @@ export default function Tab2() {
     return rendered
   }
 
-  // ─── EXPANDED ROW ─────────────────────────────────────────────────────────
   function renderExpandedRow(row, isEffectivelyRequired = false) {
     return (
       <div style={{ borderTop: '1px solid var(--border)', background: 'var(--bg-step)', padding: '12px 14px 14px 42px' }}>
@@ -1550,7 +1516,6 @@ export default function Tab2() {
     )
   }
 
-  // ─── RENDER ───────────────────────────────────────────────────────────────
   return (
     <div>
       {error && <div className="error-box">{error}</div>}
