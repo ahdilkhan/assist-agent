@@ -1282,9 +1282,9 @@ export default function Tab2() {
         // If the entire group is unarticulated (e.g. POLI 5 + POLI 30 both have no CC equivalent),
         // bundle by sectionPosition so they show as one combined slot.
         const hasArticulatedSibling = articulatedGroupIds.has(na.groupId)
-const secKey = na.partOfPickGroup
-  ? `sec_${na.sectionPosition ?? 'unknown'}`
-  : `${na.uniReq.prefix}_${na.uniReq.number}`
+        const secKey = hasArticulatedSibling
+          ? `${na.uniReq.prefix}_${na.uniReq.number}`
+          : `sec_${na.sectionPosition ?? 'unknown'}`
         if (!noArtByGroupId[na.groupId][secKey]) {
           noArtByGroupId[na.groupId][secKey] = { courses: [], reason: na.reason, sectionPosition: na.sectionPosition }
         }
