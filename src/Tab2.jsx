@@ -192,6 +192,7 @@ function parseAllForProgram(agreement, programLabel) {
   try {
     const arts = typeof agreement.articulations === 'string'
       ? JSON.parse(agreement.articulations) : agreement.articulations || []
+      console.log('RAW ARTS', programLabel, JSON.stringify(arts, null, 2))
 
     const cellMap = buildCellMap(agreement.templateAssets)
     const results = []
