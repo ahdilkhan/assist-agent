@@ -276,20 +276,21 @@ function parseAllForProgram(agreement, programLabel) {
           `${(rc.prefix || '').trim()} ${(rc.courseNumber || rc.number || '').trim()}`
         )
         noArticulationResults.push({
-          program: programLabel,
-          uniRequirement: {
-            prefix: (primary.prefix || '').trim(),
-            number: (primary.courseNumber || primary.number || '').trim(),
-            title: primary.courseTitle || primary.title || '',
-            units: primary.maxUnits || primary.minUnits || null,
-            allCourseLabels,
-          },
-          noArticulation: true,
-          reason: sendingArt?.noArticulationReason || null,
-          partOfPickGroup: isPickN,
-          coveredByAnotherOption: isPickN && hasArticulatedSibling,
-          ...cellContext,
-        })
+  program: programLabel,
+  uniRequirement: {
+    prefix: (primary.prefix || '').trim(),
+    number: (primary.courseNumber || primary.number || '').trim(),
+    title: primary.courseTitle || primary.title || '',
+    units: primary.maxUnits || primary.minUnits || null,
+    allCourseLabels,
+  },
+  noArticulation: true,
+  reason: sendingArt?.noArticulationReason || null,
+  partOfPickGroup: isPickN,
+  coveredByAnotherOption: isPickN && hasArticulatedSibling,
+  templateCellId: item.templateCellId,
+  ...cellContext,
+})
       }
     }
 
@@ -1251,7 +1252,7 @@ export default function Tab2() {
         // FIX 2: Always bundle no-articulation courses by sectionPosition so that
         // AND pairs (like POLI 5 + POLI 30) always appear as one combined slot,
         // regardless of whether articulated siblings exist in the group.
-        const secKey = `sec_${na.sectionPosition ?? 'unknown'}`
+        const secKey = na.templateCellId != null ? `cell_${na.templateCellId}` : `sec_${na.sectionPosition ?? 'unknown'}`
 
         if (!noArtByGroupId[na.groupId][secKey]) {
           noArtByGroupId[na.groupId][secKey] = { courses: [], reason: na.reason, sectionPosition: na.sectionPosition }
