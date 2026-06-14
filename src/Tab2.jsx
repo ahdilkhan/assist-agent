@@ -1246,7 +1246,7 @@ export default function Tab2() {
     const inlineRequiredNoArt = []
 
     for (const na of (overlapData.noArticulation || [])) {
-  console.log('NO-ART:', na.uniReq.prefix, na.uniReq.number, 'groupId:', na.groupId, 'sectionPosition:', na.sectionPosition, 'templateCellId:', na.templateCellId, 'partOfPickGroup:', na.partOfPickGroup)
+  console.log('NO-ART:', na.uniReq.prefix, na.uniReq.number, 'groupId:', na.groupId, 'sectionPosition:', na.sectionPosition, 'templateCellId:', na.templateCellId, 'partOfPickGroup:', na.partOfPickGroup, 'isSectionBundled:', na.isSectionBundled)
   if (na.partOfPickGroup) {
         if (!noArtByGroupId[na.groupId]) noArtByGroupId[na.groupId] = {}
         // Use templateCellId as slot key so each university course gets its own slot,
