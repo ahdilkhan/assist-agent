@@ -807,6 +807,9 @@ const isPickN = pe.nRequired != null
       }
     }
 
+    console.log('GROUPED:', JSON.stringify(groupCounted))
+    console.log('PROGRAMMAP after rows:', JSON.stringify(programMap))
+
     // Add pick group totals/completions to programMap
     for (const [gKey, g] of Object.entries(groupCounted)) {
       const program = gKey.split('|')[0]
