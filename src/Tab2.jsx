@@ -242,6 +242,7 @@ function parseAllForProgram(agreement, programLabel) {
       const primary = receivingCourses[0]
       const sendingArt = art.sendingArticulation
       const hasArt = sendingArt && !sendingArt.noArticulationReason
+      // Store templateCellId on entry so it's accessible in the unarticulated loop
       const entry = { art, cellContext, receivingCourses, primary, sendingArt, templateCellId: item.templateCellId }
       if (hasArt) groupRegistry[gid].articulated.push(entry)
       else groupRegistry[gid].unarticulated.push(entry)
@@ -271,26 +272,27 @@ function parseAllForProgram(agreement, programLabel) {
         })
       }
 
+      // Destructure templateCellId from entry
       for (const { cellContext, receivingCourses, primary, sendingArt, templateCellId } of grp.unarticulated) {
         const allCourseLabels = receivingCourses.map(rc =>
           `${(rc.prefix || '').trim()} ${(rc.courseNumber || rc.number || '').trim()}`
         )
         noArticulationResults.push({
-  program: programLabel,
-  uniRequirement: {
-    prefix: (primary.prefix || '').trim(),
-    number: (primary.courseNumber || primary.number || '').trim(),
-    title: primary.courseTitle || primary.title || '',
-    units: primary.maxUnits || primary.minUnits || null,
-    allCourseLabels,
-  },
-  noArticulation: true,
-  reason: sendingArt?.noArticulationReason || null,
-  partOfPickGroup: isPickN,
-  coveredByAnotherOption: isPickN && hasArticulatedSibling,
-  templateCellId,
-  ...cellContext,
-})
+          program: programLabel,
+          uniRequirement: {
+            prefix: (primary.prefix || '').trim(),
+            number: (primary.courseNumber || primary.number || '').trim(),
+            title: primary.courseTitle || primary.title || '',
+            units: primary.maxUnits || primary.minUnits || null,
+            allCourseLabels,
+          },
+          noArticulation: true,
+          reason: sendingArt?.noArticulationReason || null,
+          partOfPickGroup: isPickN,
+          coveredByAnotherOption: isPickN && hasArticulatedSibling,
+          templateCellId,
+          ...cellContext,
+        })
       }
     }
 
@@ -318,10 +320,10 @@ function parseAllForProgram(agreement, programLabel) {
                 allCourseLabels: [`${(course.prefix || '').trim()} ${(course.courseNumber || course.number || '').trim()}`],
               },
               noArticulation: true, reason: null,
-partOfPickGroup: isPickN,
-coveredByAnotherOption: isPickN && siblingArticulated,
-templateCellId: cell.id,
-...ctx,
+              partOfPickGroup: isPickN,
+              coveredByAnotherOption: isPickN && siblingArticulated,
+              templateCellId: cell.id,
+              ...ctx,
             })
           }
         }
@@ -339,8 +341,6 @@ function getPlanSaveKey(programs) {
   return 'tab2_progress_' + programs.map(p => p.majorKey).sort().join('|')
 }
 
-// FIX 1: Expanded isRecommendedSection to catch all recommended section labels
-// including "HIGHLY RECOMMENDED" groupTitle and "RECOMMENDED TO COMPLETE PRIOR TO TRANSFER"
 function isRecommendedSection(label) {
   if (!label) return false
   const lower = label.toLowerCase().trim()
@@ -730,6 +730,7 @@ export default function Tab2() {
               partOfPickGroup: na.partOfPickGroup || false,
               coveredByAnotherOption: na.coveredByAnotherOption || false,
               groupPosition: na.groupPosition ?? 999, sectionPosition: na.sectionPosition ?? 999,
+              templateCellId: na.templateCellId ?? null,
             }
           }
         }
@@ -986,10 +987,11 @@ export default function Tab2() {
                 { icon: <span style={{ fontSize: 9, background: '#0d2a28', color: '#34d399', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>MULTIPLE</span>, text: 'Counts toward more than one program' },
                 { icon: <span style={{ fontSize: 9, background: '#0d1a2e', color: '#60a5fa', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>SCHOOL-SPECIFIC</span>, text: 'Only counts toward one program' },
                 { icon: <span style={{ fontSize: 9, background: '#221a05', color: '#fbbf24', border: '1px solid #5a4a10', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>CHOOSE 1</span>, text: 'Yellow group — pick one option, not all' },
-                { icon: <span style={{ fontSize: 9, background: '#2a1010', color: '#f87171', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>No equivalent</span>, text: 'No matching course at your CC' },
+                { icon: <span style={{ fontSize: 9, background: '#2a1010', color: '#f87171', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>No equivalent</span>, text: <><strong style={{ color: 'var(--text)' }}>Inside a yellow group</strong> — no option at your CC; pick a different option if one exists, otherwise plan to complete after transferring or at another CC</> },
+                { icon: <span style={{ fontSize: 9, background: '#2a1010', color: '#f87171', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>No equivalent</span>, text: <><strong style={{ color: 'var(--text)' }}>Standalone</strong> — no match at your CC; consider completing at another CC or after transferring</> },
               ].map(({ icon, text }, i) => (
-                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ display: 'inline-flex', flexShrink: 0, minWidth: 80, justifyContent: 'flex-end' }}>{icon}</span>
+                <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                  <span style={{ display: 'inline-flex', flexShrink: 0, minWidth: 80, justifyContent: 'flex-end', paddingTop: 2 }}>{icon}</span>
                   <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{text}</span>
                 </div>
               ))}
@@ -1061,7 +1063,6 @@ export default function Tab2() {
                     </div>
                     <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{area.desc}</div>
                   </div>
-
                   <div style={{ display: 'flex', gap: 8, flexShrink: 0, alignItems: 'center' }}>
                     {slotKeys.map((k, i) => (
                       <div key={k} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
@@ -1244,17 +1245,12 @@ export default function Tab2() {
     const noArtByGroupIdFlat = {}
     const inlineRequiredNoArt = []
 
-    const articulatedGroupIds = new Set(overlapData.rows.map(r => r.groupId).filter(Boolean))
-
     for (const na of (overlapData.noArticulation || [])) {
       if (na.partOfPickGroup) {
         if (!noArtByGroupId[na.groupId]) noArtByGroupId[na.groupId] = {}
-
-        // FIX 2: Always bundle no-articulation courses by sectionPosition so that
-        // AND pairs (like POLI 5 + POLI 30) always appear as one combined slot,
-        // regardless of whether articulated siblings exist in the group.
+        // Use templateCellId as slot key so each university course gets its own slot,
+        // but AND pairs (same cell) still bundle correctly
         const secKey = na.templateCellId != null ? `cell_${na.templateCellId}` : `sec_${na.sectionPosition ?? 'unknown'}`
-
         if (!noArtByGroupId[na.groupId][secKey]) {
           noArtByGroupId[na.groupId][secKey] = { courses: [], reason: na.reason, sectionPosition: na.sectionPosition }
         }
@@ -1278,6 +1274,29 @@ export default function Tab2() {
         groups.push(g)
       }
       groupIdToGroup[groupId].rows.push(row)
+    }
+
+    // Synthesize groups for pick-groups where ALL options have no articulation.
+    // Without this the yellow card never renders because groupIdToGroup only gets
+    // populated from overlapData.rows (articulated courses only).
+    for (const [gid, slots] of Object.entries(noArtByGroupId)) {
+      if (groupIdToGroup[gid]) continue
+      const firstNa = (noArtByGroupIdFlat[gid] || [])[0]
+      if (!firstNa) continue
+      const g = {
+        groupId: gid,
+        groupTitle: firstNa.groupTitle || 'MAJOR REQUIREMENTS',
+        sectionLabel: firstNa.sectionLabel || '',
+        nRequired: firstNa.nRequired ?? 1,
+        pickType: firstNa.pickType ?? 'count',
+        pickMin: null, pickMax: null,
+        isSectionBundled: firstNa.isSectionBundled || false,
+        rows: [],
+        _groupPosition: firstNa.groupPosition ?? 999,
+        _sectionPosition: firstNa.sectionPosition ?? 999,
+      }
+      groupIdToGroup[gid] = g
+      groups.push(g)
     }
 
     for (const g of Object.values(groupIdToGroup)) {
@@ -1326,6 +1345,7 @@ export default function Tab2() {
       const isEffectivelyRequired = isPickN && group.rows.length <= 1 && noArtSiblingSlots === 0 && noArtSiblingsFlat === 0
       const displayLabel = group.sectionLabel || group.groupTitle || 'REQUIREMENTS'
       const totalPickOptions = group.rows.length + noArtSiblingSlots
+      const allNoArt = group.rows.length === 0 && noArtSiblingSlots > 0
       const groupLabel = isPickN
         ? pickGroupLabel({ ...group, _totalOptions: totalPickOptions })
         : null
@@ -1358,7 +1378,6 @@ export default function Tab2() {
               >
                 {isDone && <span style={{ color: '#fff', fontSize: 11 }}>✓</span>}
               </div>
-
               <div style={{ flex: 1, minWidth: 0 }} onClick={() => setExpandedRow(isExpanded ? null : row.ccKey)}>
                 <div style={{ fontWeight: 600, fontSize: 13, textDecoration: isDone ? 'line-through' : 'none', color: isDone ? 'var(--text-muted)' : 'var(--text)', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                   {label}
@@ -1369,7 +1388,6 @@ export default function Tab2() {
                 </div>
                 {subtitle && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>{subtitle}{units ? ` · ${units} units` : ''}</div>}
               </div>
-
               <div style={{ display: 'flex', gap: 6, flexShrink: 0 }} onClick={() => setExpandedRow(isExpanded ? null : row.ccKey)}>
                 {overlapData.programLabels.map((progLabel, pi) => {
                   const has = row.programEntries.some(pe => pe.program === progLabel)
@@ -1388,16 +1406,31 @@ export default function Tab2() {
         )
       }
 
-      if (isPickN && !isEffectivelyRequired && (groupLabel || noArtSiblingSlots > 0)) {
+      if (isPickN && !isEffectivelyRequired && (groupLabel || noArtSiblingSlots > 0 || allNoArt)) {
+        const cardLabel = allNoArt
+          ? `Choose any ${group.nRequired ?? 1} of these ${noArtSiblingSlots} option${noArtSiblingSlots !== 1 ? 's' : ''}`
+          : groupLabel
+
         rendered.push(
           <div key={`group-${group.groupId}`} style={{ border: '1.5px solid #5a4a10', borderRadius: 10, marginBottom: 12, overflow: 'hidden', background: '#1a1505' }}>
             <div style={{ padding: '9px 14px', borderBottom: '1px solid #5a4a10', background: '#221a05' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <span style={{ fontSize: 14 }}>✓</span>
-                <span style={{ fontSize: 12, fontWeight: 700, color: '#fbbf24' }}>{groupLabel}</span>
+                <span style={{ fontSize: 12, fontWeight: 700, color: '#fbbf24' }}>{cardLabel}</span>
                 <span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 4 }}>— you don't need all of them</span>
               </div>
             </div>
+
+            {/* Warning banner when ALL options in the group have no articulation */}
+            {allNoArt && (
+              <div style={{ padding: '10px 14px', background: '#1f1010', borderBottom: '1px solid #5a2020', display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                <span style={{ fontSize: 14, flexShrink: 0 }}>⚠️</span>
+                <div style={{ fontSize: 12, color: '#fca5a5', lineHeight: 1.5 }}>
+                  None of these have an equivalent at <strong style={{ color: '#f87171' }}>{ccName}</strong>. You may need to satisfy this requirement after transferring or by taking a course at another CC before you apply.
+                </div>
+              </div>
+            )}
+
             {[...group.rows, ...Object.values(noArtByGroupId[group.groupId] || {}).map(slot => ({ _isNoArt: true, slot }))].map((rowOrNa, rowIdx) => {
               if (rowOrNa._isNoArt) {
                 const { slot } = rowOrNa
@@ -1406,7 +1439,7 @@ export default function Tab2() {
                 const units = slot.courses.reduce((sum, c) => sum + (c.units || 0), 0)
                 return (
                   <div key={`noart-${label}`} style={{ borderTop: '1px dashed #5a2020', background: '#1a0a0a' }}>
-                    <div style={{ textAlign: 'center', fontSize: 11, fontWeight: 700, color: '#5a4a10', padding: '4px 0', letterSpacing: '0.05em' }}>OR</div>
+                    {(rowIdx > 0 || group.rows.length > 0) && <div style={{ textAlign: 'center', fontSize: 11, fontWeight: 700, color: '#5a4a10', padding: '4px 0', letterSpacing: '0.05em' }}>OR</div>}
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px' }}>
                       <span style={{ color: '#f87171', fontSize: 14, flexShrink: 0 }}>✕</span>
                       <div style={{ flex: 1, minWidth: 0 }}>
@@ -1456,6 +1489,9 @@ export default function Tab2() {
                   </div>
                   {na.uniReq.units && <div style={{ fontSize: 11, color: '#f87171', marginTop: 1 }}>{na.uniReq.units} units · {na.program}</div>}
                   {na.reason && <div style={{ fontSize: 11, color: '#f87171', marginTop: 2 }}>{na.reason}</div>}
+                  <div style={{ fontSize: 11, color: '#f87171', marginTop: 4, opacity: 0.8 }}>
+                    Consider completing at another CC or after transferring.
+                  </div>
                 </div>
                 <span style={{ fontSize: 11, background: '#2a1010', color: '#f87171', borderRadius: 4, padding: '2px 8px', fontWeight: 600, flexShrink: 0 }}>No equivalent at {ccName}</span>
               </div>
