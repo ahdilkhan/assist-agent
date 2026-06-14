@@ -780,21 +780,49 @@ export default function Tab2() {
     for (const label of overlapData.programLabels) {
       programMap[label] = { label, total: 0, completed: 0 }
     }
+
+    // Count pick groups as nRequired slots, not one per row.
+    // Track which groupId+program combos we've already counted.
+    const groupCounted = {} // key: `${program}|${groupId}` → slots counted so far
+
     for (const row of overlapData.rows) {
       const isDone = completedCourses.has(row.ccKey)
       for (const pe of row.programEntries) {
         if (!programMap[pe.program]) continue
         if (isRecommendedSection(pe.groupTitle) || isRecommendedSection(pe.sectionLabel)) continue
-        programMap[pe.program].total += 1
-        if (isDone) programMap[pe.program].completed += 1
+
+        const isPickN = pe.nRequired != null
+        if (isPickN) {
+          // Pick group: contributes nRequired slots total, not one per option
+          const gKey = `${pe.program}|${pe.groupId}`
+          if (!groupCounted[gKey]) groupCounted[gKey] = { total: pe.nRequired, completed: 0 }
+          const g = groupCounted[gKey]
+          if (isDone && g.completed < g.total) g.completed++
+        } else {
+          // Required course: contributes 1
+          programMap[pe.program].total += 1
+          if (isDone) programMap[pe.program].completed += 1
+        }
       }
     }
+
+    // Add pick group totals/completions to programMap
+    for (const [gKey, g] of Object.entries(groupCounted)) {
+      const program = gKey.split('|')[0]
+      if (!programMap[program]) continue
+      programMap[program].total += g.total
+      programMap[program].completed += g.completed
+    }
+
+    // No-art standalone required courses
     for (const na of (overlapData.noArticulation || [])) {
       if (!programMap[na.program]) continue
       if (isRecommendedSection(na.groupTitle) || isRecommendedSection(na.sectionLabel)) continue
       if (na.coveredByAnotherOption) continue
-      programMap[na.program].total += 1
+      if (!na.partOfPickGroup) programMap[na.program].total += 1
+      // pick-group no-arts are already accounted for via groupCounted nRequired
     }
+
     return Object.values(programMap).sort((a, b) => {
       const aPct = a.total === 0 ? 0 : a.completed / a.total
       const bPct = b.total === 0 ? 0 : b.completed / b.total
@@ -986,7 +1014,7 @@ export default function Tab2() {
                 { icon: <span style={{ fontSize: 9, background: 'var(--bg-chip-selected)', color: '#a78bfa', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>ALL PROGRAMS</span>, text: 'Counts toward every program — take first' },
                 { icon: <span style={{ fontSize: 9, background: '#0d2a28', color: '#34d399', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>MULTIPLE</span>, text: 'Counts toward more than one program' },
                 { icon: <span style={{ fontSize: 9, background: '#0d1a2e', color: '#60a5fa', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>SCHOOL-SPECIFIC</span>, text: 'Only counts toward one program' },
-                { icon: <span style={{ fontSize: 9, background: '#221a05', color: '#fbbf24', border: '1px solid #5a4a10', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>CHOOSE 1</span>, text: 'Yellow group — pick one option, not all' },
+                { icon: <span style={{ fontSize: 9, background: '#221a05', color: '#fbbf24', border: '1px solid #5a4a10', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>YELLOW GROUP</span>, text: 'Pick group — you only need some of the options, not all' },
                 { icon: <span style={{ fontSize: 9, background: '#2a1010', color: '#f87171', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>No equivalent</span>, text: <><strong style={{ color: 'var(--text)' }}>Inside a yellow group</strong> — no option at your CC; pick a different option if one exists, otherwise plan to complete after transferring or at another CC</> },
                 { icon: <span style={{ fontSize: 9, background: '#2a1010', color: '#f87171', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>No equivalent</span>, text: <><strong style={{ color: 'var(--text)' }}>Standalone</strong> — no match at your CC; consider completing at another CC or after transferring</> },
               ].map(({ icon, text }, i) => (
@@ -1246,12 +1274,13 @@ export default function Tab2() {
     const inlineRequiredNoArt = []
 
     for (const na of (overlapData.noArticulation || [])) {
-  console.log('NO-ART:', na.uniReq.prefix, na.uniReq.number, 'groupId:', na.groupId, 'sectionPosition:', na.sectionPosition, 'templateCellId:', na.templateCellId, 'partOfPickGroup:', na.partOfPickGroup, 'isSectionBundled:', na.isSectionBundled)
-  if (na.partOfPickGroup) {
+      if (na.partOfPickGroup) {
         if (!noArtByGroupId[na.groupId]) noArtByGroupId[na.groupId] = {}
-        // Use templateCellId as slot key so each university course gets its own slot,
-        // but AND pairs (same cell) still bundle correctly
-        const secKey = na.templateCellId != null ? `cell_${na.templateCellId}` : `sec_${na.sectionPosition ?? 'unknown'}`
+        // isSectionBundled = AND pair (e.g. POLI 5 + POLI 30 must be taken together) → bundle by sectionPosition
+        // otherwise each university course is its own OR option → split by templateCellId
+        const secKey = na.isSectionBundled
+          ? `sec_${na.sectionPosition ?? 'unknown'}`
+          : (na.templateCellId != null ? `cell_${na.templateCellId}` : `sec_${na.sectionPosition ?? 'unknown'}`)
         if (!noArtByGroupId[na.groupId][secKey]) {
           noArtByGroupId[na.groupId][secKey] = { courses: [], reason: na.reason, sectionPosition: na.sectionPosition }
         }
