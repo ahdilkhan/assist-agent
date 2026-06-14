@@ -795,7 +795,7 @@ console.log('PE:', pe.program, pe.uniReq?.prefix, pe.uniReq?.number, 'nRequired:
 const isPickN = pe.nRequired != null
         if (isPickN) {
           // Pick group: contributes nRequired slots total, not one per option
-          const gKey = `${pe.program}|${pe.groupId}`
+          const gKey = `${pe.program}|||${pe.groupId}`
           if (!groupCounted[gKey]) groupCounted[gKey] = { total: pe.nRequired, completed: 0 }
           const g = groupCounted[gKey]
           if (isDone && g.completed < g.total) g.completed++
@@ -812,7 +812,7 @@ const isPickN = pe.nRequired != null
 
     // Add pick group totals/completions to programMap
     for (const [gKey, g] of Object.entries(groupCounted)) {
-      const program = gKey.split('|')[0]
+      const program = gKey.split('|||')[0]
       if (!programMap[program]) continue
       programMap[program].total += g.total
       programMap[program].completed += g.completed
