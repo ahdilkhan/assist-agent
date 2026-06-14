@@ -790,8 +790,9 @@ export default function Tab2() {
       for (const pe of row.programEntries) {
         if (!programMap[pe.program]) continue
         if (isRecommendedSection(pe.groupTitle) || isRecommendedSection(pe.sectionLabel)) continue
+console.log('PE:', pe.program, pe.uniReq?.prefix, pe.uniReq?.number, 'nRequired:', pe.nRequired, 'groupId:', pe.groupId)
 
-        const isPickN = pe.nRequired != null
+const isPickN = pe.nRequired != null
         if (isPickN) {
           // Pick group: contributes nRequired slots total, not one per option
           const gKey = `${pe.program}|${pe.groupId}`
