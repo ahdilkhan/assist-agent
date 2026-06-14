@@ -242,7 +242,6 @@ function parseAllForProgram(agreement, programLabel) {
       const primary = receivingCourses[0]
       const sendingArt = art.sendingArticulation
       const hasArt = sendingArt && !sendingArt.noArticulationReason
-      // Store templateCellId on entry so it's accessible in the unarticulated loop
       const entry = { art, cellContext, receivingCourses, primary, sendingArt, templateCellId: item.templateCellId }
       if (hasArt) groupRegistry[gid].articulated.push(entry)
       else groupRegistry[gid].unarticulated.push(entry)
@@ -272,7 +271,6 @@ function parseAllForProgram(agreement, programLabel) {
         })
       }
 
-      // Destructure templateCellId from entry
       for (const { cellContext, receivingCourses, primary, sendingArt, templateCellId } of grp.unarticulated) {
         const allCourseLabels = receivingCourses.map(rc =>
           `${(rc.prefix || '').trim()} ${(rc.courseNumber || rc.number || '').trim()}`
@@ -405,24 +403,22 @@ function topoSortCourses(courses) {
   return result
 }
 
-function buildSemesterPlan({ rows, completedCourses, geState, plannerStart, plannerEnd, includeSummer, maxUnitsPerSem = 15 }) {
+function buildSemesterPlan({ rows, noArtCourses, completedCourses, geState, plannerStart, plannerEnd, includeSummer, maxUnitsPerSem = 15 }) {
   const GE_UNIT = 3
   const MAX_AREA4_PER_SEM = 1
-  rows = rows.filter(r => {
-    const pe = r.programEntries?.[0]
-    return !isRecommendedSection(pe?.groupTitle) && !isRecommendedSection(pe?.sectionLabel)
-  })
 
   const termList = includeSummer ? TERMS : TERMS.filter(t => !t.startsWith('Summer'))
   const startIdx = termList.indexOf(plannerStart)
   const endIdx = termList.indexOf(plannerEnd)
   if (startIdx < 0 || endIdx <= startIdx) return []
 
+  // Build pending articulated courses
   const pending = []
   for (const row of rows) {
     if (completedCourses.has(row.ccKey)) continue
     const badge = row.coverage >= (row.totalPrograms || 1)
       ? 'all' : row.coverage > 1 ? 'multi' : 'school'
+    const isRec = isRecommendedSection(row.programEntries?.[0]?.groupTitle) || isRecommendedSection(row.programEntries?.[0]?.sectionLabel)
     const primaryCourse = row.primaryCourses[0]
     if (!primaryCourse) continue
     pending.push({
@@ -433,10 +429,28 @@ function buildSemesterPlan({ rows, completedCourses, geState, plannerStart, plan
       units: row.primaryCourses.reduce((s, c) => s + (c.units || 3), 0),
       badge,
       coverage: row.coverage,
+      isRec,
+      isNoArt: false,
     })
   }
 
   const sorted = topoSortCourses(pending)
+
+  // Add no-art courses at the end (can't prereq-sort these)
+  const noArtPending = (noArtCourses || []).map(na => ({
+    ccKey: `noart_${na.uniReq.prefix}_${na.uniReq.number}_${na.program}`,
+    prefix: na.uniReq.prefix,
+    number: na.uniReq.number,
+    title: na.uniReq.title || '',
+    units: na.uniReq.units || 3,
+    badge: 'noart',
+    isRec: isRecommendedSection(na.groupTitle) || isRecommendedSection(na.sectionLabel),
+    isNoArt: true,
+    reason: na.reason,
+    program: na.program,
+  }))
+
+  const allPending = [...sorted, ...noArtPending]
 
   const geNeeded = []
   for (const area of CAL_GETC_AREAS) {
@@ -470,8 +484,12 @@ function buildSemesterPlan({ rows, completedCourses, geState, plannerStart, plan
   const numSemSlots = semSlots.length
   const GE_PER_SEM = Math.min(2, Math.ceil(geNeeded.length / Math.max(numSemSlots, 1)))
 
+  // Separate articulated (scheduleable) from no-art
+  const scheduleable = allPending.filter(c => !c.isNoArt)
+  const noArtList = allPending.filter(c => c.isNoArt)
+
   let anyPlaced = true
-  while (anyPlaced && (sorted.length > 0 || geNeeded.length > 0)) {
+  while (anyPlaced && (scheduleable.length > 0 || geNeeded.length > 0)) {
     anyPlaced = false
     for (let si = 0; si < semSlots.length; si++) {
       const sem = semSlots[si]
@@ -496,8 +514,8 @@ function buildSemesterPlan({ rows, completedCourses, geState, plannerStart, plan
       let changed = true
       while (changed) {
         changed = false
-        for (let i = 0; i < sorted.length; i++) {
-          const c = sorted[i]
+        for (let i = 0; i < scheduleable.length; i++) {
+          const c = scheduleable[i]
           const prereqKey = getPrereqKey(c)
           const prereqOk = !prereqKey || ready.has(prereqKey)
           if (!prereqOk) continue
@@ -505,7 +523,7 @@ function buildSemesterPlan({ rows, completedCourses, geState, plannerStart, plan
           sem.courses.push(c)
           sem.units += c.units
           ready.add(`${c.prefix} ${c.number}`)
-          sorted.splice(i, 1)
+          scheduleable.splice(i, 1)
           changed = true
           anyPlaced = true
           break
@@ -528,13 +546,24 @@ function buildSemesterPlan({ rows, completedCourses, geState, plannerStart, plan
 
   const semesters = semSlots.filter(s => s.courses.length > 0 || s.ge.length > 0)
 
-  if (sorted.length > 0 || geNeeded.length > 0) {
+  if (scheduleable.length > 0 || geNeeded.length > 0) {
     semesters.push({
       term: 'Remaining',
-      courses: sorted,
+      courses: scheduleable,
       ge: geNeeded,
-      units: sorted.reduce((s, c) => s + c.units, 0) + geNeeded.length * GE_UNIT,
+      units: scheduleable.reduce((s, c) => s + c.units, 0) + geNeeded.length * GE_UNIT,
       overflow: true,
+    })
+  }
+
+  // No-art courses always go in a dedicated section (not scheduled per semester)
+  if (noArtList.length > 0) {
+    semesters.push({
+      term: 'No CC Equivalent',
+      courses: noArtList,
+      ge: [],
+      units: 0,
+      isNoArtSection: true,
     })
   }
 
@@ -774,66 +803,6 @@ export default function Tab2() {
     }
   }
 
-  function computeAttainability() {
-    if (!overlapData) return []
-    const programMap = {}
-    for (const label of overlapData.programLabels) {
-      programMap[label] = { label, total: 0, completed: 0 }
-    }
-
-    // Count pick groups as nRequired slots, not one per row.
-    // Track which groupId+program combos we've already counted.
-    const groupCounted = {} // key: `${program}|${groupId}` → slots counted so far
-
-    for (const row of overlapData.rows) {
-      const isDone = completedCourses.has(row.ccKey)
-      for (const pe of row.programEntries) {
-        if (!programMap[pe.program]) continue
-        if (isRecommendedSection(pe.groupTitle) || isRecommendedSection(pe.sectionLabel)) continue
-console.log('PE:', pe.program, pe.uniReq?.prefix, pe.uniReq?.number, 'nRequired:', pe.nRequired, 'groupId:', pe.groupId)
-
-const isPickN = pe.nRequired != null
-        if (isPickN) {
-          // Pick group: contributes nRequired slots total, not one per option
-          const gKey = `${pe.program}|||${pe.groupId}`
-          if (!groupCounted[gKey]) groupCounted[gKey] = { total: pe.nRequired, completed: 0 }
-          const g = groupCounted[gKey]
-          if (isDone && g.completed < g.total) g.completed++
-        } else {
-          // Required course: contributes 1
-          programMap[pe.program].total += 1
-          if (isDone) programMap[pe.program].completed += 1
-        }
-      }
-    }
-
-    console.log('GROUPED:', JSON.stringify(groupCounted))
-    console.log('PROGRAMMAP after rows:', JSON.stringify(programMap))
-
-    // Add pick group totals/completions to programMap
-    for (const [gKey, g] of Object.entries(groupCounted)) {
-      const program = gKey.split('|||')[0]
-      if (!programMap[program]) continue
-      programMap[program].total += g.total
-      programMap[program].completed += g.completed
-    }
-
-    // No-art standalone required courses
-    for (const na of (overlapData.noArticulation || [])) {
-      if (!programMap[na.program]) continue
-      if (isRecommendedSection(na.groupTitle) || isRecommendedSection(na.sectionLabel)) continue
-      if (na.coveredByAnotherOption) continue
-      if (!na.partOfPickGroup) programMap[na.program].total += 1
-      // pick-group no-arts are already accounted for via groupCounted nRequired
-    }
-
-    return Object.values(programMap).sort((a, b) => {
-      const aPct = a.total === 0 ? 0 : a.completed / a.total
-      const bPct = b.total === 0 ? 0 : b.completed / b.total
-      return bPct - aPct
-    })
-  }
-
   function geTotal() {
     return CAL_GETC_AREAS.reduce((s, a) => s + a.slots, 0)
   }
@@ -854,13 +823,22 @@ const isPickN = pe.nRequired != null
     return `${uni}\n${major || ''}`
   }
 
-  const semesterPlan = overlapData
-    ? buildSemesterPlan({ rows: overlapData.rows, completedCourses, geState, plannerStart, plannerEnd, includeSummer, maxUnitsPerSem })
+  // Build no-art courses for semester planner — exclude covered ones
+  const noArtForPlanner = overlapData
+    ? (overlapData.noArticulation || []).filter(na => !na.coveredByAnotherOption)
     : []
 
-  const realSems = semesterPlan.filter(s => !s.overflow)
+  const semesterPlan = overlapData
+    ? buildSemesterPlan({
+        rows: overlapData.rows,
+        noArtCourses: noArtForPlanner,
+        completedCourses, geState, plannerStart, plannerEnd, includeSummer, maxUnitsPerSem,
+      })
+    : []
+
+  const realSems = semesterPlan.filter(s => !s.overflow && !s.isNoArtSection)
   const overflowSem = semesterPlan.find(s => s.overflow)
-  const summary = computeAttainability()
+  const noArtSem = semesterPlan.find(s => s.isNoArtSection)
 
   function renderStep1() {
     return (
@@ -979,12 +957,6 @@ const isPickN = pe.nRequired != null
   }
 
   function renderStep2() {
-    const allRequired = overlapData.rows.filter(r => {
-      const pe = r.programEntries[0]
-      return !isRecommendedSection(pe?.groupTitle) && !isRecommendedSection(pe?.sectionLabel)
-    })
-    const requiredDone = allRequired.filter(r => completedCourses.has(r.ccKey)).length
-
     return (
       <div>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
@@ -993,16 +965,6 @@ const isPickN = pe.nRequired != null
             <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>{ccName} · {programs.map(p => `${p.uniName} – ${p.majorLabel}`).join(' / ')}</div>
           </div>
           <button className="btn-secondary" style={{ fontSize: 12 }} onClick={() => { setOverlapData(null); setStep(1); setCompletedCourses(new Set()) }}>← Edit</button>
-        </div>
-
-        <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 10, padding: '12px 16px', marginBottom: 20 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Required courses checked off</span>
-            <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)' }}>{requiredDone} / {allRequired.length}</span>
-          </div>
-          <div style={{ background: 'var(--progress-track)', borderRadius: 4, height: 6, overflow: 'hidden' }}>
-            <div style={{ background: '#6C5CE7', height: '100%', width: `${allRequired.length === 0 ? 0 : Math.round((requiredDone / allRequired.length) * 100)}%`, borderRadius: 4, transition: 'width 0.3s ease' }} />
-          </div>
         </div>
 
         {showBanner && (
@@ -1034,11 +996,9 @@ const isPickN = pe.nRequired != null
         {renderCourseList()}
 
         <div style={{ marginTop: 32, padding: '20px 0', borderTop: '1px solid var(--border)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
-          {requiredDone < allRequired.length && (
-            <div style={{ fontSize: 12, color: 'var(--text-muted)', textAlign: 'center' }}>
-              You've checked off {requiredDone} of {allRequired.length} required courses. Check off any you've already completed before continuing.
-            </div>
-          )}
+          <div style={{ fontSize: 12, color: 'var(--text-muted)', textAlign: 'center' }}>
+            Check off any courses you've already completed before continuing.
+          </div>
           <button className="btn-primary" style={{ minWidth: 240 }} onClick={() => setStep(3)}>
             Move to GE requirements →
           </button>
@@ -1111,9 +1071,7 @@ const isPickN = pe.nRequired != null
                         >
                           {geState[k] && <span style={{ color: '#fff', fontSize: 12, lineHeight: 1 }}>✓</span>}
                         </div>
-                        {isMulti && (
-                          <span style={{ fontSize: 9, color: 'var(--text-muted)' }}>{i + 1}</span>
-                        )}
+                        {isMulti && <span style={{ fontSize: 9, color: 'var(--text-muted)' }}>{i + 1}</span>}
                       </div>
                     ))}
                   </div>
@@ -1143,12 +1101,9 @@ const isPickN = pe.nRequired != null
   }
 
   function renderStep4() {
-    const requiredRows = overlapData.rows.filter(r => {
-      const pe = r.programEntries?.[0]
-      return !isRecommendedSection(pe?.groupTitle) && !isRecommendedSection(pe?.sectionLabel)
-    })
-    const majorLeft = requiredRows.filter(r => !completedCourses.has(r.ccKey)).length
+    const majorLeft = realSems.reduce((s, sem) => s + sem.courses.filter(c => !c.isNoArt).length, 0)
     const geLeft = geTotal() - geDone()
+    const noArtLeft = noArtSem ? noArtSem.courses.length : 0
 
     return (
       <div>
@@ -1165,7 +1120,7 @@ const isPickN = pe.nRequired != null
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: 20 }}>
           {[
             { label: 'Semesters', value: realSems.length },
-            { label: 'Major courses left', value: majorLeft },
+            { label: 'CC courses left', value: majorLeft },
             { label: 'GE areas left', value: geLeft },
           ].map(({ label, value }) => (
             <div key={label} style={{ background: 'var(--bg-step)', borderRadius: 8, padding: '10px 12px' }}>
@@ -1185,10 +1140,7 @@ const isPickN = pe.nRequired != null
               <div style={{ fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.6 }}>
                 Consider{!includeSummer ? ' toggling summer semesters on,' : ''} raising your max units above {maxUnitsPerSem}u, pushing your transfer term past {plannerEnd}, or checking off courses you've already completed.
               </div>
-              <button
-                onClick={() => setStep(1)}
-                style={{ marginTop: 8, fontSize: 11, color: '#fbbf24', background: 'none', border: '1px solid #5a4a10', borderRadius: 6, padding: '4px 10px', cursor: 'pointer' }}
-              >
+              <button onClick={() => setStep(1)} style={{ marginTop: 8, fontSize: 11, color: '#fbbf24', background: 'none', border: '1px solid #5a4a10', borderRadius: 6, padding: '4px 10px', cursor: 'pointer' }}>
                 Adjust timeline
               </button>
             </div>
@@ -1208,7 +1160,7 @@ const isPickN = pe.nRequired != null
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '9px 14px', background: 'var(--bg-step)', borderBottom: '1px solid var(--border)' }}>
                 <div>
                   <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>{sem.term}</div>
-                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>{sem.courses.length} major · {sem.ge.length} GE · {Math.round(totalU)}u</div>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>{sem.courses.length} courses · {sem.ge.length} GE · {Math.round(totalU)}u</div>
                 </div>
               </div>
               {sem.courses.map((c, ci) => (
@@ -1222,6 +1174,7 @@ const isPickN = pe.nRequired != null
                   <div style={{ flex: 1, opacity: completedCourses.has(c.ccKey) ? 0.45 : 1 }}>
                     <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)', textDecoration: completedCourses.has(c.ccKey) ? 'line-through' : 'none', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                       {c.prefix} {c.number}
+                      {c.isRec && <span style={{ fontSize: 9, fontWeight: 600, padding: '2px 5px', borderRadius: 4, background: '#1a2a10', color: '#86efac' }}>REC</span>}
                     </div>
                     {c.title && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>{c.title}</div>}
                   </div>
@@ -1247,7 +1200,7 @@ const isPickN = pe.nRequired != null
           <div style={{ border: '1px dashed #5a4a10', borderRadius: 10, marginBottom: 10, overflow: 'hidden', background: '#1a1505' }}>
             <div style={{ padding: '9px 14px', borderBottom: '1px dashed #5a4a10' }}>
               <div style={{ fontSize: 13, fontWeight: 600, color: '#fbbf24' }}>Couldn't complete before transferring {plannerEnd}</div>
-              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>{overflowSem.courses.length} major · {overflowSem.ge.length} GE</div>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>{overflowSem.courses.length} courses · {overflowSem.ge.length} GE</div>
             </div>
             {overflowSem.courses.map((c, ci) => (
               <div key={ci} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 14px', borderBottom: '1px solid #2a1a05' }}>
@@ -1266,6 +1219,34 @@ const isPickN = pe.nRequired != null
             ))}
           </div>
         )}
+
+        {/* No-art section — courses with no CC equivalent */}
+        {noArtSem && noArtSem.courses.length > 0 && (
+          <div style={{ border: '1px dashed #5a2020', borderRadius: 10, marginBottom: 10, overflow: 'hidden', background: '#1a0a0a' }}>
+            <div style={{ padding: '9px 14px', borderBottom: '1px dashed #5a2020' }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: '#f87171' }}>No equivalent at {ccName}</div>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>
+                {noArtSem.courses.length} course{noArtSem.courses.length !== 1 ? 's' : ''} — take at another CC or after transferring
+              </div>
+            </div>
+            {noArtSem.courses.map((c, ci) => (
+              <div key={ci} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 14px', borderBottom: '1px solid #2a1010' }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: '#fca5a5', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                    {c.prefix} {c.number}
+                    {c.isRec && <span style={{ fontSize: 9, fontWeight: 600, padding: '2px 5px', borderRadius: 4, background: '#1a2a10', color: '#86efac' }}>REC</span>}
+                  </div>
+                  {c.title && <div style={{ fontSize: 11, color: '#f87171', marginTop: 1 }}>{c.title}</div>}
+                  {c.reason && <div style={{ fontSize: 11, color: '#f87171', marginTop: 1, opacity: 0.8 }}>{c.reason}</div>}
+                  <div style={{ fontSize: 11, color: '#f87171', marginTop: 2, opacity: 0.7 }}>{c.program}</div>
+                </div>
+                <span style={{ fontSize: 9, fontWeight: 600, padding: '2px 5px', borderRadius: 4, background: '#2a1010', color: '#f87171', flexShrink: 0 }}>
+                  {c.units}u
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     )
   }
@@ -1280,7 +1261,7 @@ const isPickN = pe.nRequired != null
     for (const na of (overlapData.noArticulation || [])) {
       if (na.partOfPickGroup) {
         if (!noArtByGroupId[na.groupId]) noArtByGroupId[na.groupId] = {}
-        // isSectionBundled = AND pair (e.g. POLI 5 + POLI 30 must be taken together) → bundle by sectionPosition
+        // isSectionBundled = AND pair → bundle by sectionPosition
         // otherwise each university course is its own OR option → split by templateCellId
         const secKey = na.isSectionBundled
           ? `sec_${na.sectionPosition ?? 'unknown'}`
@@ -1290,7 +1271,7 @@ const isPickN = pe.nRequired != null
         }
         const slot = noArtByGroupId[na.groupId][secKey]
         if (!slot.courses.some(x => x.prefix === na.uniReq.prefix && x.number === na.uniReq.number))
-          slot.courses.push({ prefix: na.uniReq.prefix, number: na.uniReq.number, title: na.uniReq.title, units: na.uniReq.units })
+          slot.courses.push({ prefix: na.uniReq.prefix, number: na.uniReq.number, title: na.uiReq?.title || na.uniReq?.title, units: na.uniReq.units })
         if (na.reason && !slot.reason) slot.reason = na.reason
         if (!noArtByGroupIdFlat[na.groupId]) noArtByGroupIdFlat[na.groupId] = []
         if (!noArtByGroupIdFlat[na.groupId].some(x => x.uniReq.prefix === na.uniReq.prefix && x.uniReq.number === na.uniReq.number))
@@ -1310,9 +1291,7 @@ const isPickN = pe.nRequired != null
       groupIdToGroup[groupId].rows.push(row)
     }
 
-    // Synthesize groups for pick-groups where ALL options have no articulation.
-    // Without this the yellow card never renders because groupIdToGroup only gets
-    // populated from overlapData.rows (articulated courses only).
+    // Synthesize groups for pick-groups where ALL options have no articulation
     for (const [gid, slots] of Object.entries(noArtByGroupId)) {
       if (groupIdToGroup[gid]) continue
       const firstNa = (noArtByGroupIdFlat[gid] || [])[0]
@@ -1455,7 +1434,6 @@ const isPickN = pe.nRequired != null
               </div>
             </div>
 
-            {/* Warning banner when ALL options in the group have no articulation */}
             {allNoArt && (
               <div style={{ padding: '10px 14px', background: '#1f1010', borderBottom: '1px solid #5a2020', display: 'flex', gap: 8, alignItems: 'flex-start' }}>
                 <span style={{ fontSize: 14, flexShrink: 0 }}>⚠️</span>
