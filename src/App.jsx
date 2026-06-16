@@ -421,6 +421,9 @@ export default function App() {
   const [liveSchedule, setLiveSchedule] = useState(null)
 const [scheduleLoading, setScheduleLoading] = useState(false)
 const [scheduleError, setScheduleError] = useState('')
+const [termFilter, setTermFilter] = useState('all')
+const [formatFilter, setFormatFilter] = useState('all')
+const [availFilter, setAvailFilter] = useState('all')
   const dropdownRef = useRef(null)
 
   useEffect(() => {
@@ -602,9 +605,12 @@ const [scheduleError, setScheduleError] = useState('')
               <button className="btn-primary" style={{ width: 'auto', padding: '7px 16px', fontSize: 13 }} onClick={() => {
   setSelectedCC(eq)
   setLiveSchedule(null)
-  setScheduleError('')
-  setStep(3)
-  fetchLiveSections(eq.ccName, eq.options?.[0]?.courses?.[0]?.prefix, eq.options?.[0]?.courses?.[0]?.number)
+setScheduleError('')
+setTermFilter('all')
+setFormatFilter('all')
+setAvailFilter('all')
+setStep(3)
+fetchLiveSections(eq.ccName, eq.options?.[0]?.courses?.[0]?.prefix, eq.options?.[0]?.courses?.[0]?.number)
 }}>Check schedule →</button>
             </div>
           </div>
@@ -864,17 +870,45 @@ const [scheduleError, setScheduleError] = useState('')
   {liveSchedule && liveSchedule.length > 0 && (
     <div style={{ marginTop: 8 }}>
       <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', marginBottom: 12 }}>📅 Live Sections</div>
-      {liveSchedule.filter(t => t.totalCount > 0).map((term, ti) => (
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
+        <select value={termFilter} onChange={e => setTermFilter(e.target.value)} style={{ fontSize: 12, padding: '5px 10px', borderRadius: 8, border: '1px solid var(--border-input)', background: 'var(--bg-card)', color: 'var(--text)', cursor: 'pointer' }}>
+          <option value="all">All terms</option>
+          {liveSchedule.filter(t => t.totalCount > 0).map(t => (
+            <option key={t.termCode} value={t.termCode}>{t.termDesc}</option>
+          ))}
+        </select>
+        <select value={formatFilter} onChange={e => setFormatFilter(e.target.value)} style={{ fontSize: 12, padding: '5px 10px', borderRadius: 8, border: '1px solid var(--border-input)', background: 'var(--bg-card)', color: 'var(--text)', cursor: 'pointer' }}>
+          <option value="all">All formats</option>
+          <option value="online">Online / Async</option>
+          <option value="inperson">In-person</option>
+        </select>
+        <select value={availFilter} onChange={e => setAvailFilter(e.target.value)} style={{ fontSize: 12, padding: '5px 10px', borderRadius: 8, border: '1px solid var(--border-input)', background: 'var(--bg-card)', color: 'var(--text)', cursor: 'pointer' }}>
+          <option value="all">All availability</option>
+          <option value="open">Open</option>
+          <option value="waitlist">Waitlist</option>
+          <option value="full">Full</option>
+        </select>
+      </div>
+      {liveSchedule.filter(t => t.totalCount > 0 && (termFilter === 'all' || t.termCode === termFilter)).map((term, ti) => (
         <div key={ti} style={{ marginBottom: 16 }}>
           <div style={{ fontSize: 12, fontWeight: 700, color: '#a78bfa', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>
             {term.termDesc} · {term.totalCount} section{term.totalCount !== 1 ? 's' : ''}
           </div>
-          {term.sections.map((s, si) => (
+          {term.sections.filter(s => {
+            if (formatFilter === 'online') return !s.meetings?.[0]?.building
+            if (formatFilter === 'inperson') return !!s.meetings?.[0]?.building
+            return true
+          }).filter(s => {
+            if (availFilter === 'open') return s.seatsAvailable > 0
+            if (availFilter === 'waitlist') return s.seatsAvailable === 0 && s.waitAvailable > 0
+            if (availFilter === 'full') return s.seatsAvailable === 0 && s.waitAvailable === 0
+            return true
+          }).map((s, si) => (
             <div key={si} style={{ background: 'var(--bg-hint)', borderRadius: 8, padding: '10px 12px', marginBottom: 8 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
                 <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>§{s.section} · {s.scheduleType}</span>
                 <span className={`badge ${s.seatsAvailable > 0 ? 'badge-green' : s.waitAvailable > 0 ? 'badge-yellow' : 'badge-red'}`}>
-                  {s.seatsAvailable > 0 ? `${s.seatsAvailable} seats open` : s.waitAvailable > 0 ? `Waitlist (${s.waitCount})` : 'Full'}
+                  {s.seatsAvailable > 0 ? `${s.seatsAvailable} open` : s.waitAvailable > 0 ? `Waitlist · ${s.waitAvailable} spots` : 'Full'}
                 </span>
               </div>
               {s.instructor && <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>👤 {s.instructor}</div>}
