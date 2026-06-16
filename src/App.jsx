@@ -879,8 +879,9 @@ fetchLiveSections(eq.ccName, eq.options?.[0]?.courses?.[0]?.prefix, eq.options?.
         </select>
         <select value={formatFilter} onChange={e => setFormatFilter(e.target.value)} style={{ fontSize: 12, padding: '5px 10px', borderRadius: 8, border: '1px solid var(--border-input)', background: 'var(--bg-card)', color: 'var(--text)', cursor: 'pointer' }}>
           <option value="all">All formats</option>
-          <option value="online">Online / Async</option>
-          <option value="inperson">In-person</option>
+          {[...new Set(liveSchedule.flatMap(t => t.sections.map(s => s.scheduleType)).filter(Boolean))].map(type => (
+            <option key={type} value={type}>{type}</option>
+          ))}
         </select>
         <select value={availFilter} onChange={e => setAvailFilter(e.target.value)} style={{ fontSize: 12, padding: '5px 10px', borderRadius: 8, border: '1px solid var(--border-input)', background: 'var(--bg-card)', color: 'var(--text)', cursor: 'pointer' }}>
           <option value="all">All availability</option>
@@ -895,8 +896,7 @@ fetchLiveSections(eq.ccName, eq.options?.[0]?.courses?.[0]?.prefix, eq.options?.
             {term.termDesc} · {term.totalCount} section{term.totalCount !== 1 ? 's' : ''}
           </div>
           {term.sections.filter(s => {
-            if (formatFilter === 'online') return !s.meetings?.[0]?.building
-            if (formatFilter === 'inperson') return !!s.meetings?.[0]?.building
+            if (formatFilter !== 'all') return s.scheduleType === formatFilter
             return true
           }).filter(s => {
             if (availFilter === 'open') return s.seatsAvailable > 0
