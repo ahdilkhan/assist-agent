@@ -365,6 +365,38 @@ export const KNOWN_CCS = [
 
 const BATCH_SIZE = 15
 
+const BANNER_SSB_URLS = {
+  'Las Positas College': 'https://banssprod.clpccd.cc.ca.us',
+  'Chabot College': 'https://banssprod.clpccd.cc.ca.us',
+  'Bakersfield College': 'https://reg-prod.ec.kccd.edu',
+  'Porterville College': 'https://reg-prod.ec.kccd.edu',
+  'Copper Mountain College': 'https://reg-prod.ec.kccd.edu',
+  'Cerro Coso Community College': 'https://reg-prod.ec.kccd.edu',
+  'Barstow Community College': 'https://ssbprod2.barstow.edu:8443',
+  'Canada College': 'https://phx-ban-apps.smccd.edu',
+  'Skyline College': 'https://phx-ban-apps.smccd.edu',
+  'College of San Mateo': 'https://phx-ban-apps.smccd.edu',
+  'Gavilan College': 'https://reg-prod.ec.gavilan.edu',
+  'College of the Siskiyous': 'https://reg-prod.cloud.siskiyous.edu',
+  'Compton College': 'https://cmptn-prod-pxes02.banner.elluciancloud.com:8090',
+  'Cuesta College': 'https://ssb2.cuesta.edu',
+  'Monterey Peninsula College': 'https://reg-prod.mpc.elluciancloud.com:8103',
+  'Mount San Antonio College': 'https://prodrg.mtsac.edu',
+  'Santa Rosa Junior College': 'https://reg-prod.santarosajc.elluciancloud.com:8103',
+  'Sierra College': 'https://ss.oci.sierracollege.edu',
+  'Solano Community College': 'https://ssb.solano.edu',
+  'Taft College': 'https://ct-prod-bsr.taftcollege.edu:8443',
+}
+
+function getBannerBaseUrl(ccName) {
+  if (!ccName) return null
+  for (const [key, url] of Object.entries(BANNER_SSB_URLS)) {
+    if (ccName.toLowerCase().includes(key.toLowerCase()) ||
+        key.toLowerCase().includes(ccName.toLowerCase())) return url
+  }
+  return null
+}
+
 export default function App() {
   const [activeTab, setActiveTab] = useState('tab1')
   const [step, setStep] = useState(1)
@@ -386,6 +418,9 @@ export default function App() {
   const [user, setUser] = useState(null)
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const [guestMode, setGuestMode] = useState(false)
+  const [liveSchedule, setLiveSchedule] = useState(null)
+const [scheduleLoading, setScheduleLoading] = useState(false)
+const [scheduleError, setScheduleError] = useState('')
   const dropdownRef = useRef(null)
 
   useEffect(() => {
@@ -412,6 +447,34 @@ export default function App() {
       options: { redirectTo: window.location.origin },
     })
   }
+
+  async function fetchLiveSections(ccName, subject, courseNum) {
+  const baseUrl = getBannerBaseUrl(ccName)
+  if (!baseUrl) return
+  setScheduleLoading(true)
+  setScheduleError('')
+  setLiveSchedule(null)
+  try {
+    const res = await fetch(
+      `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/banner-sections`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
+        },
+        body: JSON.stringify({ baseUrl, subject, courseNumber: courseNum }),
+      }
+    )
+    const data = await res.json()
+    if (data.success) setLiveSchedule(data.terms)
+    else setScheduleError(data.error || 'Failed to fetch schedule')
+  } catch (e) {
+    setScheduleError(e.message)
+  } finally {
+    setScheduleLoading(false)
+  }
+}
 
   function goHome() {
     setStep(1); setActiveTab('tab1'); setEquivalents([]); setSelectedCC(null)
@@ -536,7 +599,13 @@ export default function App() {
               </div>
             ))}
             <div style={{ marginTop: 12 }}>
-              <button className="btn-primary" style={{ width: 'auto', padding: '7px 16px', fontSize: 13 }} onClick={() => { setSelectedCC(eq); setStep(3) }}>Check schedule →</button>
+              <button className="btn-primary" style={{ width: 'auto', padding: '7px 16px', fontSize: 13 }} onClick={() => {
+  setSelectedCC(eq)
+  setLiveSchedule(null)
+  setScheduleError('')
+  setStep(3)
+  fetchLiveSections(eq.ccName, prefix, courseNum)
+}}>Check schedule →</button>
             </div>
           </div>
         )}
@@ -784,9 +853,51 @@ export default function App() {
                           }
                         </div>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                          <a className="avail-link" href={getScheduleUrl(selectedCC.ccName)} target="_blank" rel="noreferrer" style={{ fontWeight: 600, fontSize: 14 }}>🔍 Search schedule at {selectedCC.ccName} ↗</a>
-                          <a className="avail-link" href="https://www.cccapply.org/" target="_blank" rel="noreferrer" style={{ color: 'var(--text-muted)', fontWeight: 400 }}>📋 Apply / Enroll via CCCApply ↗</a>
-                        </div>
+  {scheduleLoading && (
+    <div className="status"><div className="spinner" />Loading live sections...</div>
+  )}
+  {scheduleError && (
+    <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>⚠️ Could not load live sections — <a className="avail-link" href={getScheduleUrl(selectedCC.ccName)} target="_blank" rel="noreferrer">check manually ↗</a></div>
+  )}
+  {liveSchedule && liveSchedule.length > 0 && (
+    <div style={{ marginTop: 8 }}>
+      <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', marginBottom: 12 }}>📅 Live Sections</div>
+      {liveSchedule.filter(t => t.totalCount > 0).map((term, ti) => (
+        <div key={ti} style={{ marginBottom: 16 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: '#a78bfa', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>
+            {term.termDesc} · {term.totalCount} section{term.totalCount !== 1 ? 's' : ''}
+          </div>
+          {term.sections.map((s, si) => (
+            <div key={si} style={{ background: 'var(--bg-hint)', borderRadius: 8, padding: '10px 12px', marginBottom: 8 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>§{s.section} · {s.scheduleType}</span>
+                <span className={`badge ${s.seatsAvailable > 0 ? 'badge-green' : s.waitAvailable > 0 ? 'badge-yellow' : 'badge-red'}`}>
+                  {s.seatsAvailable > 0 ? `${s.seatsAvailable} seats open` : s.waitAvailable > 0 ? `Waitlist (${s.waitCount})` : 'Full'}
+                </span>
+              </div>
+              {s.instructor && <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>👤 {s.instructor}</div>}
+              {s.meetings?.[0] && (
+                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
+                  🕐 {s.meetings[0].startTime ? `${s.meetings[0].startTime.slice(0,2)}:${s.meetings[0].startTime.slice(2)} – ${s.meetings[0].endTime.slice(0,2)}:${s.meetings[0].endTime.slice(2)}` : 'Online/Async'}
+                  {s.meetings[0].building ? ` · ${s.meetings[0].building} ${s.meetings[0].room}` : ''}
+                  {s.meetings[0].startDate ? ` · ${s.meetings[0].startDate} – ${s.meetings[0].endDate}` : ''}
+                </div>
+              )}
+              <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>👥 {s.enrollment}/{s.maxEnrollment} enrolled · {s.units} units</div>
+            </div>
+          ))}
+        </div>
+      ))}
+      {liveSchedule.every(t => t.totalCount === 0) && (
+        <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 8 }}>No sections found for upcoming terms.</div>
+      )}
+    </div>
+  )}
+  {!getBannerBaseUrl(selectedCC?.ccName) && (
+    <a className="avail-link" href={getScheduleUrl(selectedCC.ccName)} target="_blank" rel="noreferrer" style={{ fontWeight: 600, fontSize: 14 }}>🔍 Search schedule at {selectedCC.ccName} ↗</a>
+  )}
+  <a className="avail-link" href="https://www.cccapply.org/" target="_blank" rel="noreferrer" style={{ color: 'var(--text-muted)', fontWeight: 400 }}>📋 Apply / Enroll via CCCApply ↗</a>
+</div>
                       </div>
                     </div>
                   ))}
