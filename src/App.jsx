@@ -604,7 +604,7 @@ const [scheduleError, setScheduleError] = useState('')
   setLiveSchedule(null)
   setScheduleError('')
   setStep(3)
-  fetchLiveSections(eq.ccName, prefix, courseNum)
+  fetchLiveSections(eq.ccName, eq.options?.[0]?.courses?.[0]?.prefix, eq.options?.[0]?.courses?.[0]?.number)
 }}>Check schedule →</button>
             </div>
           </div>
@@ -845,13 +845,15 @@ const [scheduleError, setScheduleError] = useState('')
                             {c.note && <div style={{ fontSize: 12, color: '#f59e0b', marginTop: 4 }}>⚠️ {c.note}</div>}
                           </div>
                         ))}
-                        <div style={{ background: 'var(--bg-hint)', borderRadius: 8, padding: '10px 12px', marginBottom: 14 }}>
-                          <div style={{ fontSize: 12, fontWeight: 600, color: '#a78bfa', marginBottom: 6 }}>💡 When you get to the schedule:</div>
-                          {opt.courses.length === 1
-                            ? <div style={{ fontSize: 13, color: 'var(--text)' }}>Search for <span style={{ fontFamily: 'monospace', fontWeight: 600, color: '#a78bfa' }}>{opt.courses[0].prefix} {opt.courses[0].number}</span></div>
-                            : <ol style={{ paddingLeft: 18, margin: 0 }}>{opt.courses.map((c, k) => <li key={k} style={{ fontSize: 13, color: 'var(--text)', marginBottom: 4 }}>Search for <span style={{ fontFamily: 'monospace', fontWeight: 600, color: '#a78bfa' }}>{c.prefix} {c.number}</span></li>)}</ol>
-                          }
-                        </div>
+                        {!getBannerBaseUrl(selectedCC?.ccName) && (
+  <div style={{ background: 'var(--bg-hint)', borderRadius: 8, padding: '10px 12px', marginBottom: 14 }}>
+    <div style={{ fontSize: 12, fontWeight: 600, color: '#a78bfa', marginBottom: 6 }}>💡 When you get to the schedule:</div>
+    {opt.courses.length === 1
+      ? <div style={{ fontSize: 13, color: 'var(--text)' }}>Search for <span style={{ fontFamily: 'monospace', fontWeight: 600, color: '#a78bfa' }}>{opt.courses[0].prefix} {opt.courses[0].number}</span></div>
+      : <ol style={{ paddingLeft: 18, margin: 0 }}>{opt.courses.map((c, k) => <li key={k} style={{ fontSize: 13, color: 'var(--text)', marginBottom: 4 }}>Search for <span style={{ fontFamily: 'monospace', fontWeight: 600, color: '#a78bfa' }}>{c.prefix} {c.number}</span></li>)}</ol>
+    }
+  </div>
+)}
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
   {scheduleLoading && (
     <div className="status"><div className="spinner" />Loading live sections...</div>
