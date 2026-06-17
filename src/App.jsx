@@ -397,6 +397,49 @@ function getBannerBaseUrl(ccName) {
   return null
 }
 
+const COLLEAGUE_URLS = {
+  'Cabrillo College': 'https://cabrillo-ss.colleague.elluciancloud.com',
+  'Chaffey College': 'https://colss-prod.ec.chaffey.edu',
+  'Napa Valley College': 'https://colss-prod.ec.napavalley.edu',
+  'Victor Valley College': 'https://vvc-ss.colleague.elluciancloud.com',
+  'Mendocino College': 'https://service.mendocino.edu',
+  'Merced College': 'https://ss-prod.mccd.edu',
+  'Lake Tahoe Community College': 'https://ss.ltcc.edu:8183',
+  'Hartnell College': 'https://stuserv.hartnell.edu',
+  'Palo Verde College': 'https://prod-selfserv.paloverde.edu',
+  'Southwestern College': 'https://collselfserv.swccd.edu',
+  'College of the Desert': 'https://ss.collegeofthedesert.edu',
+  'El Camino College': 'https://selfservice.elcamino.edu',
+  'College of the Canyons': 'https://selfservice.canyons.edu',
+  'Evergreen Valley College': 'https://colss-prod.ec.sjeccd.edu',
+  'San Jose City College': 'https://colss-prod.ec.sjeccd.edu',
+  'Lassen Community College': 'https://webadvisor.lassencollege.edu:8171',
+  'Ohlone College': 'https://selfservice.ohlone.edu:8443',
+  'Shasta College': 'https://mysc.shastacollege.edu',
+  'Mt. San Jacinto College': 'https://selfservice.msjc.edu',
+  'Woodland Community College': 'https://wcc-self-service.yccd.edu',
+  'Clovis Community College': 'https://selfservice.scccd.edu',
+  'Fresno City College': 'https://selfservice.scccd.edu',
+  'Reedley College': 'https://selfservice.scccd.edu',
+  'Madera Community College': 'https://selfservice.scccd.edu',
+  'Kings River College': 'https://selfservice.scccd.edu',
+  'Cuyamaca College': 'https://selfservice.gcccd.edu',
+  'Grossmont College': 'https://selfservice.gcccd.edu',
+  'Santa Ana College': 'https://colss-prod.cloud.rsccd.edu',
+  'Santiago Canyon College': 'https://colss-prod.cloud.rsccd.edu',
+  'Irvine Valley College': 'https://classes.socccd.edu',
+  'Saddleback College': 'https://classes.socccd.edu',
+}
+
+function getColleagueBaseUrl(ccName) {
+  if (!ccName) return null
+  for (const [key, url] of Object.entries(COLLEAGUE_URLS)) {
+    if (ccName.toLowerCase().includes(key.toLowerCase()) ||
+        key.toLowerCase().includes(ccName.toLowerCase())) return url
+  }
+  return null
+}
+
 export default function App() {
   const [activeTab, setActiveTab] = useState('tab1')
   const [step, setStep] = useState(1)
@@ -452,8 +495,12 @@ const [availFilter, setAvailFilter] = useState('all')
   }
 
   async function fetchLiveSections(ccName, subject, courseNum) {
-  const baseUrl = getBannerBaseUrl(ccName)
+  const bannerUrl = getBannerBaseUrl(ccName)
+  const colleagueUrl = getColleagueBaseUrl(ccName)
+  const baseUrl = bannerUrl || colleagueUrl
+  const system = colleagueUrl && !bannerUrl ? 'colleague' : 'banner'
   if (!baseUrl) return
+
   setScheduleLoading(true)
   setScheduleError('')
   setLiveSchedule(null)
@@ -466,7 +513,7 @@ const [availFilter, setAvailFilter] = useState('all')
           'Content-Type': 'application/json',
           'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
         },
-        body: JSON.stringify({ baseUrl, subject, courseNumber: courseNum }),
+        body: JSON.stringify({ baseUrl, subject, courseNumber: courseNum, system }),
       }
     )
     const data = await res.json()
@@ -851,7 +898,7 @@ fetchLiveSections(eq.ccName, eq.options?.[0]?.courses?.[0]?.prefix, eq.options?.
                             {c.note && <div style={{ fontSize: 12, color: '#f59e0b', marginTop: 4 }}>⚠️ {c.note}</div>}
                           </div>
                         ))}
-                        {!getBannerBaseUrl(selectedCC?.ccName) && (
+                        {!getBannerBaseUrl(selectedCC?.ccName) && !getColleagueBaseUrl(selectedCC?.ccName) && (
   <div style={{ background: 'var(--bg-hint)', borderRadius: 8, padding: '10px 12px', marginBottom: 14 }}>
     <div style={{ fontSize: 12, fontWeight: 600, color: '#a78bfa', marginBottom: 6 }}>💡 When you get to the schedule:</div>
     {opt.courses.length === 1
@@ -929,7 +976,7 @@ fetchLiveSections(eq.ccName, eq.options?.[0]?.courses?.[0]?.prefix, eq.options?.
       )}
     </div>
   )}
-  {!getBannerBaseUrl(selectedCC?.ccName) && (
+  {!getBannerBaseUrl(selectedCC?.ccName) && !getColleagueBaseUrl(selectedCC?.ccName) && (
     <a className="avail-link" href={getScheduleUrl(selectedCC.ccName)} target="_blank" rel="noreferrer" style={{ fontWeight: 600, fontSize: 14 }}>🔍 Search schedule at {selectedCC.ccName} ↗</a>
   )}
   <a className="avail-link" href="https://www.cccapply.org/" target="_blank" rel="noreferrer" style={{ color: 'var(--text-muted)', fontWeight: 400 }}>📋 Apply / Enroll via CCCApply ↗</a>
