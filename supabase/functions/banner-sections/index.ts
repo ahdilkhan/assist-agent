@@ -241,34 +241,31 @@ async function getColleagueSections(baseUrl: string, subject: string, courseNumb
             campus: s.Location?.Description || null,
             title: s.Course?.Title || s.Title || null,
             units: s.MinimumCredits || s.Credits || null,
-            scheduleType: s.InstructionalMethod?.Description || s.PrimarySectionMeetings?.[0]?.InstructionalMethodDescription || s.CourseType?.Description || null,
+            scheduleType: (() => {
+              const methods: string[] = s.InstructionalMethodsDisplay || []
+              const hasOnline = methods.some((m: string) => m.toLowerCase().includes('online') || m.toLowerCase().includes('async'))
+              const hasInPerson = methods.some((m: string) => m.toLowerCase().includes('campus') || m.toLowerCase().includes('lec') && !m.toLowerCase().includes('online'))
+              if (hasOnline && hasInPerson) return 'Hybrid'
+              if (hasOnline) return 'Online'
+              if (hasInPerson) return 'In-Person'
+              return methods[0] || null
+            })(),
             enrollment: s.Enrolled || 0,
             maxEnrollment: s.Capacity || 0,
             seatsAvailable: s.AvailableSeats ?? Math.max(0, (s.Capacity || 0) - (s.Enrolled || 0)),
             waitCount: s.WaitlistCount || 0,
             waitAvailable: s.WaitlistCapacity ? Math.max(0, s.WaitlistCapacity - (s.WaitlistCount || 0)) : 0,
             openSection: (s.AvailableSeats ?? 0) > 0,
-            instructor: s.Faculty?.[0]?.Name || s.PrimarySectionMeetings?.[0]?.InstructorName || null,
-            meetings: (s.Meetings || s.PrimarySectionMeetings || []).map((m: any) => {
-              const days = Array.isArray(m.Days)
-                ? m.Days.map((d: number) => dayMap[d] || d).join('')
-                : m.Days || null
-              const parseTime = (t: string) => {
-                if (!t) return null
-                const d = new Date(t)
-                if (isNaN(d.getTime())) return t
-                return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true, timeZone: 'America/Los_Angeles' })
-              }
-              return {
-                days,
-                startTime: parseTime(m.StartTime),
-                endTime: parseTime(m.EndTime),
-                building: m.Building?.Description || m.BuildingCode || null,
-                room: m.Room || m.RoomCode || null,
-                startDate: m.StartDate ? new Date(m.StartDate).toLocaleDateString('en-US') : null,
-                endDate: m.EndDate ? new Date(m.EndDate).toLocaleDateString('en-US') : null,
-              }
-            }),
+            instructor: Array.isArray(s.FacultyDisplay) ? s.FacultyDisplay[0] : (s.FacultyDisplay || null),
+            meetings: [{
+              days: s.MobileMeetingsDisplay?.[0] || null,
+              startTime: null,
+              endTime: null,
+              building: null,
+              room: null,
+              startDate: s.MobileMeetingsDisplay?.[1] || null,
+              endDate: null,
+            }],
           }
         }),
       });
