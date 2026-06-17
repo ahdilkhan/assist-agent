@@ -937,20 +937,21 @@ fetchLiveSections(eq.ccName, eq.options?.[0]?.courses?.[0]?.prefix, eq.options?.
           <option value="full">Full</option>
         </select>
       </div>
-      {liveSchedule.filter(t => t.totalCount > 0 && (termFilter === 'all' || t.termCode === termFilter)).map((term, ti) => (
+      {liveSchedule.filter(t => t.totalCount > 0 && (termFilter === 'all' || t.termCode === termFilter)).map((term, ti) => {
+  const filteredSections = term.sections.filter(s => {
+    if (formatFilter !== 'all' && s.scheduleType !== formatFilter) return false
+    if (availFilter === 'open') return s.seatsAvailable > 0
+    if (availFilter === 'waitlist') return s.seatsAvailable === 0 && s.waitAvailable > 0
+    if (availFilter === 'full') return s.seatsAvailable === 0 && s.waitAvailable === 0
+    return true
+  })
+  if (filteredSections.length === 0) return null
+  return (
         <div key={ti} style={{ marginBottom: 16 }}>
           <div style={{ fontSize: 12, fontWeight: 700, color: '#a78bfa', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>
-            {term.termDesc} · {term.totalCount} section{term.totalCount !== 1 ? 's' : ''}
+            {term.termDesc} · {filteredSections.length} section{filteredSections.length !== 1 ? 's' : ''}
           </div>
-          {term.sections.filter(s => {
-            if (formatFilter !== 'all') return s.scheduleType === formatFilter
-            return true
-          }).filter(s => {
-            if (availFilter === 'open') return s.seatsAvailable > 0
-            if (availFilter === 'waitlist') return s.seatsAvailable === 0 && s.waitAvailable > 0
-            if (availFilter === 'full') return s.seatsAvailable === 0 && s.waitAvailable === 0
-            return true
-          }).map((s, si) => (
+          {filteredSections.map((s, si) => (
             <div key={si} style={{ background: 'var(--bg-hint)', borderRadius: 8, padding: '10px 12px', marginBottom: 8 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
                 <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>§{s.section} · {s.scheduleType}</span>
@@ -971,7 +972,8 @@ fetchLiveSections(eq.ccName, eq.options?.[0]?.courses?.[0]?.prefix, eq.options?.
             </div>
           ))}
         </div>
-      ))}
+  )
+})}
       {liveSchedule.every(t => t.totalCount === 0) && (
         <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 8 }}>No sections found for upcoming terms.</div>
       )}
