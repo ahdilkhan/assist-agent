@@ -176,6 +176,7 @@ async function getColleagueTerms(base: string, token: string, cookieJar: Record<
   });
   const data = await res.json();
   return data?.Terms || [];
+  // Terms format: [{ Item1: "2026FA", Item2: "Fall 2026" }, ...]
 }
 
 async function searchColleagueSections(base: string, token: string, cookieJar: Record<string, string>, termCode: string, subject: string, courseNumber: string) {
@@ -225,37 +226,51 @@ async function getColleagueSections(baseUrl: string, subject: string, courseNumb
   for (const term of terms) {
     try {
       const { token: t, cookieJar: jar } = await getColleagueTokenAndCookie(base);
-      const data = await searchColleagueSections(base, t, jar, term.Code, subject, courseNumber);
+      const data = await searchColleagueSections(base, t, jar, term.Item1, subject, courseNumber);
       console.log(`[Colleague] term=${term.Code} response:`, JSON.stringify(data).slice(0, 300));
       const sections = data.Sections || [];
       results.push({
-        termCode: term.Code,
-        termDesc: term.Description,
+        termCode: term.Item1,
+        termDesc: term.Item2,
         totalCount: sections.length,
-        sections: sections.map((s: any) => ({
-          crn: s.Id,
-          section: s.SectionNameDisplay || s.Number,
-          campus: s.Location?.Description || null,
-          title: s.Course?.Title || s.Title || null,
-          units: s.Credits || null,
-          scheduleType: s.InstructionalMethod?.Description || s.CourseType?.Description || null,
-          enrollment: s.Enrolled || 0,
-          maxEnrollment: s.Capacity || 0,
-          seatsAvailable: s.AvailableSeats ?? (s.Capacity - s.Enrolled) ?? 0,
-          waitCount: s.WaitlistCount || 0,
-          waitAvailable: s.WaitlistCapacity ? (s.WaitlistCapacity - (s.WaitlistCount || 0)) : 0,
-          openSection: (s.AvailableSeats ?? 0) > 0,
-          instructor: s.Faculty?.[0]?.Name || null,
-          meetings: s.Meetings?.map((m: any) => ({
-            days: m.Days || null,
-            startTime: m.StartTime || null,
-            endTime: m.EndTime || null,
-            building: m.Building?.Description || null,
-            room: m.Room || null,
-            startDate: m.StartDate || null,
-            endDate: m.EndDate || null,
-          })) || [],
-        })),
+        sections: sections.map((s: any) => {
+          const dayMap: Record<number, string> = {1:'M',2:'T',3:'W',4:'Th',5:'F',6:'Sa',7:'Su'}
+          return {
+            crn: s.Id,
+            section: s.SectionNameDisplay || s.Number,
+            campus: s.Location?.Description || null,
+            title: s.Course?.Title || s.Title || null,
+            units: s.MinimumCredits || s.Credits || null,
+            scheduleType: s.InstructionalMethod?.Description || s.PrimarySectionMeetings?.[0]?.InstructionalMethodDescription || s.CourseType?.Description || null,
+            enrollment: s.Enrolled || 0,
+            maxEnrollment: s.Capacity || 0,
+            seatsAvailable: s.AvailableSeats ?? Math.max(0, (s.Capacity || 0) - (s.Enrolled || 0)),
+            waitCount: s.WaitlistCount || 0,
+            waitAvailable: s.WaitlistCapacity ? Math.max(0, s.WaitlistCapacity - (s.WaitlistCount || 0)) : 0,
+            openSection: (s.AvailableSeats ?? 0) > 0,
+            instructor: s.Faculty?.[0]?.Name || s.PrimarySectionMeetings?.[0]?.InstructorName || null,
+            meetings: (s.Meetings || s.PrimarySectionMeetings || []).map((m: any) => {
+              const days = Array.isArray(m.Days)
+                ? m.Days.map((d: number) => dayMap[d] || d).join('')
+                : m.Days || null
+              const parseTime = (t: string) => {
+                if (!t) return null
+                const d = new Date(t)
+                if (isNaN(d.getTime())) return t
+                return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true, timeZone: 'America/Los_Angeles' })
+              }
+              return {
+                days,
+                startTime: parseTime(m.StartTime),
+                endTime: parseTime(m.EndTime),
+                building: m.Building?.Description || m.BuildingCode || null,
+                room: m.Room || m.RoomCode || null,
+                startDate: m.StartDate ? new Date(m.StartDate).toLocaleDateString('en-US') : null,
+                endDate: m.EndDate ? new Date(m.EndDate).toLocaleDateString('en-US') : null,
+              }
+            }),
+          }
+        }),
       });
     } catch (e) {
       console.warn(`Colleague term ${term.Code} failed:`, e.message);

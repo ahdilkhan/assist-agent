@@ -961,7 +961,7 @@ fetchLiveSections(eq.ccName, eq.options?.[0]?.courses?.[0]?.prefix, eq.options?.
               {s.instructor && <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>👤 {s.instructor}</div>}
               {s.meetings?.[0] && (
                 <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
-                  🕐 {s.meetings[0].startTime ? `${s.meetings[0].startTime.slice(0,2)}:${s.meetings[0].startTime.slice(2)} – ${s.meetings[0].endTime.slice(0,2)}:${s.meetings[0].endTime.slice(2)}` : 'Online/Async'}
+                  🕐 {s.meetings[0].startTime ? (s.meetings[0].startTime.includes(':') && s.meetings[0].startTime.includes(' ') ? `${s.meetings[0].startTime} – ${s.meetings[0].endTime}` : `${s.meetings[0].startTime.slice(0,2)}:${s.meetings[0].startTime.slice(2)} – ${s.meetings[0].endTime.slice(0,2)}:${s.meetings[0].endTime.slice(2)}`) : 'Online/Async'}
                   {s.meetings[0].building ? ` · ${s.meetings[0].building} ${s.meetings[0].room}` : ''}
                   {s.meetings[0].startDate ? ` · ${s.meetings[0].startDate} – ${s.meetings[0].endDate}` : ''}
                 </div>
