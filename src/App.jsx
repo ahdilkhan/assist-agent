@@ -456,7 +456,7 @@ export default function App() {
   const [selectedRegions, setSelectedRegions] = useState([])
   const [courseFilter, setCourseFilter] = useState('any')
   const [selectedCC, setSelectedCC] = useState(null)
-  const [savedCCs, setSavedCCs] = useState(new Set())
+  const [savedCCs, setSavedCCs] = useState([])
   const [showSaved, setShowSaved] = useState(false)
   const [user, setUser] = useState(null)
   const userRef = useRef(null)
@@ -476,12 +476,18 @@ const [showSavedSections, setShowSavedSections] = useState(false)
     supabase.auth.getUser().then(({ data }) => {
       setUser(data.user)
       userRef.current = data.user
-      if (data.user) loadSavedSections(data.user.id)
+      if (data.user) {
+        loadSavedSections(data.user.id)
+        loadSavedColleges(data.user.id)
+      }
     })
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null)
       userRef.current = session?.user ?? null
-      if (session?.user) loadSavedSections(session.user.id)
+      if (session?.user) {
+        loadSavedSections(session.user.id)
+        loadSavedColleges(session.user.id)
+      }
     })
     return () => { listener.subscription.unsubscribe() }
   }, [])
@@ -508,10 +514,17 @@ const [showSavedSections, setShowSavedSections] = useState(false)
     if (data) setSavedSections(data)
   }
 
+  async function loadSavedColleges(uid) {
+    const { data } = await supabase.from('saved_colleges').select('*').eq('user_id', uid)
+    if (data) setSavedCCs(data)
+  }
+
   async function toggleSaveSection(s, term) {
-    const currentUser = userRef.current
-    console.log('toggleSaveSection called', s.section, term.termDesc, 'user:', currentUser?.id)
-    if (!currentUser) { console.log('no user, bailing'); return }
+    const currentUser = userRef.current || user
+    if (!currentUser) {
+      alert('Sign in to save sections across sessions!')
+      return
+    }
     const already = savedSections.find(x => x.section === s.section && x.cc_name === selectedCC.ccName && x.term_desc === term.termDesc)
     if (already) {
       await supabase.from('saved_sections').delete().eq('id', already.id)
@@ -586,9 +599,30 @@ const [showSavedSections, setShowSavedSections] = useState(false)
   function toggleRegion(region) {
     setSelectedRegions(prev => prev.includes(region) ? prev.filter(r => r !== region) : [...prev, region])
   }
-  function toggleSave(ccName, e) {
+  async function toggleSave(eq, e) {
     e?.stopPropagation()
-    setSavedCCs(prev => { const next = new Set(prev); next.has(ccName) ? next.delete(ccName) : next.add(ccName); return next })
+    const currentUser = userRef.current || user
+    if (!currentUser) {
+      alert('Sign in to save colleges!')
+      return
+    }
+    const already = savedCCs.find(x => x.cc_name === eq.ccName)
+    if (already) {
+      await supabase.from('saved_colleges').delete().eq('id', already.id)
+      setSavedCCs(prev => prev.filter(x => x.id !== already.id))
+    } else {
+      const row = {
+        user_id: currentUser.id,
+        cc_name: eq.ccName,
+        uni_name: uniName,
+        uni_course: `${prefix} ${courseNum}`,
+        course_prefix: eq.options?.[0]?.courses?.[0]?.prefix || '',
+        course_number: eq.options?.[0]?.courses?.[0]?.number || '',
+        receiving_course: eq.receivingCourse || '',
+      }
+      const { data } = await supabase.from('saved_colleges').insert(row).select().single()
+      if (data) setSavedCCs(prev => [...prev, data])
+    }
   }
 
   const courseFiltered = equivalents.filter(eq => {
@@ -602,13 +636,13 @@ const [showSavedSections, setShowSavedSections] = useState(false)
   const filteredEquivalents = selectedRegions.length > 0
     ? courseFiltered.filter(eq => selectedRegions.some(r => ccMatchesRegion(eq.ccName, r))) : courseFiltered
 
-  const savedEquivalents = equivalents.filter(eq => savedCCs.has(eq.ccName))
+  const savedEquivalents = equivalents.filter(eq => savedCCs.find(x => x.cc_name === eq.ccName))
 
   async function handleSearch() {
     if (!uniId || !prefix || !courseNum) { setError('Please fill in all fields.'); return }
     setError(''); setLoading(true); setLoadingProgress(0)
     setEquivalents([]); setSelectedRegions([]); setCourseFilter('any'); setSelectedCC(null)
-    setSavedCCs(new Set()); setShowSaved(false); setOpenBlocks({})
+    setSavedCCs([]); setShowSaved(false); setOpenBlocks({}); setError(''); setGuestMode(false)
     try {
       setLoadingMsg('Fetching community colleges...')
       const institutions = await getAgreementInstitutions(uniId)
@@ -663,7 +697,7 @@ const [showSavedSections, setShowSavedSections] = useState(false)
       <div className="result-block" key={i}>
         <div className="result-header" onClick={() => toggleBlock(eq.ccName)}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1 }}>
-            <span onClick={e => toggleSave(eq.ccName, e)} style={{ fontSize: 16, cursor: 'pointer', flexShrink: 0, opacity: savedCCs.has(eq.ccName) ? 1 : 0.3, transition: 'opacity 0.15s' }}>💙</span>
+            <span onClick={e => toggleSave(eq, e)} style={{ fontSize: 16, cursor: 'pointer', flexShrink: 0, opacity: savedCCs.find(x => x.cc_name === eq.ccName) ? 1 : 0.3, transition: 'opacity 0.15s' }}>💙</span>
             <div>
               <h3 style={{ margin: 0 }}>{eq.ccName}</h3>
               <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
@@ -805,7 +839,7 @@ fetchLiveSections(eq.ccName, eq.options?.[0]?.courses?.[0]?.prefix, eq.options?.
      {!user && !guestMode ? (
         <div className="card" style={{ textAlign: 'center' }}>
           <h3 style={{ marginBottom: 6, fontSize: 17, color: 'var(--text)' }}>Sign in to get started</h3>
-          <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 20 }}>Free — takes a couple seconds</p>
+          <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 20 }}>Free — allows you to save your progress</p>
           <button className="btn-google" onClick={signInWithGoogle}>
             <svg width="18" height="18" viewBox="0 0 18 18" xmlns="http://www.w3.org/2000/svg">
               <path d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.875 2.684-6.615z" fill="#4285F4"/>
@@ -892,7 +926,7 @@ fetchLiveSections(eq.ccName, eq.options?.[0]?.courses?.[0]?.prefix, eq.options?.
                   </div>
                   <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
                     <div className={`pref-chip${!showSaved && !showSavedSections ? ' selected' : ''}`} style={{ padding: '6px 12px', fontSize: 12 }} onClick={() => { setShowSaved(false); setShowSavedSections(false) }}>All colleges ({equivalents.length})</div>
-                    <div className={`pref-chip${showSaved ? ' selected' : ''}`} style={{ padding: '6px 12px', fontSize: 12 }} onClick={() => { setShowSaved(true); setShowSavedSections(false) }}>💙 Saved ({savedCCs.size})</div>
+                    <div className={`pref-chip${showSaved ? ' selected' : ''}`} style={{ padding: '6px 12px', fontSize: 12 }} onClick={() => { setShowSaved(true); setShowSavedSections(false) }}>💙 Saved ({savedCCs.length})</div>
                     <div className={`pref-chip${showSavedSections ? ' selected' : ''}`} style={{ padding: '6px 12px', fontSize: 12 }} onClick={() => { setShowSavedSections(true); setShowSaved(false) }}>📌 Saved Sections ({savedSections.length})</div>
                   </div>
                   {!showSaved && (
