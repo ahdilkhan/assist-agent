@@ -255,7 +255,7 @@ async function getColleagueSections(baseUrl: string, subject: string, courseNumb
             seatsAvailable: s.Available ?? 0,
             waitCount: s.Waitlisted || 0,
             waitAvailable: s.WaitlistAvailable ? 1 : 0,
-            openSection: (s.Available ?? 0) > 0,
+            openSection: s.Available > 0,
             instructor: Array.isArray(s.FacultyDisplay) ? s.FacultyDisplay[0] : (s.FacultyDisplay || null),
             meetings: [{
               days: s.MobileMeetingsDisplay?.[0] || null,

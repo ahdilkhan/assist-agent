@@ -467,12 +467,18 @@ const [scheduleError, setScheduleError] = useState('')
 const [termFilter, setTermFilter] = useState('all')
 const [formatFilter, setFormatFilter] = useState('all')
 const [availFilter, setAvailFilter] = useState('all')
+const [savedSections, setSavedSections] = useState([])
+const [showSavedSections, setShowSavedSections] = useState(false)
   const dropdownRef = useRef(null)
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => { setUser(data.user) })
+    supabase.auth.getUser().then(({ data }) => {
+      setUser(data.user)
+      if (data.user) loadSavedSections(data.user.id)
+    })
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null)
+      if (session?.user) loadSavedSections(session.user.id)
     })
     return () => { listener.subscription.unsubscribe() }
   }, [])
@@ -492,6 +498,45 @@ const [availFilter, setAvailFilter] = useState('all')
       provider: 'google',
       options: { redirectTo: window.location.origin },
     })
+  }
+
+  async function loadSavedSections(uid) {
+    const { data } = await supabase.from('saved_sections').select('*').eq('user_id', uid)
+    if (data) setSavedSections(data)
+  }
+
+  async function toggleSaveSection(s, term) {
+    if (!user) return
+    const already = savedSections.find(x => x.section === s.section && x.cc_name === selectedCC.ccName && x.term_desc === term.termDesc)
+    if (already) {
+      await supabase.from('saved_sections').delete().eq('id', already.id)
+      setSavedSections(prev => prev.filter(x => x.id !== already.id))
+    } else {
+      const row = {
+        user_id: user.id,
+        cc_name: selectedCC.ccName,
+        course_prefix: selectedCC.options?.[0]?.courses?.[0]?.prefix || '',
+        course_number: selectedCC.options?.[0]?.courses?.[0]?.number || '',
+        course_title: selectedCC.options?.[0]?.courses?.[0]?.title || '',
+        uni_name: uniName,
+        uni_course: `${prefix} ${courseNum}`,
+        section: s.section,
+        term_desc: term.termDesc,
+        schedule_type: s.scheduleType || null,
+        instructor: s.instructor || null,
+        seats_available: s.seatsAvailable,
+        wait_available: s.waitAvailable,
+        open_section: s.openSection,
+        meeting_display: s.meetings?.[0]?.days || null,
+        units: s.units || null,
+      }
+      const { data } = await supabase.from('saved_sections').insert(row).select().single()
+      if (data) setSavedSections(prev => [...prev, data])
+    }
+  }
+
+  function isSectionSaved(s, termDesc) {
+    return savedSections.some(x => x.section === s.section && x.cc_name === selectedCC?.ccName && x.term_desc === termDesc)
   }
 
   async function fetchLiveSections(ccName, subject, courseNum) {
@@ -841,8 +886,9 @@ fetchLiveSections(eq.ccName, eq.options?.[0]?.courses?.[0]?.prefix, eq.options?.
                     <button className="btn-secondary" onClick={() => { setStep(1); setEquivalents([]) }}>← New search</button>
                   </div>
                   <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
-                    <div className={`pref-chip${!showSaved ? ' selected' : ''}`} style={{ padding: '6px 12px', fontSize: 12 }} onClick={() => setShowSaved(false)}>All colleges ({equivalents.length})</div>
-                    <div className={`pref-chip${showSaved ? ' selected' : ''}`} style={{ padding: '6px 12px', fontSize: 12 }} onClick={() => setShowSaved(true)}>💙 Saved ({savedCCs.size})</div>
+                    <div className={`pref-chip${!showSaved && !showSavedSections ? ' selected' : ''}`} style={{ padding: '6px 12px', fontSize: 12 }} onClick={() => { setShowSaved(false); setShowSavedSections(false) }}>All colleges ({equivalents.length})</div>
+                    <div className={`pref-chip${showSaved ? ' selected' : ''}`} style={{ padding: '6px 12px', fontSize: 12 }} onClick={() => { setShowSaved(true); setShowSavedSections(false) }}>💙 Saved ({savedCCs.size})</div>
+                    <div className={`pref-chip${showSavedSections ? ' selected' : ''}`} style={{ padding: '6px 12px', fontSize: 12 }} onClick={() => { setShowSavedSections(true); setShowSaved(false) }}>📌 Saved Sections ({savedSections.length})</div>
                   </div>
                   {!showSaved && (
                     <>
@@ -867,8 +913,56 @@ fetchLiveSections(eq.ccName, eq.options?.[0]?.courses?.[0]?.prefix, eq.options?.
                       </div>
                     </>
                   )}
-                  {showSaved && savedEquivalents.length === 0 && <div className="key-note">No saved colleges yet. Click 💙 on any college to save it.</div>}
-                  {showSaved ? renderCCList(savedEquivalents) : renderCCList(filteredEquivalents)}
+{showSaved && savedEquivalents.length === 0 && <div className="key-note">No saved colleges yet. Click 💙 on any college to save it.</div>}
+                  {showSavedSections && savedSections.length === 0 && <div className="key-note">No saved sections yet. Click 📌 on any section in Step 3 to save it.</div>}
+                  {showSavedSections && savedSections.length > 0 && (
+                    <div>
+                      {Object.entries(savedSections.reduce((acc, s) => {
+                        const key = s.cc_name
+                        if (!acc[key]) acc[key] = []
+                        acc[key].push(s)
+                        return acc
+                      }, {})).map(([ccName, sections]) => (
+                        <div className="result-block" key={ccName}>
+                          <div className="result-header" onClick={() => toggleBlock(ccName)}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1 }}>
+                              <div>
+                                <h3 style={{ margin: 0 }}>{ccName}</h3>
+                                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>{sections.length} saved section{sections.length !== 1 ? 's' : ''}</div>
+                              </div>
+                            </div>
+                            <span style={{ fontSize: 11, color: 'var(--text-muted)', flexShrink: 0 }}>{openBlocks[ccName] ? '▲' : '▼'}</span>
+                          </div>
+                          {openBlocks[ccName] && (
+                            <div className="result-body">
+                              {sections.map((s, i) => (
+                                <div key={i} className="eq-row">
+                                  <div>
+                                    <div style={{ fontWeight: 500, color: 'var(--text)' }}>{s.section} · {s.term_desc}</div>
+                                    <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{s.course_prefix} {s.course_number} → {s.uni_course} at {s.uni_name}</div>
+                                    {s.instructor && <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>👤 {s.instructor}</div>}
+                                    {s.meeting_display && <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>📅 {s.meeting_display}</div>}
+                                    {s.schedule_type && <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{s.schedule_type}</div>}
+                                  </div>
+                                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
+                                    <span className={`badge ${s.open_section ? 'badge-green' : s.wait_available > 0 ? 'badge-yellow' : 'badge-red'}`}>
+                                      {s.open_section ? `${s.seats_available} open` : s.wait_available > 0 ? 'Waitlist' : 'Full'}
+                                    </span>
+                                    <span onClick={async () => {
+                                      await supabase.from('saved_sections').delete().eq('id', s.id)
+                                      setSavedSections(prev => prev.filter(x => x.id !== s.id))
+                                    }} style={{ fontSize: 12, color: 'var(--text-muted)', cursor: 'pointer' }}>Remove</span>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {!showSaved && !showSavedSections && renderCCList(filteredEquivalents)}
+                  {showSaved && !showSavedSections && renderCCList(savedEquivalents)}
                 </>
               )}
 
@@ -955,9 +1049,9 @@ fetchLiveSections(eq.ccName, eq.options?.[0]?.courses?.[0]?.prefix, eq.options?.
             <div key={si} style={{ background: 'var(--bg-hint)', borderRadius: 8, padding: '10px 12px', marginBottom: 8 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
                 <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>§{s.section} · {s.scheduleType}</span>
-                <span className={`badge ${s.seatsAvailable > 0 ? 'badge-green' : s.waitAvailable > 0 ? 'badge-yellow' : 'badge-red'}`}>
-                  {s.seatsAvailable > 0 ? `${s.seatsAvailable} open` : s.waitAvailable > 0 ? (s.waitAvailable === 1 ? 'Waitlist available' : `Waitlist · ${s.waitAvailable} spots`) : 'Full'}
-                </span>
+                <span className={`badge ${s.openSection ? 'badge-green' : s.waitAvailable > 0 ? 'badge-yellow' : 'badge-red'}`}>
+  {s.openSection ? `${s.seatsAvailable} open` : s.waitAvailable > 0 ? (s.waitAvailable === 1 ? 'Waitlist available' : `Waitlist · ${s.waitAvailable} spots`) : 'Full'}
+</span>
               </div>
               {s.instructor && <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>👤 {s.instructor}</div>}
               {s.meetings?.[0] && (
@@ -968,7 +1062,10 @@ fetchLiveSections(eq.ccName, eq.options?.[0]?.courses?.[0]?.prefix, eq.options?.
                   {s.meetings[0].startDate && <span> · {s.meetings[0].startDate}{s.meetings[0].endDate ? ` – ${s.meetings[0].endDate}` : ''}</span>}
                 </div>
               )}
-              <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>👥 {s.enrollment}/{s.maxEnrollment} enrolled · {s.units} units</div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 2 }}>
+                <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>👥 {s.enrollment}/{s.maxEnrollment} enrolled · {s.units} units</div>
+                <span onClick={() => toggleSaveSection(s, term)} style={{ fontSize: 16, cursor: 'pointer', opacity: isSectionSaved(s, term.termDesc) ? 1 : 0.3, transition: 'opacity 0.15s' }}>📌</span>
+              </div>
             </div>
           ))}
         </div>
