@@ -459,6 +459,7 @@ export default function App() {
   const [savedCCs, setSavedCCs] = useState(new Set())
   const [showSaved, setShowSaved] = useState(false)
   const [user, setUser] = useState(null)
+  const userRef = useRef(null)
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const [guestMode, setGuestMode] = useState(false)
   const [liveSchedule, setLiveSchedule] = useState(null)
@@ -474,10 +475,12 @@ const [showSavedSections, setShowSavedSections] = useState(false)
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
       setUser(data.user)
+      userRef.current = data.user
       if (data.user) loadSavedSections(data.user.id)
     })
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null)
+      userRef.current = session?.user ?? null
       if (session?.user) loadSavedSections(session.user.id)
     })
     return () => { listener.subscription.unsubscribe() }
@@ -506,15 +509,16 @@ const [showSavedSections, setShowSavedSections] = useState(false)
   }
 
   async function toggleSaveSection(s, term) {
-    console.log('toggleSaveSection called', s.section, term.termDesc, 'user:', user?.id)
-    if (!user) return
+    const currentUser = userRef.current
+    console.log('toggleSaveSection called', s.section, term.termDesc, 'user:', currentUser?.id)
+    if (!currentUser) { console.log('no user, bailing'); return }
     const already = savedSections.find(x => x.section === s.section && x.cc_name === selectedCC.ccName && x.term_desc === term.termDesc)
     if (already) {
       await supabase.from('saved_sections').delete().eq('id', already.id)
       setSavedSections(prev => prev.filter(x => x.id !== already.id))
     } else {
       const row = {
-        user_id: user.id,
+        user_id: currentUser.id,
         cc_name: selectedCC.ccName,
         course_prefix: selectedCC.options?.[0]?.courses?.[0]?.prefix || '',
         course_number: selectedCC.options?.[0]?.courses?.[0]?.number || '',
