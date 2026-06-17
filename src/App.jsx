@@ -506,6 +506,7 @@ const [showSavedSections, setShowSavedSections] = useState(false)
   }
 
   async function toggleSaveSection(s, term) {
+    console.log('toggleSaveSection called', s.section, term.termDesc, 'user:', user?.id)
     if (!user) return
     const already = savedSections.find(x => x.section === s.section && x.cc_name === selectedCC.ccName && x.term_desc === term.termDesc)
     if (already) {
