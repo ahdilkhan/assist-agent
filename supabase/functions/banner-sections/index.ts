@@ -319,9 +319,11 @@ async function getSdccdSections(campus: string, subject: string, courseNumber: s
         const instructor = meetParts[6] || null
         const locationMap: Record<string, string> = {
         'ONCAMPUS': 'In-Person',
+        'ONLINE': 'Online (Async)',
+        'ONLINESYNC': 'Online (Sync)',
         'PT-ONLINE': 'Partially Online',
-        'ONLINE': 'Online',
-        'HYBRID': 'Hybrid',
+        'HYFLEX': 'HyFlex',
+        'OFF': 'Off Campus',
       }
       const scheduleType = locationMap[r.LOCATION] || r.LOCATION || null
 
