@@ -369,6 +369,120 @@ async function getSdccdSections(campus: string, subject: string, courseNumber: s
   return results
 }
 
+
+async function getVcccdSections(campus: string, subject: string, courseNumber: string) {
+  // Get CSRF token first
+  const pageRes = await fetch('https://schedule.vcccd.edu/', {
+    headers: { "User-Agent": "Mozilla/5.0" }
+  })
+  const html = await pageRes.text()
+  const csrfMatch = html.match(/name="csrfmiddlewaretoken"\s+value="([^"]+)"/)
+  const csrf = csrfMatch?.[1]
+  if (!csrf) throw new Error('No CSRF token found')
+
+  const cookies = pageRes.headers.get('set-cookie') || ''
+  const csrfCookie = cookies.match(/csrftoken=([^;]+)/)?.[1]
+  const cookieHeader = csrfCookie ? `csrftoken=${csrfCookie}` : ''
+
+  // Generate recent/upcoming term codes
+  const now = new Date()
+  const year = now.getFullYear()
+  const termCodes = [
+    `${year}05`, `${year}07`, `${year+1}01`, `${year}01`, `${year-1}07`
+  ]
+
+  const results = []
+  const termNames: Record<string, string> = {}
+  termCodes.forEach(code => {
+    const y = code.slice(0, 4)
+    const s = code.slice(4)
+    if (s === '01') termNames[code] = `Spring ${y}`
+    else if (s === '05') termNames[code] = `Summer ${y}`
+    else if (s === '07') termNames[code] = `Fall ${y}`
+  })
+
+  for (const termCode of termCodes) {
+    try {
+      const body = new URLSearchParams({
+        csrfmiddlewaretoken: csrf,
+        subject: subject.toUpperCase(),
+        crse: courseNumber,
+        term: termCode,
+        subjCombobox: '', locCombobox: '', ctitle: '', crn: '',
+        start_hh: '05', start_mm: '00', start_ap: 'a',
+        end_hh: '11', end_mm: '00', end_ap: 'p',
+        newc: '0', noncrc: '0', offc: '0', pace: '0',
+        ztc: '0', ge: '%', csupport: '0', mdCombobox: '', geCombobox: '',
+      })
+
+      const res = await fetch('https://schedule.vcccd.edu/filter/', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Cookie': cookieHeader,
+          'Referer': 'https://schedule.vcccd.edu/',
+          'User-Agent': 'Mozilla/5.0',
+          'X-CSRFToken': csrf,
+        },
+        body: body.toString(),
+      })
+
+      const data = await res.json()
+      const sections = (data.detail_info || []).filter((r: any) => {
+        const campusMatch = !campus || (r.CAMPUS_DESC || '').toLowerCase().includes(campus.toLowerCase())
+        return campusMatch
+      })
+
+      if (sections.length === 0) continue
+
+      const mappedSections = sections.map((r: any) => {
+        const statusHtml = r.STATUS || ''
+        const isOpen = statusHtml.includes('OPEN')
+        const isWaitlist = statusHtml.includes('WAITLISTED')
+
+        const timeParts = (r.MEET_TIME || '').split(' - ')
+        const startTime = timeParts[0] || null
+        const endTime = timeParts[1] || null
+
+        return {
+          crn: r.COURSE_CRN || null,
+          section: r.COURSE_CRN || null,
+          campus: r.CAMPUS_DESC || null,
+          title: r.COURSE_TITLE || null,
+          units: parseFloat((r.CREDITS || '0').trim()) || null,
+          scheduleType: r.SECTION_INTEGRATION_CODE === 'ONLIN' ? 'Online' : r.DAYS ? 'In-Person' : 'TBA',
+          enrollment: r.CRSE_ENRL || 0,
+          maxEnrollment: r.CRSE_MAX_ENRL || 0,
+          seatsAvailable: r.CRSE_SEATS_AVAIL || 0,
+          waitCount: 0,
+          waitAvailable: isWaitlist ? 1 : 0,
+          openSection: isOpen,
+          instructor: r.INSTRUCTOR_NAME || null,
+          meetings: r.DAYS ? [{
+            days: r.DAYS || null,
+            startTime,
+            endTime,
+            building: r.MEET_BLDG_DESC || null,
+            room: r.MEET_ROOM_CODE || null,
+            startDate: r.PTRM_START_DATE || null,
+            endDate: r.PTRM_END_DATE || null,
+          }] : [],
+        }
+      })
+
+      results.push({
+        termCode,
+        termDesc: termNames[termCode] || termCode,
+        totalCount: mappedSections.length,
+        sections: mappedSections,
+      })
+    } catch (e) {
+      console.warn(`VCCCD term ${termCode} failed:`, e.message)
+    }
+  }
+  return results
+}
+
 // ─── MAIN HANDLER ─────────────────────────────────────────────
 
 export default {
@@ -386,6 +500,8 @@ export default {
         data = await getColleagueSections(baseUrl, subject, courseNumber);
       } else if (system === "sdccd") {
         data = await getSdccdSections(campus || "", subject, courseNumber);
+      } else if (system === "vcccd") {
+        data = await getVcccdSections(campus || "", subject, courseNumber);
       } else {
         data = await getBannerSections(baseUrl, subject, courseNumber);
       }
