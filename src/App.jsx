@@ -470,7 +470,7 @@ const [formatFilter, setFormatFilter] = useState('all')
 const [availFilter, setAvailFilter] = useState('all')
 const [savedSections, setSavedSections] = useState([])
 const [showSavedSections, setShowSavedSections] = useState(false)
-const [signInNudge, setSignInNudge] = useState(false)
+return
   const dropdownRef = useRef(null)
 
   useEffect(() => {
@@ -523,8 +523,7 @@ const [signInNudge, setSignInNudge] = useState(false)
   async function toggleSaveSection(s, term) {
     const currentUser = userRef.current || user
     if (!currentUser) {
-      setSignInNudge(true)
-      setTimeout(() => setSignInNudge(false), 3000)
+      return
       return
     }
     const already = savedSections.find(x => x.section === s.section && x.cc_name === selectedCC.ccName && x.term_desc === term.termDesc)
@@ -605,8 +604,7 @@ const [signInNudge, setSignInNudge] = useState(false)
     e?.stopPropagation()
     const currentUser = userRef.current || user
     if (!currentUser) {
-      setSignInNudge(true)
-      setTimeout(() => setSignInNudge(false), 3000)
+      return
       return
     }
     const already = savedCCs.find(x => x.cc_name === eq.ccName)
@@ -879,10 +877,9 @@ fetchLiveSections(eq.ccName, eq.options?.[0]?.courses?.[0]?.prefix, eq.options?.
               </div>
 
               {error && <div className="error-box">{error}</div>}
-              {signInNudge && (
-                <div style={{ background: 'rgba(108, 92, 231, 0.15)', border: '1px solid #6C5CE7', borderRadius: 10, padding: '10px 16px', marginBottom: 12, fontSize: 13, color: '#a78bfa', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span>Sign in to save colleges and sections across sessions</span>
-                  <button onClick={() => setGuestMode(false)} style={{ background: 'linear-gradient(135deg, #6C5CE7, #a78bfa)', color: '#fff', border: 'none', borderRadius: 8, padding: '5px 12px', fontSize: 12, fontWeight: 600, cursor: 'pointer', marginLeft: 12 }}>Sign in</button>
+              {guestMode && step === 2 && (
+                <div style={{ background: 'rgba(108, 92, 231, 0.1)', border: '1px solid rgba(108, 92, 231, 0.3)', borderRadius: 10, padding: '10px 14px', marginBottom: 14, fontSize: 12, color: '#a78bfa', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+                  <span>💙 Save colleges · 📌 Save sections — <button onClick={() => setGuestMode(false)} style={{ background: 'none', border: 'none', color: '#a78bfa', fontWeight: 700, cursor: 'pointer', padding: 0, fontSize: 12, textDecoration: 'underline' }}>Sign in</button> to save your progress</span>
                 </div>
               )}
 
