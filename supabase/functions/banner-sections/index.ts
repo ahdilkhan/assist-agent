@@ -277,91 +277,88 @@ async function getColleagueSections(baseUrl: string, subject: string, courseNumb
 }
 
 async function getSdccdSections(campus: string, subject: string, courseNumber: string) {
-  const res = await fetch(`https://mws-api.sdccd.edu/?terms=all&career=ugrd`, {
-    headers: { "User-Agent": "Mozilla/5.0" }
-  })
-  const data = await res.json()
-  const rows = data?.data?.query?.rows || []
-
-  // Filter by subject and course number and campus
-  const filtered = rows.filter((r: any) => {
-    const subj = (r.SUBJECT || '').trim().toUpperCase()
-    const num = (r.CATALOG_NBR || '').trim().toUpperCase()
-    const campusMatch = !campus || r.CAMPUS === campus
-    return subj === subject.toUpperCase() && num === courseNumber.toUpperCase() && campusMatch
-  })
-
-  if (filtered.length === 0) return []
-
-  // Group by STRM
-  const byTerm: Record<string, any[]> = {}
-  for (const r of filtered) {
-    if (!byTerm[r.STRM]) byTerm[r.STRM] = []
-    byTerm[r.STRM].push(r)
+  // Try recent and upcoming term codes
+  const termCodesToTry = ["2265", "2267", "2272", "2263"]
+  
+  const termMap: Record<string, string> = {
+    "2253": "Spring 2025",
+    "2255": "Summer 2025", 
+    "2257": "Fall 2025",
+    "2261": "Winter 2026",
+    "2263": "Spring 2026",
+    "2265": "Summer 2026",
+    "2267": "Fall 2026",
+    "2272": "Spring 2027",
   }
 
-  // Build term description from START_DT
-  function getTermDesc(strm: string, rows: any[]) {
-    const startDt = rows[0]?.START_DT || ''
-    if (!startDt) return `Term ${strm}`
-    const d = new Date(startDt)
-    const month = d.getMonth() + 1
-    const year = d.getFullYear()
-    if (month >= 1 && month <= 5) return `Spring ${year}`
-    if (month >= 6 && month <= 7) return `Summer ${year}`
-    return `Fall ${year}`
-  }
+  const results = []
+  
+  for (const termCode of termCodesToTry) {
+    try {
+      const res = await fetch(`https://mws-api.sdccd.edu/?term=${termCode}&career=ugrd`, {
+        headers: { "User-Agent": "Mozilla/5.0" }
+      })
+      const data = await res.json()
+      const rows = data?.data?.query?.rows || []
 
-  // Sort terms newest first
-  const sortedTerms = Object.keys(byTerm).sort((a, b) => Number(b) - Number(a))
+      const filtered = rows.filter((r: any) => {
+        const subj = (r.SUBJECT || '').trim().toUpperCase()
+        const num = (r.CATALOG_NBR || '').trim().toUpperCase()
+        const campusMatch = !campus || r.CAMPUS === campus
+        return subj === subject.toUpperCase() && num === courseNumber.toUpperCase() && campusMatch
+      })
 
-  return sortedTerms.map(strm => {
-    const termRows = byTerm[strm]
-    const sections = termRows.map((r: any) => {
-      const meetParts = (r.MEETINGINFO || '').split('|').map((p: string) => p.trim())
-      const days = meetParts[2] || null
-      const startTime = meetParts[3] || null
-      const endTime = meetParts[4] || null
-      const building = meetParts[1] || null
-      const instructor = meetParts[6] || null
-      const scheduleType = (meetParts[11] || '').replace(/<[^>]*>/g, '').trim() || null
+      if (filtered.length === 0) continue
 
-      const isOpen = r.ENRL_STAT === 'O'
-      const hasWaitlist = r.ENRL_STAT === 'C' && (r.WAIT_CAP - r.WAIT_TOT) > 0
+      const sections = filtered.map((r: any) => {
+        const meetParts = (r.MEETINGINFO || '').split('|').map((p: string) => p.trim())
+        const days = meetParts[2] || null
+        const startTime = meetParts[3] || null
+        const endTime = meetParts[4] || null
+        const building = meetParts[1] || null
+        const instructor = meetParts[6] || null
+        const scheduleType = (meetParts[11] || '').replace(/<[^>]*>/g, '').trim() || null
 
-      return {
-        crn: String(r.CLASS_NBR),
-        section: String(r.CLASS_NBR),
-        campus: r.CAMPUS || null,
-        title: r.CRSE_NAME || null,
-        units: r.UNITS || null,
-        scheduleType,
-        enrollment: r.ENRL_TOT || 0,
-        maxEnrollment: r.ENRL_CAP || 0,
-        seatsAvailable: isOpen ? (r.ENRL_CAP - r.ENRL_TOT) : 0,
-        waitCount: r.WAIT_TOT || 0,
-        waitAvailable: hasWaitlist ? (r.WAIT_CAP - r.WAIT_TOT) : 0,
-        openSection: isOpen,
-        instructor,
-        meetings: days ? [{
-          days,
-          startTime,
-          endTime,
-          building,
-          room: null,
-          startDate: r.START_DT || null,
-          endDate: r.END_DT || null,
-        }] : [],
-      }
-    })
+        const isOpen = r.ENRL_STAT === 'O'
+        const hasWaitlist = r.ENRL_STAT === 'C' && (r.WAIT_CAP - r.WAIT_TOT) > 0
 
-    return {
-      termCode: strm,
-      termDesc: getTermDesc(strm, termRows),
-      totalCount: sections.length,
-      sections,
+        return {
+          crn: String(r.CLASS_NBR),
+          section: String(r.CLASS_NBR),
+          campus: r.CAMPUS || null,
+          title: r.CRSE_NAME || null,
+          units: r.UNITS || null,
+          scheduleType,
+          enrollment: r.ENRL_TOT || 0,
+          maxEnrollment: r.ENRL_CAP || 0,
+          seatsAvailable: isOpen ? (r.ENRL_CAP - r.ENRL_TOT) : 0,
+          waitCount: r.WAIT_TOT || 0,
+          waitAvailable: hasWaitlist ? (r.WAIT_CAP - r.WAIT_TOT) : 0,
+          openSection: isOpen,
+          instructor,
+          meetings: days ? [{
+            days,
+            startTime,
+            endTime,
+            building,
+            room: null,
+            startDate: r.START_DT || null,
+            endDate: r.END_DT || null,
+          }] : [],
+        }
+      })
+
+      results.push({
+        termCode,
+        termDesc: termMap[termCode] || `Term ${termCode}`,
+        totalCount: sections.length,
+        sections,
+      })
+    } catch (e) {
+      console.warn(`SDCCD term ${termCode} failed:`, e.message)
     }
-  })
+  }
+  return results
 }
 
 // ─── MAIN HANDLER ─────────────────────────────────────────────
