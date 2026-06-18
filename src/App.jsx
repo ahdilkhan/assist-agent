@@ -640,7 +640,7 @@ const [showSavedSections, setShowSavedSections] = useState(false)
     if (!uniId || !prefix || !courseNum) { setError('Please fill in all fields.'); return }
     setError(''); setLoading(true); setLoadingProgress(0)
     setEquivalents([]); setSelectedRegions([]); setCourseFilter('any'); setSelectedCC(null)
-    setSavedCCs([]); setShowSaved(false); setOpenBlocks({}); setError(''); setGuestMode(false)
+    setSavedCCs([]); setShowSaved(false); setOpenBlocks({}); setError('')
     try {
       setLoadingMsg('Fetching community colleges...')
       const institutions = await getAgreementInstitutions(uniId)
