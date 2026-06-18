@@ -470,7 +470,6 @@ const [formatFilter, setFormatFilter] = useState('all')
 const [availFilter, setAvailFilter] = useState('all')
 const [savedSections, setSavedSections] = useState([])
 const [showSavedSections, setShowSavedSections] = useState(false)
-return
   const dropdownRef = useRef(null)
 
   useEffect(() => {
@@ -523,7 +522,6 @@ return
   async function toggleSaveSection(s, term) {
     const currentUser = userRef.current || user
     if (!currentUser) {
-      return
       return
     }
     const already = savedSections.find(x => x.section === s.section && x.cc_name === selectedCC.ccName && x.term_desc === term.termDesc)
@@ -592,7 +590,7 @@ return
 
   function goHome() {
     setStep(1); setActiveTab('tab1'); setEquivalents([]); setSelectedCC(null)
-    setSelectedRegions([]); setCourseFilter('any'); setSavedCCs(new Set())
+    setSelectedRegions([]); setCourseFilter('any'); setSavedCCs([])
     setShowSaved(false); setOpenBlocks({}); setError(''); setGuestMode(false)
   }
 
@@ -604,7 +602,6 @@ return
     e?.stopPropagation()
     const currentUser = userRef.current || user
     if (!currentUser) {
-      return
       return
     }
     const already = savedCCs.find(x => x.cc_name === eq.ccName)
