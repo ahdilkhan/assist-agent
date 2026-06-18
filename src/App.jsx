@@ -470,6 +470,7 @@ const [formatFilter, setFormatFilter] = useState('all')
 const [availFilter, setAvailFilter] = useState('all')
 const [savedSections, setSavedSections] = useState([])
 const [showSavedSections, setShowSavedSections] = useState(false)
+const [signInNudge, setSignInNudge] = useState(false)
   const dropdownRef = useRef(null)
 
   useEffect(() => {
@@ -522,7 +523,8 @@ const [showSavedSections, setShowSavedSections] = useState(false)
   async function toggleSaveSection(s, term) {
     const currentUser = userRef.current || user
     if (!currentUser) {
-      alert('Sign in to save sections across sessions!')
+      setSignInNudge(true)
+      setTimeout(() => setSignInNudge(false), 3000)
       return
     }
     const already = savedSections.find(x => x.section === s.section && x.cc_name === selectedCC.ccName && x.term_desc === term.termDesc)
@@ -603,7 +605,8 @@ const [showSavedSections, setShowSavedSections] = useState(false)
     e?.stopPropagation()
     const currentUser = userRef.current || user
     if (!currentUser) {
-      alert('Sign in to save colleges!')
+      setSignInNudge(true)
+      setTimeout(() => setSignInNudge(false), 3000)
       return
     }
     const already = savedCCs.find(x => x.cc_name === eq.ccName)
@@ -876,6 +879,12 @@ fetchLiveSections(eq.ccName, eq.options?.[0]?.courses?.[0]?.prefix, eq.options?.
               </div>
 
               {error && <div className="error-box">{error}</div>}
+              {signInNudge && (
+                <div style={{ background: 'rgba(108, 92, 231, 0.15)', border: '1px solid #6C5CE7', borderRadius: 10, padding: '10px 16px', marginBottom: 12, fontSize: 13, color: '#a78bfa', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span>Sign in to save colleges and sections across sessions</span>
+                  <button onClick={() => setGuestMode(false)} style={{ background: 'linear-gradient(135deg, #6C5CE7, #a78bfa)', color: '#fff', border: 'none', borderRadius: 8, padding: '5px 12px', fontSize: 12, fontWeight: 600, cursor: 'pointer', marginLeft: 12 }}>Sign in</button>
+                </div>
+              )}
 
               {/* ── Step 1 ── */}
               {step === 1 && (
