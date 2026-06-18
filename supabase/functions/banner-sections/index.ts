@@ -428,9 +428,16 @@ async function getVcccdSections(campus: string, subject: string, courseNumber: s
       })
 
       const data = await res.json()
-      const sections = (data.detail_info || []).filter((r: any) => {
+      const allRows = (data.detail_info || []).filter((r: any) => {
         const campusMatch = !campus || (r.CAMPUS_DESC || '').toLowerCase().includes(campus.toLowerCase())
         return campusMatch
+      })
+      // Deduplicate by CRN keeping first occurrence
+      const seenCrns = new Set()
+      const sections = allRows.filter((r: any) => {
+        if (seenCrns.has(r.COURSE_CRN)) return false
+        seenCrns.add(r.COURSE_CRN)
+        return true
       })
 
       if (sections.length === 0) continue
@@ -450,7 +457,16 @@ async function getVcccdSections(campus: string, subject: string, courseNumber: s
           campus: r.CAMPUS_DESC || null,
           title: r.COURSE_TITLE || null,
           units: parseFloat((r.CREDITS || '0').trim()) || null,
-          scheduleType: r.SECTION_INTEGRATION_CODE === 'ONLIN' ? 'Online' : r.DAYS ? 'In-Person' : 'TBA',
+          scheduleType: (() => {
+            const codeMap: Record<string, string> = {
+              'TRADN': 'In-Person',
+              'ONLIN': 'Online',
+              'HBRDO': 'Partially Online',
+              'HBRDG': 'Hybrid',
+              'HYFLEX': 'HyFlex',
+            }
+            return codeMap[r.SECTION_INTEGRATION_CODE] || r.SECTION_INTEGRATION_CODE || 'TBA'
+          })(),
           enrollment: r.CRSE_ENRL || 0,
           maxEnrollment: r.CRSE_MAX_ENRL || 0,
           seatsAvailable: r.CRSE_SEATS_AVAIL || 0,
