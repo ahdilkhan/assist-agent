@@ -317,7 +317,13 @@ async function getSdccdSections(campus: string, subject: string, courseNumber: s
         const endTime = meetParts[4] || null
         const building = meetParts[1] || null
         const instructor = meetParts[6] || null
-        const scheduleType = (meetParts[11] || '').replace(/<[^>]*>/g, '').trim() || null
+        const locationMap: Record<string, string> = {
+        'ONCAMPUS': 'In-Person',
+        'PT-ONLINE': 'Partially Online',
+        'ONLINE': 'Online',
+        'HYBRID': 'Hybrid',
+      }
+      const scheduleType = locationMap[r.LOCATION] || r.LOCATION || null
 
         const isOpen = r.ENRL_STAT === 'O'
         const hasWaitlist = r.ENRL_STAT === 'C' && (r.WAIT_CAP - r.WAIT_TOT) > 0
