@@ -1123,8 +1123,8 @@ fetchLiveSections(eq.ccName, eq.options?.[0]?.courses?.[0]?.prefix, eq.options?.
             <div key={si} style={{ background: 'var(--bg-hint)', borderRadius: 8, padding: '10px 12px', marginBottom: 8 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
                 <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>§{s.section} · {s.scheduleType}</span>
-                <span className={`badge ${s.openSection ? 'badge-green' : s.waitAvailable > 0 ? 'badge-yellow' : 'badge-red'}`}>
-  {s.openSection ? `${s.seatsAvailable} open` : s.waitAvailable > 0 ? (s.waitAvailable === 1 ? 'Waitlist available' : `Waitlist · ${s.waitAvailable} spots`) : 'Full'}
+                <span className={`badge ${s.openSection && s.seatsAvailable > 0 ? 'badge-green' : s.waitAvailable > 0 ? 'badge-yellow' : s.openSection ? 'badge-green' : 'badge-red'}`}>
+  {s.openSection && s.seatsAvailable > 0 ? `${s.seatsAvailable} open` : s.waitAvailable > 0 ? (s.waitAvailable === 1 ? 'Waitlist available' : `Waitlist · ${s.waitAvailable} spots`) : s.openSection ? 'Open' : 'Full'}
 </span>
               </div>
               {s.instructor && <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>👤 {s.instructor}</div>}
