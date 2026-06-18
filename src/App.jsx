@@ -710,7 +710,14 @@ const [showSavedSections, setShowSavedSections] = useState(false)
           if (incoming < existing) byCC[r.ccName] = r
         }
       }
-      setEquivalents(Object.values(byCC)); setStep(2)
+      const allEquivs = Object.values(byCC)
+      const hasLive = (eq) => getBannerBaseUrl(eq.ccName) || getColleagueBaseUrl(eq.ccName) || getSdccdCampus(eq.ccName) || getVcccdCampus(eq.ccName)
+      allEquivs.sort((a, b) => {
+        const aLive = hasLive(a) ? 0 : 1
+        const bLive = hasLive(b) ? 0 : 1
+        return aLive - bLive
+      })
+      setEquivalents(allEquivs); setStep(2)
     } catch (e) { setError(`Error: ${e.message}`) }
     finally { setLoading(false); setLoadingMsg(''); setLoadingProgress(0) }
   }

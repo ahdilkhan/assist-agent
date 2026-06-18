@@ -588,6 +588,7 @@ export default function Tab2() {
   const [overlapData, setOverlapData] = useState(null)
   const [expandedRow, setExpandedRow] = useState(null)
   const [completedCourses, setCompletedCourses] = useState(new Set())
+  const [programFilter, setProgramFilter] = useState('all')
 
   const [step, setStep] = useState(1)
   const [isWide, setIsWide] = useState(window.innerWidth > 768)
@@ -929,14 +930,15 @@ export default function Tab2() {
             </div>
             <div style={{ marginBottom: 14 }}>
               <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 4 }}>Max units per semester</div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <input
-                  type="range" min={9} max={25} step={1} value={maxUnitsPerSem}
-                  onChange={e => setMaxUnitsPerSem(Number(e.target.value))}
-                  style={{ flex: 1, accentColor: '#6C5CE7' }}
-                />
-                <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', minWidth: 28 }}>{maxUnitsPerSem}u</span>
-              </div>
+              <input
+                type="number" min={1} max={30} value={maxUnitsPerSem}
+                onChange={e => {
+                  const v = parseInt(e.target.value)
+                  if (!isNaN(v)) setMaxUnitsPerSem(Math.max(1, Math.min(30, v)))
+                  else if (e.target.value === '') setMaxUnitsPerSem('')
+                }}
+                style={{ width: 80, fontSize: 13, padding: '7px 10px', borderRadius: 8, border: '1px solid var(--border-input)', background: 'var(--bg-card)', color: 'var(--text)' }}
+              />
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
               <div onClick={() => setIncludeSummer(v => !v)} style={{ width: 32, height: 18, borderRadius: 9, cursor: 'pointer', flexShrink: 0, background: includeSummer ? '#6C5CE7' : 'var(--border)', position: 'relative', transition: 'background 0.2s' }}>
@@ -981,8 +983,7 @@ export default function Tab2() {
                 { icon: <span style={{ fontSize: 9, background: '#0d2a28', color: '#34d399', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>MULTIPLE</span>, text: 'Counts toward more than one program' },
                 { icon: <span style={{ fontSize: 9, background: '#0d1a2e', color: '#60a5fa', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>SCHOOL-SPECIFIC</span>, text: 'Only counts toward one program' },
                 { icon: <span style={{ fontSize: 9, background: '#221a05', color: '#fbbf24', border: '1px solid #5a4a10', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>YELLOW GROUP</span>, text: 'Pick group — you only need some of the options, not all' },
-                { icon: <span style={{ fontSize: 9, background: '#2a1010', color: '#f87171', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>No equivalent</span>, text: <><strong style={{ color: 'var(--text)' }}>Inside a yellow group</strong> — no option at your CC; pick a different option if one exists, otherwise plan to complete after transferring or at another CC</> },
-                { icon: <span style={{ fontSize: 9, background: '#2a1010', color: '#f87171', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>No equivalent</span>, text: <><strong style={{ color: 'var(--text)' }}>Standalone</strong> — no match at your CC; consider completing at another CC or after transferring</> },
+                { icon: <span style={{ fontSize: 9, background: '#2a1010', color: '#f87171', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>No equivalent</span>, text: 'No match at your CC — consider completing at another CC or after transferring' },
               ].map(({ icon, text }, i) => (
                 <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
                   <span style={{ display: 'inline-flex', flexShrink: 0, minWidth: 80, justifyContent: 'flex-end', paddingTop: 2 }}>{icon}</span>
@@ -993,6 +994,14 @@ export default function Tab2() {
           </div>
         )}
 
+        {overlapData.programLabels.length > 1 && (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
+            <div className={`pref-chip${programFilter === 'all' ? ' selected' : ''}`} style={{ padding: '6px 12px', fontSize: 12 }} onClick={() => setProgramFilter('all')}>All programs</div>
+            {overlapData.programLabels.map((label, i) => (
+              <div key={i} className={`pref-chip${programFilter === label ? ' selected' : ''}`} style={{ padding: '6px 12px', fontSize: 12 }} onClick={() => setProgramFilter(label)}>{label}</div>
+            ))}
+          </div>
+        )}
         {renderCourseList()}
 
         <div style={{ marginTop: 32, padding: '20px 0', borderTop: '1px solid var(--border)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
@@ -1281,7 +1290,11 @@ export default function Tab2() {
       }
     }
 
-    for (const row of overlapData.rows) {
+    const filteredRows = programFilter === 'all'
+      ? overlapData.rows
+      : overlapData.rows.filter(row => row.programEntries.some(pe => pe.program === programFilter))
+
+    for (const row of filteredRows) {
       const groupId = row.groupId ?? `singleton_${row.ccKey}`
       if (!groupIdToGroup[groupId]) {
         const g = { groupId, groupTitle: row.groupTitle || 'MAJOR REQUIREMENTS', sectionLabel: row.sectionLabel || '', nRequired: row.nRequired ?? null, pickType: row.pickType ?? null, pickMin: row.pickMin ?? null, pickMax: row.pickMax ?? null, isSectionBundled: row.isSectionBundled || false, rows: [] }
