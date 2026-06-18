@@ -110,7 +110,23 @@ async function getBannerSections(baseUrl: string, subject: string, courseNumber:
           campus: s.campusDescription,
           title: s.courseTitle,
           units: s.creditHourLow,
-          scheduleType: s.scheduleTypeDescription,
+          scheduleType: (() => {
+            const t = (s.scheduleTypeDescription || '').toLowerCase()
+            if (!t.includes('dist ed') && !t.includes('internet') && !t.includes('distance')) {
+              if (t.includes('lecture') || t.includes('discussion')) return 'In-Person'
+              if (t.includes('hybrid')) return 'Hybrid'
+              if (t.includes('lab')) return 'Lab'
+              return s.scheduleTypeDescription || null
+            }
+            // For distance ed, check meetings to distinguish online vs hybrid
+            const meetings = s.meetingsFaculty || []
+            const hasInPerson = meetings.some((m: any) => {
+              const bldg = (m.meetingTime?.building || '').toUpperCase()
+              const days = m.meetingTime?.meetingDaysList
+              return days && days.length > 0 && bldg && !bldg.includes('WEB') && !bldg.includes('ONLINE') && !bldg.includes('OL') && !bldg.includes('TBA')
+            })
+            return hasInPerson ? 'Hybrid' : 'Online'
+          })(),
           enrollment: s.enrollment,
           maxEnrollment: s.maximumEnrollment,
           seatsAvailable: s.seatsAvailable,
