@@ -440,6 +440,21 @@ function getColleagueBaseUrl(ccName) {
   return null
 }
 
+const SDCCD_CAMPUSES = {
+  'San Diego City College': 'CITY',
+  'San Diego Mesa College': 'MESA',
+  'San Diego Miramar College': 'MIRAMAR',
+}
+
+function getSdccdCampus(ccName) {
+  if (!ccName) return null
+  for (const [key, campus] of Object.entries(SDCCD_CAMPUSES)) {
+    if (ccName.toLowerCase().includes(key.toLowerCase()) ||
+        key.toLowerCase().includes(ccName.toLowerCase())) return campus
+  }
+  return null
+}
+
 export default function App() {
   const [activeTab, setActiveTab] = useState('tab1')
   const [step, setStep] = useState(1)
@@ -559,8 +574,9 @@ const [showSavedSections, setShowSavedSections] = useState(false)
   async function fetchLiveSections(ccName, subject, courseNum) {
   const bannerUrl = getBannerBaseUrl(ccName)
   const colleagueUrl = getColleagueBaseUrl(ccName)
-  const baseUrl = bannerUrl || colleagueUrl
-  const system = colleagueUrl && !bannerUrl ? 'colleague' : 'banner'
+  const sdccdCampus = getSdccdCampus(ccName)
+  const baseUrl = bannerUrl || colleagueUrl || (sdccdCampus ? 'https://mws-api.sdccd.edu' : null)
+  const system = sdccdCampus ? 'sdccd' : colleagueUrl && !bannerUrl ? 'colleague' : 'banner'
   if (!baseUrl) return
 
   setScheduleLoading(true)
@@ -575,7 +591,7 @@ const [showSavedSections, setShowSavedSections] = useState(false)
           'Content-Type': 'application/json',
           'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
         },
-        body: JSON.stringify({ baseUrl, subject, courseNumber: courseNum, system }),
+        body: JSON.stringify({ baseUrl, subject, courseNumber: courseNum, system, campus: sdccdCampus }),
       }
     )
     const data = await res.json()
@@ -1034,7 +1050,7 @@ fetchLiveSections(eq.ccName, eq.options?.[0]?.courses?.[0]?.prefix, eq.options?.
                             {c.note && <div style={{ fontSize: 12, color: '#f59e0b', marginTop: 4 }}>⚠️ {c.note}</div>}
                           </div>
                         ))}
-                        {!getBannerBaseUrl(selectedCC?.ccName) && !getColleagueBaseUrl(selectedCC?.ccName) && (
+                        {!getBannerBaseUrl(selectedCC?.ccName) && !getColleagueBaseUrl(selectedCC?.ccName) && !getSdccdCampus(selectedCC?.ccName) && (
   <div style={{ background: 'var(--bg-hint)', borderRadius: 8, padding: '10px 12px', marginBottom: 14 }}>
     <div style={{ fontSize: 12, fontWeight: 600, color: '#a78bfa', marginBottom: 6 }}>💡 When you get to the schedule:</div>
     {opt.courses.length === 1
@@ -1118,7 +1134,7 @@ fetchLiveSections(eq.ccName, eq.options?.[0]?.courses?.[0]?.prefix, eq.options?.
       )}
     </div>
   )}
-  {!getBannerBaseUrl(selectedCC?.ccName) && !getColleagueBaseUrl(selectedCC?.ccName) && (
+  {!getBannerBaseUrl(selectedCC?.ccName) && !getColleagueBaseUrl(selectedCC?.ccName) && !getSdccdCampus(selectedCC?.ccName) && (
     <a className="avail-link" href={getScheduleUrl(selectedCC.ccName)} target="_blank" rel="noreferrer" style={{ fontWeight: 600, fontSize: 14 }}>🔍 Search schedule at {selectedCC.ccName} ↗</a>
   )}
   <a className="avail-link" href="https://www.cccapply.org/" target="_blank" rel="noreferrer" style={{ color: 'var(--text-muted)', fontWeight: 400 }}>📋 Apply / Enroll via CCCApply ↗</a>

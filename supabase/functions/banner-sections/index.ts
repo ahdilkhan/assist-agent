@@ -276,6 +276,94 @@ async function getColleagueSections(baseUrl: string, subject: string, courseNumb
   return results;
 }
 
+async function getSdccdSections(campus: string, subject: string, courseNumber: string) {
+  const res = await fetch(`https://mws-api.sdccd.edu/?terms=all&career=ugrd`, {
+    headers: { "User-Agent": "Mozilla/5.0" }
+  })
+  const data = await res.json()
+  const rows = data?.data?.query?.rows || []
+
+  // Filter by subject and course number and campus
+  const filtered = rows.filter((r: any) => {
+    const subj = (r.SUBJECT || '').trim().toUpperCase()
+    const num = (r.CATALOG_NBR || '').trim().toUpperCase()
+    const campusMatch = !campus || r.CAMPUS === campus
+    return subj === subject.toUpperCase() && num === courseNumber.toUpperCase() && campusMatch
+  })
+
+  if (filtered.length === 0) return []
+
+  // Group by STRM
+  const byTerm: Record<string, any[]> = {}
+  for (const r of filtered) {
+    if (!byTerm[r.STRM]) byTerm[r.STRM] = []
+    byTerm[r.STRM].push(r)
+  }
+
+  // Build term description from START_DT
+  function getTermDesc(strm: string, rows: any[]) {
+    const startDt = rows[0]?.START_DT || ''
+    if (!startDt) return `Term ${strm}`
+    const d = new Date(startDt)
+    const month = d.getMonth() + 1
+    const year = d.getFullYear()
+    if (month >= 1 && month <= 5) return `Spring ${year}`
+    if (month >= 6 && month <= 7) return `Summer ${year}`
+    return `Fall ${year}`
+  }
+
+  // Sort terms newest first
+  const sortedTerms = Object.keys(byTerm).sort((a, b) => Number(b) - Number(a))
+
+  return sortedTerms.map(strm => {
+    const termRows = byTerm[strm]
+    const sections = termRows.map((r: any) => {
+      const meetParts = (r.MEETINGINFO || '').split('|').map((p: string) => p.trim())
+      const days = meetParts[2] || null
+      const startTime = meetParts[3] || null
+      const endTime = meetParts[4] || null
+      const building = meetParts[1] || null
+      const instructor = meetParts[6] || null
+      const scheduleType = (meetParts[11] || '').replace(/<[^>]*>/g, '').trim() || null
+
+      const isOpen = r.ENRL_STAT === 'O'
+      const hasWaitlist = r.ENRL_STAT === 'C' && (r.WAIT_CAP - r.WAIT_TOT) > 0
+
+      return {
+        crn: String(r.CLASS_NBR),
+        section: String(r.CLASS_NBR),
+        campus: r.CAMPUS || null,
+        title: r.CRSE_NAME || null,
+        units: r.UNITS || null,
+        scheduleType,
+        enrollment: r.ENRL_TOT || 0,
+        maxEnrollment: r.ENRL_CAP || 0,
+        seatsAvailable: isOpen ? (r.ENRL_CAP - r.ENRL_TOT) : 0,
+        waitCount: r.WAIT_TOT || 0,
+        waitAvailable: hasWaitlist ? (r.WAIT_CAP - r.WAIT_TOT) : 0,
+        openSection: isOpen,
+        instructor,
+        meetings: days ? [{
+          days,
+          startTime,
+          endTime,
+          building,
+          room: null,
+          startDate: r.START_DT || null,
+          endDate: r.END_DT || null,
+        }] : [],
+      }
+    })
+
+    return {
+      termCode: strm,
+      termDesc: getTermDesc(strm, termRows),
+      totalCount: sections.length,
+      sections,
+    }
+  })
+}
+
 // ─── MAIN HANDLER ─────────────────────────────────────────────
 
 export default {
@@ -283,7 +371,7 @@ export default {
     if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
 
     try {
-      const { baseUrl, subject, courseNumber, system } = await req.json();
+      const { baseUrl, subject, courseNumber, system, campus } = await req.json();
       if (!baseUrl || !subject || !courseNumber) {
         return Response.json({ error: "Missing required fields" }, { status: 400, headers: CORS });
       }
@@ -291,6 +379,8 @@ export default {
       let data;
       if (system === "colleague") {
         data = await getColleagueSections(baseUrl, subject, courseNumber);
+      } else if (system === "sdccd") {
+        data = await getSdccdSections(campus || "", subject, courseNumber);
       } else {
         data = await getBannerSections(baseUrl, subject, courseNumber);
       }
