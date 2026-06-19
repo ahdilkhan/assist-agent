@@ -3,6 +3,7 @@ import { supabase } from './lib/supabase'
 import { KNOWN_UNIVERSITIES, KNOWN_CCS } from './App'
 
 const ASSIST_BASE = import.meta.env.VITE_ASSIST_BASE
+// YEAR_ID 77 is used for Tab2 (newer articulation cycle). Tab1 uses 76.
 const YEAR_ID = import.meta.env.VITE_ACADEMIC_YEAR_ID || 77
 
 const TERMS = [
@@ -171,8 +172,6 @@ function buildCellMap(templateAssets) {
       groupIsPickN = true
       const groupNAdv = (group.advisements || []).find(a => a.type === 'NFollowing')
       groupNRequired = groupNAdv?.amount ?? 1; groupPickType = 'count'; isSectionBundled = true
-    } else if (instrType) {
-      console.warn('[ASSIST] unknown group instruction.type:', instrType, JSON.stringify(instr))
     }
 
     for (const section of dataSections) {
@@ -185,13 +184,6 @@ function buildCellMap(templateAssets) {
 
       let nRequired = null, pickType = null, pickMin = null, pickMax = null, groupId
 
-      const unknownAdvs = secAdvs.filter(a =>
-        !['NFollowing', 'NFromUnits', 'NToNFollowing', 'NInNDifferentAreas', 'CompleteFollowing'].includes(a.type)
-      )
-      if (unknownAdvs.length > 0) {
-        console.warn('[ASSIST] unknown section advisement type(s):', unknownAdvs.map(a => a.type), JSON.stringify(unknownAdvs))
-      }
-
       if (secCompleteAll) { nRequired = null; pickType = null; groupId = `${group.groupId}_${section.position}` }
       else if (secNFollowing) { nRequired = secNFollowing.amount ?? 1; pickType = 'count'; groupId = `${group.groupId}_${section.position}` }
       else if (secNFromUnits) { nRequired = secNFromUnits.amount ?? 1; pickType = 'units'; groupId = `${group.groupId}_${section.position}` }
@@ -199,6 +191,7 @@ function buildCellMap(templateAssets) {
       else if (secNInAreas) { nRequired = secNInAreas.amount ?? 1; pickType = 'areas'; groupId = `${group.groupId}_${section.position}` }
       else if (groupIsPickN) { nRequired = groupNRequired; pickType = groupPickType; pickMin = groupPickMin; pickMax = groupPickMax; groupId = `pick_${group.groupId}` }
       else { nRequired = null; pickType = null; groupId = `${group.groupId}_${section.position}` }
+
       const ctx = {
         sectionLabel, groupTitle, nRequired, pickType, pickMin, pickMax, groupId,
         isSectionBundled: groupIsPickN ? isSectionBundled : false,
@@ -420,7 +413,6 @@ function buildSemesterPlan({ rows, noArtCourses, completedCourses, geState, plan
   const endIdx = termList.indexOf(plannerEnd)
   if (startIdx < 0 || endIdx <= startIdx) return []
 
-  // Build pending articulated courses
   const pending = []
   for (const row of rows) {
     if (completedCourses.has(row.ccKey)) continue
@@ -444,7 +436,6 @@ function buildSemesterPlan({ rows, noArtCourses, completedCourses, geState, plan
 
   const sorted = topoSortCourses(pending)
 
-  // Add no-art courses at the end (can't prereq-sort these)
   const noArtPending = (noArtCourses || []).map(na => ({
     ccKey: `noart_${na.uniReq.prefix}_${na.uniReq.number}_${na.program}`,
     prefix: na.uniReq.prefix,
@@ -492,7 +483,6 @@ function buildSemesterPlan({ rows, noArtCourses, completedCourses, geState, plan
   const numSemSlots = semSlots.length
   const GE_PER_SEM = Math.min(2, Math.ceil(geNeeded.length / Math.max(numSemSlots, 1)))
 
-  // Separate articulated (scheduleable) from no-art
   const scheduleable = allPending.filter(c => !c.isNoArt)
   const noArtList = allPending.filter(c => c.isNoArt)
 
@@ -564,7 +554,6 @@ function buildSemesterPlan({ rows, noArtCourses, completedCourses, geState, plan
     })
   }
 
-  // No-art courses always go in a dedicated section (not scheduled per semester)
   if (noArtList.length > 0) {
     semesters.push({
       term: 'No CC Equivalent',
@@ -833,7 +822,6 @@ export default function Tab2() {
     return `${uni}\n${major || ''}`
   }
 
-  // Build no-art courses for semester planner — exclude covered ones
   const noArtForPlanner = overlapData
     ? (overlapData.noArticulation || []).filter(na => !na.coveredByAnotherOption)
     : []
@@ -1126,17 +1114,38 @@ export default function Tab2() {
 
     return (
       <div>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+        {/* Print-only header — hidden on screen, shown when printing */}
+        <div className="print-only" style={{ display: 'none', marginBottom: 20 }}>
+          <div style={{ fontSize: 20, fontWeight: 700 }}>Kourzo — Semester Plan</div>
+          <div style={{ fontSize: 13, color: '#555', marginTop: 4 }}>
+            {ccName} · {programs.map(p => `${p.uniName} – ${p.majorLabel}`).join(' / ')}
+          </div>
+          <div style={{ fontSize: 12, color: '#777', marginTop: 2 }}>
+            {plannerStart} → {plannerEnd}{includeSummer ? ' (with summers)' : ''}
+          </div>
+        </div>
+
+        <div className="no-print" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
           <div>
             <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: 'var(--text)' }}>Semester plan</h2>
             <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
               {plannerStart} → transferring {plannerEnd}{includeSummer ? ' (with summers)' : ''}
             </div>
           </div>
-          <button className="btn-secondary" style={{ fontSize: 12 }} onClick={() => setStep(3)}>← Back</button>
+          <div style={{ display: 'flex', gap: 8 }}>
+            {/* Print plan button */}
+            <button
+              className="btn-secondary"
+              style={{ fontSize: 12 }}
+              onClick={() => window.print()}
+            >
+              🖨 Print plan
+            </button>
+            <button className="btn-secondary" style={{ fontSize: 12 }} onClick={() => setStep(3)}>← Back</button>
+          </div>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: 20 }}>
+        <div className="no-print" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: 20 }}>
           {[
             { label: 'Semesters', value: realSems.length },
             { label: 'CC courses left', value: majorLeft },
@@ -1150,7 +1159,7 @@ export default function Tab2() {
         </div>
 
         {overflowSem && (
-          <div style={{ background: '#1a1505', border: '1px solid #5a4a10', borderRadius: 10, padding: '12px 16px', marginBottom: 16, display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+          <div className="no-print" style={{ background: '#1a1505', border: '1px solid #5a4a10', borderRadius: 10, padding: '12px 16px', marginBottom: 16, display: 'flex', gap: 10, alignItems: 'flex-start' }}>
             <span style={{ fontSize: 16, flexShrink: 0 }}>💡</span>
             <div>
               <div style={{ fontSize: 13, fontWeight: 600, color: '#fbbf24', marginBottom: 4 }}>
@@ -1175,7 +1184,7 @@ export default function Tab2() {
         {realSems.map((sem, si) => {
           const totalU = sem.courses.reduce((s, c) => s + c.units, 0) + sem.ge.length * 3
           return (
-            <div key={si} style={{ border: '1px solid var(--border)', borderRadius: 10, marginBottom: 10, overflow: 'hidden', background: 'var(--bg-card)' }}>
+            <div key={si} style={{ border: '1px solid var(--border)', borderRadius: 10, marginBottom: 10, overflow: 'hidden', background: 'var(--bg-card)', pageBreakInside: 'avoid' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '9px 14px', background: 'var(--bg-step)', borderBottom: '1px solid var(--border)' }}>
                 <div>
                   <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>{sem.term}</div>
@@ -1185,6 +1194,7 @@ export default function Tab2() {
               {sem.courses.map((c, ci) => (
                 <div key={ci} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 14px', borderBottom: '1px solid var(--border)' }}>
                   <div
+                    className="no-print"
                     onClick={() => toggleCourse(c.ccKey)}
                     style={{ width: 24, height: 24, borderRadius: 6, flexShrink: 0, cursor: 'pointer', border: `2px solid ${completedCourses.has(c.ccKey) ? '#6C5CE7' : 'var(--border-input)'}`, background: completedCourses.has(c.ccKey) ? '#6C5CE7' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                   >
@@ -1205,7 +1215,7 @@ export default function Tab2() {
               ))}
               {sem.ge.map((g, gi) => (
                 <div key={gi} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 14px', borderBottom: '1px dashed var(--border)', opacity: 0.6 }}>
-                  <div style={{ width: 16, height: 16, borderRadius: 4, border: '1.5px dashed var(--border-input)', flexShrink: 0 }} />
+                  <div className="no-print" style={{ width: 16, height: 16, borderRadius: 4, border: '1.5px dashed var(--border-input)', flexShrink: 0 }} />
                   <div style={{ flex: 1, fontSize: 12, color: 'var(--text)' }}>{g.label}</div>
                   <span style={{ fontSize: 9, fontWeight: 600, padding: '2px 5px', borderRadius: 4, background: 'var(--bg-step)', color: 'var(--text-muted)' }}>Cal-GETC</span>
                   <span style={{ fontSize: 11, color: 'var(--text-muted)', flexShrink: 0 }}>3u</span>
@@ -1215,8 +1225,8 @@ export default function Tab2() {
           )
         })}
 
-       {overflowSem && (overflowSem.courses.length > 0 || overflowSem.ge.length > 0) && (
-          <div style={{ border: '1px dashed #5a4a10', borderRadius: 10, marginBottom: 10, overflow: 'hidden', background: '#1a1505' }}>
+        {overflowSem && (overflowSem.courses.length > 0 || overflowSem.ge.length > 0) && (
+          <div className="no-print" style={{ border: '1px dashed #5a4a10', borderRadius: 10, marginBottom: 10, overflow: 'hidden', background: '#1a1505' }}>
             <div
               onClick={() => setOverflowExpanded(v => !v)}
               style={{ padding: '9px 14px', borderBottom: overflowExpanded ? '1px dashed #5a4a10' : 'none', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
@@ -1249,9 +1259,8 @@ export default function Tab2() {
           </div>
         )}
 
-        {/* No-art section — courses with no CC equivalent */}
         {noArtSem && noArtSem.courses.length > 0 && (
-          <div style={{ border: '1px dashed #5a2020', borderRadius: 10, marginBottom: 10, overflow: 'hidden', background: '#1a0a0a' }}>
+          <div style={{ border: '1px dashed #5a2020', borderRadius: 10, marginBottom: 10, overflow: 'hidden', background: '#1a0a0a', pageBreakInside: 'avoid' }}>
             <div style={{ padding: '9px 14px', borderBottom: '1px dashed #5a2020' }}>
               <div style={{ fontSize: 13, fontWeight: 600, color: '#f87171' }}>No equivalent at {ccName}</div>
               <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>
@@ -1290,8 +1299,6 @@ export default function Tab2() {
     for (const na of (overlapData.noArticulation || [])) {
       if (na.partOfPickGroup) {
         if (!noArtByGroupId[na.groupId]) noArtByGroupId[na.groupId] = {}
-        // isSectionBundled = AND pair → bundle by sectionPosition
-        // otherwise each university course is its own OR option → split by templateCellId
         const secKey = na.isSectionBundled
           ? `sec_${na.sectionPosition ?? 'unknown'}`
           : (na.templateCellId != null ? `cell_${na.templateCellId}` : `sec_${na.sectionPosition ?? 'unknown'}`)
@@ -1326,7 +1333,6 @@ export default function Tab2() {
       groupIdToGroup[groupId].rows.push(row)
     }
 
-    // Synthesize groups for pick-groups where ALL options have no articulation
     for (const [gid, slots] of Object.entries(noArtByGroupId)) {
       if (groupIdToGroup[gid]) continue
       const firstNa = (noArtByGroupIdFlat[gid] || [])[0]
@@ -1603,6 +1609,17 @@ export default function Tab2() {
 
   return (
     <div>
+      {/* Print styles — scoped inside Tab2's render so they only apply here */}
+      <style>{`
+        @media print {
+          .no-print { display: none !important; }
+          .print-only { display: block !important; }
+          body { background: #fff !important; color: #111 !important; }
+          * { color-adjust: exact; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        }
+        .print-only { display: none; }
+      `}</style>
+
       {error && <div className="error-box">{error}</div>}
       {loading && (
         <div className="card" style={{ textAlign: 'center' }}>

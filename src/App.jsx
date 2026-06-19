@@ -5,6 +5,7 @@ import Tab2 from './Tab2'
 import kourzoLogo from './kourzo_logo.svg'
 
 const ASSIST_BASE = import.meta.env.VITE_ASSIST_BASE
+// YEAR_ID 76 is used for Tab1 (single-course lookup). Tab2 uses 77 (newer articulation cycle).
 const YEAR_ID = import.meta.env.VITE_ACADEMIC_YEAR_ID || 76
 
 const REGIONS = {
@@ -470,6 +471,28 @@ function getVcccdCampus(ccName) {
   return null
 }
 
+// Returns true if this CC has integrated live schedule fetching
+function hasLiveSchedule(ccName) {
+  return !!(getBannerBaseUrl(ccName) || getColleagueBaseUrl(ccName) || getSdccdCampus(ccName) || getVcccdCampus(ccName))
+}
+
+// Encode current search into URL query params for sharing
+function buildShareUrl(uniId, uniName, pfx, course) {
+  const params = new URLSearchParams({ uni: uniId, uname: uniName, prefix: pfx, course })
+  return `${window.location.origin}${window.location.pathname}?${params.toString()}`
+}
+
+// Read pre-filled search params from URL on first load
+function readShareParams() {
+  const params = new URLSearchParams(window.location.search)
+  return {
+    uniId: params.get('uni') || '',
+    uniName: params.get('uname') || '',
+    prefix: params.get('prefix') || '',
+    courseNum: params.get('course') || '',
+  }
+}
+
 export default function App() {
   const [activeTab, setActiveTab] = useState('tab1')
   const [step, setStep] = useState(1)
@@ -493,14 +516,27 @@ export default function App() {
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const [guestMode, setGuestMode] = useState(false)
   const [liveSchedule, setLiveSchedule] = useState(null)
-const [scheduleLoading, setScheduleLoading] = useState(false)
-const [scheduleError, setScheduleError] = useState('')
-const [termFilter, setTermFilter] = useState('all')
-const [formatFilter, setFormatFilter] = useState('all')
-const [availFilter, setAvailFilter] = useState('all')
-const [savedSections, setSavedSections] = useState([])
-const [showSavedSections, setShowSavedSections] = useState(false)
+  const [scheduleLoading, setScheduleLoading] = useState(false)
+  const [scheduleError, setScheduleError] = useState('')
+  const [termFilter, setTermFilter] = useState('all')
+  const [formatFilter, setFormatFilter] = useState('all')
+  const [availFilter, setAvailFilter] = useState('all')
+  const [savedSections, setSavedSections] = useState([])
+  const [showSavedSections, setShowSavedSections] = useState(false)
+  // Share link copy state
+  const [shareCopied, setShareCopied] = useState(false)
   const dropdownRef = useRef(null)
+
+  // On mount: pre-fill from URL share params if present
+  useEffect(() => {
+    const shared = readShareParams()
+    if (shared.uniId && shared.prefix && shared.courseNum) {
+      setUniId(shared.uniId)
+      setUniName(shared.uniName)
+      setPrefix(shared.prefix)
+      setCourseNum(shared.courseNum)
+    }
+  }, [])
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
@@ -551,9 +587,7 @@ const [showSavedSections, setShowSavedSections] = useState(false)
 
   async function toggleSaveSection(s, term) {
     const currentUser = userRef.current || user
-    if (!currentUser) {
-      return
-    }
+    if (!currentUser) return
     const already = savedSections.find(x => x.section === s.section && x.cc_name === selectedCC.ccName && x.term_desc === term.termDesc)
     if (already) {
       await supabase.from('saved_sections').delete().eq('id', already.id)
@@ -587,43 +621,79 @@ const [showSavedSections, setShowSavedSections] = useState(false)
   }
 
   async function fetchLiveSections(ccName, subject, courseNum) {
-  const bannerUrl = getBannerBaseUrl(ccName)
-  const colleagueUrl = getColleagueBaseUrl(ccName)
-  const sdccdCampus = getSdccdCampus(ccName)
-  const vcccdCampus = getVcccdCampus(ccName)
-  const baseUrl = bannerUrl || colleagueUrl || (sdccdCampus ? 'https://mws-api.sdccd.edu' : null) || (vcccdCampus ? 'https://schedule.vcccd.edu' : null)
-  const system = sdccdCampus ? 'sdccd' : vcccdCampus ? 'vcccd' : colleagueUrl && !bannerUrl ? 'colleague' : 'banner'
-  if (!baseUrl) return
+    const bannerUrl = getBannerBaseUrl(ccName)
+    const colleagueUrl = getColleagueBaseUrl(ccName)
+    const sdccdCampus = getSdccdCampus(ccName)
+    const vcccdCampus = getVcccdCampus(ccName)
+    const baseUrl = bannerUrl || colleagueUrl || (sdccdCampus ? 'https://mws-api.sdccd.edu' : null) || (vcccdCampus ? 'https://schedule.vcccd.edu' : null)
+    const system = sdccdCampus ? 'sdccd' : vcccdCampus ? 'vcccd' : colleagueUrl && !bannerUrl ? 'colleague' : 'banner'
+    if (!baseUrl) return
 
-  setScheduleLoading(true)
-  setScheduleError('')
-  setLiveSchedule(null)
-  try {
-    const res = await fetch(
-      `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/banner-sections`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
-        },
-        body: JSON.stringify({ baseUrl, subject, courseNumber: courseNum, system, campus: sdccdCampus || vcccdCampus }),
-      }
-    )
-    const data = await res.json()
-    if (data.success) setLiveSchedule(data.terms)
-    else setScheduleError(data.error || 'Failed to fetch schedule')
-  } catch (e) {
-    setScheduleError(e.message)
-  } finally {
-    setScheduleLoading(false)
+    setScheduleLoading(true)
+    setScheduleError('')
+    setLiveSchedule(null)
+    try {
+      const res = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/banner-sections`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
+          },
+          body: JSON.stringify({ baseUrl, subject, courseNumber: courseNum, system, campus: sdccdCampus || vcccdCampus }),
+        }
+      )
+      const data = await res.json()
+      if (data.success) setLiveSchedule(data.terms)
+      else setScheduleError(data.error || 'Failed to fetch schedule')
+    } catch (e) {
+      setScheduleError(e.message)
+    } finally {
+      setScheduleLoading(false)
+    }
   }
-}
 
   function goHome() {
     setStep(1); setActiveTab('tab1'); setEquivalents([]); setSelectedCC(null)
     setSelectedRegions([]); setCourseFilter('any'); setSavedCCs([])
     setShowSaved(false); setOpenBlocks({}); setError(''); setGuestMode(false)
+  }
+
+  // Soft reset: clears results and goes back to Step 1, but keeps saved data
+  // and existing form values so the user can tweak rather than start from scratch.
+  function softReset() {
+    setStep(1)
+    setEquivalents([])
+    setSelectedCC(null)
+    setSelectedRegions([])
+    setCourseFilter('any')
+    setShowSaved(false)
+    setOpenBlocks({})
+    setError('')
+    setLiveSchedule(null)
+    setScheduleError('')
+    // Intentionally NOT clearing: savedCCs, savedSections, uniId, uniName, prefix, courseNum
+  }
+
+  function copyShareLink() {
+    const url = buildShareUrl(uniId, uniName, prefix, courseNum)
+    navigator.clipboard.writeText(url).then(() => {
+      setShareCopied(true)
+      setTimeout(() => setShareCopied(false), 2000)
+    })
+  }
+
+  // Navigate to Step 3 for a given college card
+  function goToSchedule(eq) {
+    setSelectedCC(eq)
+    setLiveSchedule(null)
+    setScheduleError('')
+    setTermFilter('all')
+    setFormatFilter('all')
+    setAvailFilter('all')
+    setStep(3)
+    fetchLiveSections(eq.ccName, eq.options?.[0]?.courses?.[0]?.prefix, eq.options?.[0]?.courses?.[0]?.number)
   }
 
   function toggleBlock(key) { setOpenBlocks(prev => ({ ...prev, [key]: !prev[key] })) }
@@ -633,9 +703,7 @@ const [showSavedSections, setShowSavedSections] = useState(false)
   async function toggleSave(eq, e) {
     e?.stopPropagation()
     const currentUser = userRef.current || user
-    if (!currentUser) {
-      return
-    }
+    if (!currentUser) return
     const already = savedCCs.find(x => x.cc_name === eq.ccName)
     if (already) {
       await supabase.from('saved_colleges').delete().eq('id', already.id)
@@ -670,9 +738,16 @@ const [showSavedSections, setShowSavedSections] = useState(false)
 
   async function handleSearch() {
     if (!uniId || !prefix || !courseNum) { setError('Please fill in all fields.'); return }
-    setError(''); setLoading(true); setLoadingProgress(0)
-    setEquivalents([]); setSelectedRegions([]); setCourseFilter('any'); setSelectedCC(null)
-    setSavedCCs([]); setShowSaved(false); setOpenBlocks({}); setError('')
+    setError('')
+    setLoading(true)
+    setLoadingProgress(0)
+    setEquivalents([])
+    setSelectedRegions([])
+    setCourseFilter('any')
+    setSelectedCC(null)
+    setSavedCCs([])
+    setShowSaved(false)
+    setOpenBlocks({})
     try {
       setLoadingMsg('Fetching community colleges...')
       const institutions = await getAgreementInstitutions(uniId)
@@ -711,15 +786,21 @@ const [showSavedSections, setShowSavedSections] = useState(false)
         }
       }
       const allEquivs = Object.values(byCC)
-      const hasLive = (eq) => getBannerBaseUrl(eq.ccName) || getColleagueBaseUrl(eq.ccName) || getSdccdCampus(eq.ccName) || getVcccdCampus(eq.ccName)
+      // Sort colleges with live schedule data to the top
       allEquivs.sort((a, b) => {
-        const aLive = hasLive(a) ? 0 : 1
-        const bLive = hasLive(b) ? 0 : 1
+        const aLive = hasLiveSchedule(a.ccName) ? 0 : 1
+        const bLive = hasLiveSchedule(b.ccName) ? 0 : 1
         return aLive - bLive
       })
-      setEquivalents(allEquivs); setStep(2)
-    } catch (e) { setError(`Error: ${e.message}`) }
-    finally { setLoading(false); setLoadingMsg(''); setLoadingProgress(0) }
+      setEquivalents(allEquivs)
+      setStep(2)
+    } catch (e) {
+      setError(`Error: ${e.message}`)
+    } finally {
+      setLoading(false)
+      setLoadingMsg('')
+      setLoadingProgress(0)
+    }
   }
 
   function getCourseCountLabel(eq) {
@@ -730,61 +811,76 @@ const [showSavedSections, setShowSavedSections] = useState(false)
   }
 
   function renderCCList(list) {
-    return list.map((eq, i) => (
-      <div className="result-block" key={i}>
-        <div className="result-header" onClick={() => toggleBlock(eq.ccName)}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1 }}>
-            <span onClick={e => toggleSave(eq, e)} style={{ fontSize: 16, cursor: 'pointer', flexShrink: 0, opacity: savedCCs.find(x => x.cc_name === eq.ccName) ? 1 : 0.3, transition: 'opacity 0.15s' }}>💙</span>
-            <div>
-              <h3 style={{ margin: 0 }}>{eq.ccName}</h3>
-              <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
-                {getCourseCountLabel(eq)}
-                {eq.options?.[0]?.courses?.[0] ? ` · ${eq.options[0].courses[0].prefix} ${eq.options[0].courses[0].number}${eq.options[0].courses.length > 1 ? ' +' : ''}` : ''}
+    return list.map((eq, i) => {
+      const live = hasLiveSchedule(eq.ccName)
+      return (
+        <div className="result-block" key={i}>
+          <div className="result-header" onClick={() => toggleBlock(eq.ccName)}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1, minWidth: 0 }}>
+              <span
+                onClick={e => toggleSave(eq, e)}
+                style={{ fontSize: 16, cursor: 'pointer', flexShrink: 0, opacity: savedCCs.find(x => x.cc_name === eq.ccName) ? 1 : 0.3, transition: 'opacity 0.15s' }}
+              >💙</span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <h3 style={{ margin: 0 }}>{eq.ccName}</h3>
+                  {/* Live / manual schedule indicator */}
+                  <span style={{
+                    fontSize: 10, fontWeight: 600, padding: '2px 7px', borderRadius: 20, flexShrink: 0,
+                    background: live ? 'rgba(52,211,153,0.1)' : 'var(--bg-step)',
+                    color: live ? '#34d399' : 'var(--text-muted)',
+                    border: `1px solid ${live ? 'rgba(52,211,153,0.25)' : 'var(--border)'}`,
+                  }}>
+                    {live ? '🟢 Live schedule' : '🔗 Manual search'}
+                  </span>
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
+                  {getCourseCountLabel(eq)}
+                  {eq.options?.[0]?.courses?.[0] ? ` · ${eq.options[0].courses[0].prefix} ${eq.options[0].courses[0].number}${eq.options[0].courses.length > 1 ? ' +' : ''}` : ''}
+                </div>
               </div>
             </div>
+            {/* Always-visible schedule button + chevron */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+              <button
+                className="btn-primary"
+                style={{ padding: '5px 12px', fontSize: 12, width: 'auto' }}
+                onClick={e => { e.stopPropagation(); goToSchedule(eq) }}
+              >
+                Schedule →
+              </button>
+              <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{openBlocks[eq.ccName] ? '▲' : '▼'}</span>
+            </div>
           </div>
-          <span style={{ fontSize: 11, color: 'var(--text-muted)', flexShrink: 0 }}>{openBlocks[eq.ccName] ? '▲' : '▼'}</span>
-        </div>
-        {openBlocks[eq.ccName] && (
-          <div className="result-body">
-            {eq.options?.map((opt, j) => (
-              <div key={j}>
-                {j > 0 && <div className="or-divider">or</div>}
-                {opt.courses.length > 1 && <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>Take all together</div>}
-                {opt.groupNote && <div style={{ fontSize: 12, color: '#f57f17', marginBottom: 6 }}>⚠️ {opt.groupNote}</div>}
-                {opt.courses.map((c, k) => (
-                  <div className="eq-row" key={k}>
-                    <div>
-                      <div style={{ fontWeight: 500, color: 'var(--text)' }}>{c.prefix} {c.number} — {c.title}</div>
-                      <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{c.units ? `${c.units} units` : ''}</div>
-                      {c.note && <div style={{ fontSize: 12, color: '#f59e0b', marginTop: 2 }}>⚠️ {c.note}</div>}
-                      {eq.receivingCourse.includes('+') && (
-                        <div style={{ fontSize: 12, color: '#a78bfa', marginTop: 2 }}>
-                          ✅ Also satisfies: {eq.receivingCourse.split('+').slice(1).map(s => s.trim()).join(', ')}
-                        </div>
-                      )}
+          {openBlocks[eq.ccName] && (
+            <div className="result-body">
+              {eq.options?.map((opt, j) => (
+                <div key={j}>
+                  {j > 0 && <div className="or-divider">or</div>}
+                  {opt.courses.length > 1 && <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>Take all together</div>}
+                  {opt.groupNote && <div style={{ fontSize: 12, color: '#f57f17', marginBottom: 6 }}>⚠️ {opt.groupNote}</div>}
+                  {opt.courses.map((c, k) => (
+                    <div className="eq-row" key={k}>
+                      <div>
+                        <div style={{ fontWeight: 500, color: 'var(--text)' }}>{c.prefix} {c.number} — {c.title}</div>
+                        <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{c.units ? `${c.units} units` : ''}</div>
+                        {c.note && <div style={{ fontSize: 12, color: '#f59e0b', marginTop: 2 }}>⚠️ {c.note}</div>}
+                        {eq.receivingCourse.includes('+') && (
+                          <div style={{ fontSize: 12, color: '#a78bfa', marginTop: 2 }}>
+                            ✅ Also satisfies: {eq.receivingCourse.split('+').slice(1).map(s => s.trim()).join(', ')}
+                          </div>
+                        )}
+                      </div>
+                      <span className="badge badge-green">Articulated</span>
                     </div>
-                    <span className="badge badge-green">Articulated</span>
-                  </div>
-                ))}
-              </div>
-            ))}
-            <div style={{ marginTop: 12 }}>
-              <button className="btn-primary" style={{ width: 'auto', padding: '7px 16px', fontSize: 13 }} onClick={() => {
-  setSelectedCC(eq)
-  setLiveSchedule(null)
-setScheduleError('')
-setTermFilter('all')
-setFormatFilter('all')
-setAvailFilter('all')
-setStep(3)
-fetchLiveSections(eq.ccName, eq.options?.[0]?.courses?.[0]?.prefix, eq.options?.[0]?.courses?.[0]?.number)
-}}>Check schedule →</button>
+                  ))}
+                </div>
+              ))}
             </div>
-          </div>
-        )}
-      </div>
-    ))
+          )}
+        </div>
+      )
+    })
   }
 
   function getInitials(email) {
@@ -835,7 +931,6 @@ fetchLiveSections(eq.ccName, eq.options?.[0]?.courses?.[0]?.prefix, eq.options?.
           </div>
         )}
 
-        {/* Right side: user menu */}
         {user && !guestMode && (
           <div ref={dropdownRef} style={{ position: 'relative' }}>
             <button
@@ -848,7 +943,6 @@ fetchLiveSections(eq.ccName, eq.options?.[0]?.courses?.[0]?.prefix, eq.options?.
               <span style={{ maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user.email}</span>
               <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>▼</span>
             </button>
-
             {dropdownOpen && (
               <div style={{ position: 'absolute', right: 0, top: 'calc(100% + 8px)', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 12, boxShadow: 'var(--dropdown-shadow)', minWidth: 200, zIndex: 100, overflow: 'hidden' }}>
                 <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)' }}>
@@ -873,7 +967,7 @@ fetchLiveSections(eq.ccName, eq.options?.[0]?.courses?.[0]?.prefix, eq.options?.
       </div>
 
       {/* ── Not signed in ── */}
-     {!user && !guestMode ? (
+      {!user && !guestMode ? (
         <div className="card" style={{ textAlign: 'center' }}>
           <h3 style={{ marginBottom: 6, fontSize: 17, color: 'var(--text)' }}>Sign in to get started</h3>
           <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 20 }}>Free — allows you to save your progress</p>
@@ -913,9 +1007,31 @@ fetchLiveSections(eq.ccName, eq.options?.[0]?.courses?.[0]?.prefix, eq.options?.
               </div>
 
               {error && <div className="error-box">{error}</div>}
-              {guestMode && step === 2 && (
-                <div style={{ background: 'rgba(108, 92, 231, 0.1)', border: '1px solid rgba(108, 92, 231, 0.3)', borderRadius: 10, padding: '10px 14px', marginBottom: 14, fontSize: 12, color: '#a78bfa', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
-                  <span>💙 Save colleges · 📌 Save sections — <button onClick={() => setGuestMode(false)} style={{ background: 'none', border: 'none', color: '#a78bfa', fontWeight: 700, cursor: 'pointer', padding: 0, fontSize: 12, textDecoration: 'underline' }}>Sign in</button> to save your progress</span>
+
+              {/* ── Guest mode warning banner — shown on all steps ── */}
+              {guestMode && (
+                <div style={{
+                  background: 'rgba(251,191,36,0.07)',
+                  border: '1px solid rgba(251,191,36,0.22)',
+                  borderRadius: 10,
+                  padding: '10px 14px',
+                  marginBottom: 14,
+                  fontSize: 12,
+                  color: '#fbbf24',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  gap: 12,
+                }}>
+                  <span>
+                    ⚠️ You're browsing as a guest — your progress won't be saved if you refresh or close this tab.{' '}
+                    <button
+                      onClick={() => setGuestMode(false)}
+                      style={{ background: 'none', border: 'none', color: '#fbbf24', fontWeight: 700, cursor: 'pointer', padding: 0, fontSize: 12, textDecoration: 'underline' }}
+                    >
+                      Sign in to save
+                    </button>
+                  </span>
                 </div>
               )}
 
@@ -964,7 +1080,18 @@ fetchLiveSections(eq.ccName, eq.options?.[0]?.courses?.[0]?.prefix, eq.options?.
                       <h2>{prefix} {courseNum} → {uniName}</h2>
                       <p>{showSaved ? `${savedEquivalents.length} saved college${savedEquivalents.length !== 1 ? 's' : ''}` : `${filteredEquivalents.length} of ${equivalents.length} colleges shown${selectedRegions.length > 0 ? ` · ${selectedRegions.join(', ')}` : ''}`}</p>
                     </div>
-                    <button className="btn-secondary" onClick={() => { setStep(1); setEquivalents([]) }}>← New search</button>
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0 }}>
+                      {/* Share link button */}
+                      <button
+                        className="btn-secondary"
+                        style={{ fontSize: 12, padding: '7px 14px' }}
+                        onClick={copyShareLink}
+                      >
+                        {shareCopied ? '✓ Copied!' : '🔗 Share'}
+                      </button>
+                      {/* Soft reset — keeps saved data, pre-fills form */}
+                      <button className="btn-secondary" onClick={softReset}>← New search</button>
+                    </div>
                   </div>
                   <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
                     <div className={`pref-chip${!showSaved && !showSavedSections ? ' selected' : ''}`} style={{ padding: '6px 12px', fontSize: 12 }} onClick={() => { setShowSaved(false); setShowSavedSections(false) }}>All colleges ({equivalents.length})</div>
@@ -994,7 +1121,7 @@ fetchLiveSections(eq.ccName, eq.options?.[0]?.courses?.[0]?.prefix, eq.options?.
                       </div>
                     </>
                   )}
-{showSaved && savedEquivalents.length === 0 && <div className="key-note">No saved colleges yet. Click 💙 on any college to save it.</div>}
+                  {showSaved && savedEquivalents.length === 0 && <div className="key-note">No saved colleges yet. Click 💙 on any college to save it.</div>}
                   {showSavedSections && savedSections.length === 0 && <div className="key-note">No saved sections yet. Click 📌 on any section in Step 3 to save it.</div>}
                   {showSavedSections && savedSections.length > 0 && (
                     <div>
@@ -1073,95 +1200,95 @@ fetchLiveSections(eq.ccName, eq.options?.[0]?.courses?.[0]?.prefix, eq.options?.
                             {c.note && <div style={{ fontSize: 12, color: '#f59e0b', marginTop: 4 }}>⚠️ {c.note}</div>}
                           </div>
                         ))}
-                        {!getBannerBaseUrl(selectedCC?.ccName) && !getColleagueBaseUrl(selectedCC?.ccName) && !getSdccdCampus(selectedCC?.ccName) && !getVcccdCampus(selectedCC?.ccName) && (
-  <div style={{ background: 'var(--bg-hint)', borderRadius: 8, padding: '10px 12px', marginBottom: 14 }}>
-    <div style={{ fontSize: 12, fontWeight: 600, color: '#a78bfa', marginBottom: 6 }}>💡 When you get to the schedule:</div>
-    {opt.courses.length === 1
-      ? <div style={{ fontSize: 13, color: 'var(--text)' }}>Search for <span style={{ fontFamily: 'monospace', fontWeight: 600, color: '#a78bfa' }}>{opt.courses[0].prefix} {opt.courses[0].number}</span></div>
-      : <ol style={{ paddingLeft: 18, margin: 0 }}>{opt.courses.map((c, k) => <li key={k} style={{ fontSize: 13, color: 'var(--text)', marginBottom: 4 }}>Search for <span style={{ fontFamily: 'monospace', fontWeight: 600, color: '#a78bfa' }}>{c.prefix} {c.number}</span></li>)}</ol>
-    }
-  </div>
-)}
+                        {!hasLiveSchedule(selectedCC?.ccName) && (
+                          <div style={{ background: 'var(--bg-hint)', borderRadius: 8, padding: '10px 12px', marginBottom: 14 }}>
+                            <div style={{ fontSize: 12, fontWeight: 600, color: '#a78bfa', marginBottom: 6 }}>💡 When you get to the schedule:</div>
+                            {opt.courses.length === 1
+                              ? <div style={{ fontSize: 13, color: 'var(--text)' }}>Search for <span style={{ fontFamily: 'monospace', fontWeight: 600, color: '#a78bfa' }}>{opt.courses[0].prefix} {opt.courses[0].number}</span></div>
+                              : <ol style={{ paddingLeft: 18, margin: 0 }}>{opt.courses.map((c, k) => <li key={k} style={{ fontSize: 13, color: 'var(--text)', marginBottom: 4 }}>Search for <span style={{ fontFamily: 'monospace', fontWeight: 600, color: '#a78bfa' }}>{c.prefix} {c.number}</span></li>)}</ol>
+                            }
+                          </div>
+                        )}
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-  {scheduleLoading && (
-    <div className="status"><div className="spinner" />Loading live sections...</div>
-  )}
-  {scheduleError && (
-    <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>⚠️ Could not load live sections — <a className="avail-link" href={getScheduleUrl(selectedCC.ccName)} target="_blank" rel="noreferrer">check manually ↗</a></div>
-  )}
-  {liveSchedule && liveSchedule.length > 0 && (
-    <div style={{ marginTop: 8 }}>
-      <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', marginBottom: 12 }}>📅 Live Sections</div>
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
-        <select value={termFilter} onChange={e => setTermFilter(e.target.value)} style={{ fontSize: 12, padding: '5px 10px', borderRadius: 8, border: '1px solid var(--border-input)', background: 'var(--bg-card)', color: 'var(--text)', cursor: 'pointer' }}>
-          <option value="all">All terms</option>
-          {liveSchedule.filter(t => t.totalCount > 0).map(t => (
-            <option key={t.termCode} value={t.termCode}>{t.termDesc}</option>
-          ))}
-        </select>
-        <select value={formatFilter} onChange={e => setFormatFilter(e.target.value)} style={{ fontSize: 12, padding: '5px 10px', borderRadius: 8, border: '1px solid var(--border-input)', background: 'var(--bg-card)', color: 'var(--text)', cursor: 'pointer' }}>
-          <option value="all">All formats</option>
-          {[...new Set(liveSchedule.flatMap(t => t.sections.map(s => s.scheduleType)).filter(Boolean))].map(type => (
-            <option key={type} value={type}>{type}</option>
-          ))}
-        </select>
-        <select value={availFilter} onChange={e => setAvailFilter(e.target.value)} style={{ fontSize: 12, padding: '5px 10px', borderRadius: 8, border: '1px solid var(--border-input)', background: 'var(--bg-card)', color: 'var(--text)', cursor: 'pointer' }}>
-          <option value="all">All availability</option>
-          <option value="open">Open</option>
-          <option value="waitlist">Waitlist</option>
-          <option value="full">Full</option>
-        </select>
-      </div>
-      {liveSchedule.filter(t => t.totalCount > 0 && (termFilter === 'all' || t.termCode === termFilter)).map((term, ti) => {
-  const filteredSections = term.sections.filter(s => {
-    if (formatFilter !== 'all' && s.scheduleType !== formatFilter) return false
-    if (availFilter === 'open') return s.seatsAvailable > 0
-    if (availFilter === 'waitlist') return s.seatsAvailable === 0 && s.waitAvailable > 0
-    if (availFilter === 'full') return s.seatsAvailable === 0 && s.waitAvailable === 0
-    return true
-  })
-  if (filteredSections.length === 0) return null
-  return (
-        <div key={ti} style={{ marginBottom: 16 }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: '#a78bfa', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>
-            {term.termDesc} · {filteredSections.length} section{filteredSections.length !== 1 ? 's' : ''}
-          </div>
-          {filteredSections.map((s, si) => (
-            <div key={si} style={{ background: 'var(--bg-hint)', borderRadius: 8, padding: '10px 12px', marginBottom: 8 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>§{s.section} · {s.scheduleType}</span>
-                <span className={`badge ${s.openSection && s.seatsAvailable > 0 ? 'badge-green' : s.waitAvailable > 0 ? 'badge-yellow' : s.openSection ? 'badge-green' : 'badge-red'}`}>
-  {s.openSection && s.seatsAvailable > 0 ? `${s.seatsAvailable} open` : s.waitAvailable > 0 ? (s.waitAvailable === 1 ? 'Waitlist available' : `Waitlist · ${s.waitAvailable} spots`) : s.openSection ? 'Open' : 'Full'}
-</span>
-              </div>
-              {s.instructor && <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>👤 {s.instructor}</div>}
-              {s.meetings?.[0] && (
-                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
-                  {s.meetings[0].days && <span>📅 {s.meetings[0].days}</span>}
-                  {s.meetings[0].startTime && <span> · 🕐 {s.meetings[0].startTime.includes(' ') ? `${s.meetings[0].startTime} – ${s.meetings[0].endTime}` : `${s.meetings[0].startTime.slice(0,2)}:${s.meetings[0].startTime.slice(2)} – ${s.meetings[0].endTime.slice(0,2)}:${s.meetings[0].endTime.slice(2)}`}</span>}
-                  {s.meetings[0].building && <span> · {s.meetings[0].building} {s.meetings[0].room}</span>}
-                  {s.meetings[0].startDate && <span> · {s.meetings[0].startDate}{s.meetings[0].endDate ? ` – ${s.meetings[0].endDate}` : ''}</span>}
-                </div>
-              )}
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 2 }}>
-                <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>👥 {s.enrollment}/{s.maxEnrollment} enrolled · {s.units} units</div>
-                <span onClick={() => toggleSaveSection(s, term)} style={{ fontSize: 16, cursor: 'pointer', opacity: isSectionSaved(s, term.termDesc) ? 1 : 0.3, transition: 'opacity 0.15s' }}>📌</span>
-              </div>
-            </div>
-          ))}
-        </div>
-  )
-})}
-      {liveSchedule.every(t => t.totalCount === 0) && (
-        <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 8 }}>No sections found for upcoming terms.</div>
-      )}
-    </div>
-  )}
-  {!getBannerBaseUrl(selectedCC?.ccName) && !getColleagueBaseUrl(selectedCC?.ccName) && !getSdccdCampus(selectedCC?.ccName) && !getVcccdCampus(selectedCC?.ccName) && (
-    <a className="avail-link" href={getScheduleUrl(selectedCC.ccName)} target="_blank" rel="noreferrer" style={{ fontWeight: 600, fontSize: 14 }}>🔍 Search schedule at {selectedCC.ccName} ↗</a>
-  )}
-  <a className="avail-link" href="https://www.cccapply.org/" target="_blank" rel="noreferrer" style={{ color: 'var(--text-muted)', fontWeight: 400 }}>📋 Apply / Enroll via CCCApply ↗</a>
-</div>
+                          {scheduleLoading && (
+                            <div className="status"><div className="spinner" />Loading live sections...</div>
+                          )}
+                          {scheduleError && (
+                            <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>⚠️ Could not load live sections — <a className="avail-link" href={getScheduleUrl(selectedCC.ccName)} target="_blank" rel="noreferrer">check manually ↗</a></div>
+                          )}
+                          {liveSchedule && liveSchedule.length > 0 && (
+                            <div style={{ marginTop: 8 }}>
+                              <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', marginBottom: 12 }}>📅 Live Sections</div>
+                              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
+                                <select value={termFilter} onChange={e => setTermFilter(e.target.value)} style={{ fontSize: 12, padding: '5px 10px', borderRadius: 8, border: '1px solid var(--border-input)', background: 'var(--bg-card)', color: 'var(--text)', cursor: 'pointer' }}>
+                                  <option value="all">All terms</option>
+                                  {liveSchedule.filter(t => t.totalCount > 0).map(t => (
+                                    <option key={t.termCode} value={t.termCode}>{t.termDesc}</option>
+                                  ))}
+                                </select>
+                                <select value={formatFilter} onChange={e => setFormatFilter(e.target.value)} style={{ fontSize: 12, padding: '5px 10px', borderRadius: 8, border: '1px solid var(--border-input)', background: 'var(--bg-card)', color: 'var(--text)', cursor: 'pointer' }}>
+                                  <option value="all">All formats</option>
+                                  {[...new Set(liveSchedule.flatMap(t => t.sections.map(s => s.scheduleType)).filter(Boolean))].map(type => (
+                                    <option key={type} value={type}>{type}</option>
+                                  ))}
+                                </select>
+                                <select value={availFilter} onChange={e => setAvailFilter(e.target.value)} style={{ fontSize: 12, padding: '5px 10px', borderRadius: 8, border: '1px solid var(--border-input)', background: 'var(--bg-card)', color: 'var(--text)', cursor: 'pointer' }}>
+                                  <option value="all">All availability</option>
+                                  <option value="open">Open</option>
+                                  <option value="waitlist">Waitlist</option>
+                                  <option value="full">Full</option>
+                                </select>
+                              </div>
+                              {liveSchedule.filter(t => t.totalCount > 0 && (termFilter === 'all' || t.termCode === termFilter)).map((term, ti) => {
+                                const filteredSections = term.sections.filter(s => {
+                                  if (formatFilter !== 'all' && s.scheduleType !== formatFilter) return false
+                                  if (availFilter === 'open') return s.seatsAvailable > 0
+                                  if (availFilter === 'waitlist') return s.seatsAvailable === 0 && s.waitAvailable > 0
+                                  if (availFilter === 'full') return s.seatsAvailable === 0 && s.waitAvailable === 0
+                                  return true
+                                })
+                                if (filteredSections.length === 0) return null
+                                return (
+                                  <div key={ti} style={{ marginBottom: 16 }}>
+                                    <div style={{ fontSize: 12, fontWeight: 700, color: '#a78bfa', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>
+                                      {term.termDesc} · {filteredSections.length} section{filteredSections.length !== 1 ? 's' : ''}
+                                    </div>
+                                    {filteredSections.map((s, si) => (
+                                      <div key={si} style={{ background: 'var(--bg-hint)', borderRadius: 8, padding: '10px 12px', marginBottom: 8 }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                                          <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>§{s.section} · {s.scheduleType}</span>
+                                          <span className={`badge ${s.openSection && s.seatsAvailable > 0 ? 'badge-green' : s.waitAvailable > 0 ? 'badge-yellow' : s.openSection ? 'badge-green' : 'badge-red'}`}>
+                                            {s.openSection && s.seatsAvailable > 0 ? `${s.seatsAvailable} open` : s.waitAvailable > 0 ? (s.waitAvailable === 1 ? 'Waitlist available' : `Waitlist · ${s.waitAvailable} spots`) : s.openSection ? 'Open' : 'Full'}
+                                          </span>
+                                        </div>
+                                        {s.instructor && <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>👤 {s.instructor}</div>}
+                                        {s.meetings?.[0] && (
+                                          <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
+                                            {s.meetings[0].days && <span>📅 {s.meetings[0].days}</span>}
+                                            {s.meetings[0].startTime && <span> · 🕐 {s.meetings[0].startTime.includes(' ') ? `${s.meetings[0].startTime} – ${s.meetings[0].endTime}` : `${s.meetings[0].startTime.slice(0,2)}:${s.meetings[0].startTime.slice(2)} – ${s.meetings[0].endTime.slice(0,2)}:${s.meetings[0].endTime.slice(2)}`}</span>}
+                                            {s.meetings[0].building && <span> · {s.meetings[0].building} {s.meetings[0].room}</span>}
+                                            {s.meetings[0].startDate && <span> · {s.meetings[0].startDate}{s.meetings[0].endDate ? ` – ${s.meetings[0].endDate}` : ''}</span>}
+                                          </div>
+                                        )}
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 2 }}>
+                                          <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>👥 {s.enrollment}/{s.maxEnrollment} enrolled · {s.units} units</div>
+                                          <span onClick={() => toggleSaveSection(s, term)} style={{ fontSize: 16, cursor: 'pointer', opacity: isSectionSaved(s, term.termDesc) ? 1 : 0.3, transition: 'opacity 0.15s' }}>📌</span>
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )
+                              })}
+                              {liveSchedule.every(t => t.totalCount === 0) && (
+                                <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 8 }}>No sections found for upcoming terms.</div>
+                              )}
+                            </div>
+                          )}
+                          {!hasLiveSchedule(selectedCC?.ccName) && (
+                            <a className="avail-link" href={getScheduleUrl(selectedCC.ccName)} target="_blank" rel="noreferrer" style={{ fontWeight: 600, fontSize: 14 }}>🔍 Search schedule at {selectedCC.ccName} ↗</a>
+                          )}
+                          <a className="avail-link" href="https://www.cccapply.org/" target="_blank" rel="noreferrer" style={{ color: 'var(--text-muted)', fontWeight: 400 }}>📋 Apply / Enroll via CCCApply ↗</a>
+                        </div>
                       </div>
                     </div>
                   ))}
