@@ -171,6 +171,8 @@ function buildCellMap(templateAssets) {
       groupIsPickN = true
       const groupNAdv = (group.advisements || []).find(a => a.type === 'NFollowing')
       groupNRequired = groupNAdv?.amount ?? 1; groupPickType = 'count'; isSectionBundled = true
+    } else if (instrType) {
+      console.warn('[ASSIST] unknown group instruction.type:', instrType, JSON.stringify(instr))
     }
 
     for (const section of dataSections) {
@@ -183,6 +185,13 @@ function buildCellMap(templateAssets) {
 
       let nRequired = null, pickType = null, pickMin = null, pickMax = null, groupId
 
+      const unknownAdvs = secAdvs.filter(a =>
+        !['NFollowing', 'NFromUnits', 'NToNFollowing', 'NInNDifferentAreas', 'CompleteFollowing'].includes(a.type)
+      )
+      if (unknownAdvs.length > 0) {
+        console.warn('[ASSIST] unknown section advisement type(s):', unknownAdvs.map(a => a.type), JSON.stringify(unknownAdvs))
+      }
+
       if (secCompleteAll) { nRequired = null; pickType = null; groupId = `${group.groupId}_${section.position}` }
       else if (secNFollowing) { nRequired = secNFollowing.amount ?? 1; pickType = 'count'; groupId = `${group.groupId}_${section.position}` }
       else if (secNFromUnits) { nRequired = secNFromUnits.amount ?? 1; pickType = 'units'; groupId = `${group.groupId}_${section.position}` }
@@ -190,7 +199,6 @@ function buildCellMap(templateAssets) {
       else if (secNInAreas) { nRequired = secNInAreas.amount ?? 1; pickType = 'areas'; groupId = `${group.groupId}_${section.position}` }
       else if (groupIsPickN) { nRequired = groupNRequired; pickType = groupPickType; pickMin = groupPickMin; pickMax = groupPickMax; groupId = `pick_${group.groupId}` }
       else { nRequired = null; pickType = null; groupId = `${group.groupId}_${section.position}` }
-
       const ctx = {
         sectionLabel, groupTitle, nRequired, pickType, pickMin, pickMax, groupId,
         isSectionBundled: groupIsPickN ? isSectionBundled : false,
