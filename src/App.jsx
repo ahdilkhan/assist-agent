@@ -667,19 +667,21 @@ const [selectedCourseIdx, setSelectedCourseIdx] = useState(0)
 
   // Soft reset: clears results and goes back to Step 1, but keeps saved data
   // and existing form values so the user can tweak rather than start from scratch.
-  function softReset() {
-    setStep(1)
-    setEquivalents([])
-    setSelectedCC(null)
-    setSelectedRegions([])
-    setCourseFilter('any')
-    setShowSaved(false)
-    setOpenBlocks({})
-    setError('')
-    setLiveSchedule(null)
-    setScheduleError('')
-    // Intentionally NOT clearing: savedCCs, savedSections, uniId, uniName, prefix, courseNum
-  }
+function softReset() {
+  setStep(1)
+  setEquivalents([])
+  setSelectedCC(null)
+  setSelectedRegions([])
+  setCourseFilter('any')
+  setShowSaved(false)
+  setOpenBlocks({})
+  setError('')
+  setLiveSchedule(null)
+  setScheduleError('')
+  setSelectedOptionIdx(0)
+  setSelectedCourseIdx(0)
+  // Intentionally NOT clearing: savedCCs, savedSections, uniId, uniName, prefix, courseNum
+}
 
   function copyShareLink() {
     const url = buildShareUrl(uniId, uniName, prefix, courseNum)
