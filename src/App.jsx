@@ -516,6 +516,8 @@ export default function App() {
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const [guestMode, setGuestMode] = useState(false)
   const [liveSchedule, setLiveSchedule] = useState(null)
+  const [selectedOptionIdx, setSelectedOptionIdx] = useState(0)
+const [selectedCourseIdx, setSelectedCourseIdx] = useState(0)
   const [scheduleLoading, setScheduleLoading] = useState(false)
   const [scheduleError, setScheduleError] = useState('')
   const [termFilter, setTermFilter] = useState('all')
@@ -620,19 +622,21 @@ export default function App() {
     return savedSections.some(x => x.section === s.section && x.cc_name === selectedCC?.ccName && x.term_desc === termDesc)
   }
 
-  async function fetchLiveSections(ccName, subject, courseNum) {
-    const bannerUrl = getBannerBaseUrl(ccName)
-    const colleagueUrl = getColleagueBaseUrl(ccName)
-    const sdccdCampus = getSdccdCampus(ccName)
-    const vcccdCampus = getVcccdCampus(ccName)
-    const baseUrl = bannerUrl || colleagueUrl || (sdccdCampus ? 'https://mws-api.sdccd.edu' : null) || (vcccdCampus ? 'https://schedule.vcccd.edu' : null)
-    const system = sdccdCampus ? 'sdccd' : vcccdCampus ? 'vcccd' : colleagueUrl && !bannerUrl ? 'colleague' : 'banner'
-    if (!baseUrl) return
+  async function fetchLiveSections(ccName, courses) {
+  const bannerUrl = getBannerBaseUrl(ccName)
+  const colleagueUrl = getColleagueBaseUrl(ccName)
+  const sdccdCampus = getSdccdCampus(ccName)
+  const vcccdCampus = getVcccdCampus(ccName)
+  const baseUrl = bannerUrl || colleagueUrl || (sdccdCampus ? 'https://mws-api.sdccd.edu' : null) || (vcccdCampus ? 'https://schedule.vcccd.edu' : null)
+  const system = sdccdCampus ? 'sdccd' : vcccdCampus ? 'vcccd' : colleagueUrl && !bannerUrl ? 'colleague' : 'banner'
+  if (!baseUrl) return
 
-    setScheduleLoading(true)
-    setScheduleError('')
-    setLiveSchedule(null)
-    try {
+  setScheduleLoading(true)
+  setScheduleError('')
+  setLiveSchedule(null)
+
+  try {
+    const results = await Promise.all(courses.map(async c => {
       const res = await fetch(
         `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/banner-sections`,
         {
@@ -641,18 +645,19 @@ export default function App() {
             'Content-Type': 'application/json',
             'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
           },
-          body: JSON.stringify({ baseUrl, subject, courseNumber: courseNum, system, campus: sdccdCampus || vcccdCampus }),
+          body: JSON.stringify({ baseUrl, subject: c.prefix, courseNumber: c.number, system, campus: sdccdCampus || vcccdCampus }),
         }
       )
       const data = await res.json()
-      if (data.success) setLiveSchedule(data.terms)
-      else setScheduleError(data.error || 'Failed to fetch schedule')
-    } catch (e) {
-      setScheduleError(e.message)
-    } finally {
-      setScheduleLoading(false)
-    }
+      return { course: c, terms: data.success ? data.terms : [], error: data.success ? null : (data.error || 'Failed') }
+    }))
+    setLiveSchedule(results)
+  } catch (e) {
+    setScheduleError(e.message)
+  } finally {
+    setScheduleLoading(false)
   }
+}
 
   function goHome() {
     setStep(1); setActiveTab('tab1'); setEquivalents([]); setSelectedCC(null)
@@ -686,15 +691,18 @@ export default function App() {
 
   // Navigate to Step 3 for a given college card
   function goToSchedule(eq) {
-    setSelectedCC(eq)
-    setLiveSchedule(null)
-    setScheduleError('')
-    setTermFilter('all')
-    setFormatFilter('all')
-    setAvailFilter('all')
-    setStep(3)
-    fetchLiveSections(eq.ccName, eq.options?.[0]?.courses?.[0]?.prefix, eq.options?.[0]?.courses?.[0]?.number)
-  }
+  setSelectedCC(eq)
+  setLiveSchedule(null)
+  setScheduleError('')
+  setTermFilter('all')
+  setFormatFilter('all')
+  setAvailFilter('all')
+  setSelectedOptionIdx(0)
+  setSelectedCourseIdx(0)
+  setStep(3)
+  const firstOption = eq.options?.[0]
+  if (firstOption) fetchLiveSections(eq.ccName, firstOption.courses)
+}
 
   function toggleBlock(key) { setOpenBlocks(prev => ({ ...prev, [key]: !prev[key] })) }
   function toggleRegion(region) {
@@ -1184,114 +1192,175 @@ export default function App() {
                     </div>
                     <button className="btn-secondary" onClick={() => setStep(2)}>← Back</button>
                   </div>
-                  {selectedCC.options.map((opt, i) => (
-                    <div key={i}>
-                      {i > 0 && <div className="or-divider">or</div>}
-                      <div className="avail-card">
-                        {opt.courses.length > 1 && <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>Take all of these together</div>}
-                        {opt.groupNote && <div style={{ fontSize: 12, color: '#f59e0b', marginBottom: 8 }}>⚠️ {opt.groupNote}</div>}
-                        {opt.courses.map((c, j) => (
-                          <div key={j} style={{ marginBottom: j < opt.courses.length - 1 ? 10 : 12 }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                              <h4>{c.prefix} {c.number} — {c.title}</h4>
-                              <span className="badge badge-green">Articulated</span>
-                            </div>
-                            {c.units && <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>{c.units} units</div>}
-                            {c.note && <div style={{ fontSize: 12, color: '#f59e0b', marginTop: 4 }}>⚠️ {c.note}</div>}
-                          </div>
-                        ))}
-                        {!hasLiveSchedule(selectedCC?.ccName) && (
-                          <div style={{ background: 'var(--bg-hint)', borderRadius: 8, padding: '10px 12px', marginBottom: 14 }}>
-                            <div style={{ fontSize: 12, fontWeight: 600, color: '#a78bfa', marginBottom: 6 }}>💡 When you get to the schedule:</div>
-                            {opt.courses.length === 1
-                              ? <div style={{ fontSize: 13, color: 'var(--text)' }}>Search for <span style={{ fontFamily: 'monospace', fontWeight: 600, color: '#a78bfa' }}>{opt.courses[0].prefix} {opt.courses[0].number}</span></div>
-                              : <ol style={{ paddingLeft: 18, margin: 0 }}>{opt.courses.map((c, k) => <li key={k} style={{ fontSize: 13, color: 'var(--text)', marginBottom: 4 }}>Search for <span style={{ fontFamily: 'monospace', fontWeight: 600, color: '#a78bfa' }}>{c.prefix} {c.number}</span></li>)}</ol>
-                            }
+                  {/* Option picker — only show if more than one option */}
+{selectedCC.options.length > 1 && (
+  <div style={{ marginBottom: 16 }}>
+    <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 8 }}>
+      Which option will you take?
+    </div>
+    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+      {selectedCC.options.map((opt, i) => (
+        <div
+          key={i}
+          className={`pref-chip${selectedOptionIdx === i ? ' selected' : ''}`}
+          style={{ padding: '6px 14px', fontSize: 13 }}
+          onClick={() => {
+            setSelectedOptionIdx(i)
+            setSelectedCourseIdx(0)
+            fetchLiveSections(selectedCC.ccName, opt.courses)
+          }}
+        >
+          {opt.courses.map(c => `${c.prefix} ${c.number}`).join(' + ')}
+        </div>
+      ))}
+    </div>
+  </div>
+)}
+
+{/* Selected option details */}
+{(() => {
+  const opt = selectedCC.options[selectedOptionIdx]
+  if (!opt) return null
+  return (
+    <div className="avail-card">
+      {opt.groupNote && <div style={{ fontSize: 12, color: '#f59e0b', marginBottom: 8 }}>⚠️ {opt.groupNote}</div>}
+      {opt.courses.map((c, j) => (
+        <div key={j} style={{ marginBottom: j < opt.courses.length - 1 ? 10 : 12 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+            <h4>{c.prefix} {c.number} — {c.title}</h4>
+            <span className="badge badge-green">Articulated</span>
+          </div>
+          {c.units && <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>{c.units} units</div>}
+          {c.note && <div style={{ fontSize: 12, color: '#f59e0b', marginTop: 4 }}>⚠️ {c.note}</div>}
+        </div>
+      ))}
+
+      {!hasLiveSchedule(selectedCC?.ccName) && (
+        <div style={{ background: 'var(--bg-hint)', borderRadius: 8, padding: '10px 12px', marginBottom: 14 }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: '#a78bfa', marginBottom: 6 }}>💡 When you get to the schedule:</div>
+          {opt.courses.length === 1
+            ? <div style={{ fontSize: 13, color: 'var(--text)' }}>Search for <span style={{ fontFamily: 'monospace', fontWeight: 600, color: '#a78bfa' }}>{opt.courses[0].prefix} {opt.courses[0].number}</span></div>
+            : <ol style={{ paddingLeft: 18, margin: 0 }}>{opt.courses.map((c, k) => <li key={k} style={{ fontSize: 13, color: 'var(--text)', marginBottom: 4 }}>Search for <span style={{ fontFamily: 'monospace', fontWeight: 600, color: '#a78bfa' }}>{c.prefix} {c.number}</span></li>)}</ol>
+          }
+        </div>
+      )}
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {scheduleLoading && (
+          <div className="status"><div className="spinner" />Loading live sections...</div>
+        )}
+        {scheduleError && (
+          <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>⚠️ Could not load live sections — <a className="avail-link" href={getScheduleUrl(selectedCC.ccName)} target="_blank" rel="noreferrer">check manually ↗</a></div>
+        )}
+
+        {liveSchedule && liveSchedule.length > 0 && (
+          <div style={{ marginTop: 8 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', marginBottom: 12 }}>📅 Live Sections</div>
+
+            {/* Course tab filter — only show if bundle (2+ courses in option) */}
+            {opt.courses.length > 1 && (
+              <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
+                {opt.courses.map((c, i) => (
+                  <div
+                    key={i}
+                    className={`pref-chip${selectedCourseIdx === i ? ' selected' : ''}`}
+                    style={{ padding: '6px 12px', fontSize: 12 }}
+                    onClick={() => setSelectedCourseIdx(i)}
+                  >
+                    {c.prefix} {c.number}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Term / format / availability filters */}
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
+              <select value={termFilter} onChange={e => setTermFilter(e.target.value)} style={{ fontSize: 12, padding: '5px 10px', borderRadius: 8, border: '1px solid var(--border-input)', background: 'var(--bg-card)', color: 'var(--text)', cursor: 'pointer' }}>
+                <option value="all">All terms</option>
+                {(liveSchedule[selectedCourseIdx]?.terms || []).filter(t => t.totalCount > 0).map(t => (
+                  <option key={t.termCode} value={t.termCode}>{t.termDesc}</option>
+                ))}
+              </select>
+              <select value={formatFilter} onChange={e => setFormatFilter(e.target.value)} style={{ fontSize: 12, padding: '5px 10px', borderRadius: 8, border: '1px solid var(--border-input)', background: 'var(--bg-card)', color: 'var(--text)', cursor: 'pointer' }}>
+                <option value="all">All formats</option>
+                {[...new Set((liveSchedule[selectedCourseIdx]?.terms || []).flatMap(t => t.sections.map(s => s.scheduleType)).filter(Boolean))].map(type => (
+                  <option key={type} value={type}>{type}</option>
+                ))}
+              </select>
+              <select value={availFilter} onChange={e => setAvailFilter(e.target.value)} style={{ fontSize: 12, padding: '5px 10px', borderRadius: 8, border: '1px solid var(--border-input)', background: 'var(--bg-card)', color: 'var(--text)', cursor: 'pointer' }}>
+                <option value="all">All availability</option>
+                <option value="open">Open</option>
+                <option value="waitlist">Waitlist</option>
+                <option value="full">Full</option>
+              </select>
+            </div>
+
+            {/* Show error for this specific course if fetch failed */}
+            {liveSchedule[selectedCourseIdx]?.error && (
+              <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 8 }}>
+                ⚠️ Could not load sections for {liveSchedule[selectedCourseIdx].course.prefix} {liveSchedule[selectedCourseIdx].course.number}
+              </div>
+            )}
+
+            {/* Sections for the active course */}
+            {(liveSchedule[selectedCourseIdx]?.terms || [])
+              .filter(t => t.totalCount > 0 && (termFilter === 'all' || t.termCode === termFilter))
+              .map((term, ti) => {
+                const filteredSections = term.sections.filter(s => {
+                  if (formatFilter !== 'all' && s.scheduleType !== formatFilter) return false
+                  if (availFilter === 'open') return s.seatsAvailable > 0
+                  if (availFilter === 'waitlist') return s.seatsAvailable === 0 && s.waitAvailable > 0
+                  if (availFilter === 'full') return s.seatsAvailable === 0 && s.waitAvailable === 0
+                  return true
+                })
+                if (filteredSections.length === 0) return null
+                return (
+                  <div key={ti} style={{ marginBottom: 16 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: '#a78bfa', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>
+                      {term.termDesc} · {filteredSections.length} section{filteredSections.length !== 1 ? 's' : ''}
+                    </div>
+                    {filteredSections.map((s, si) => (
+                      <div key={si} style={{ background: 'var(--bg-hint)', borderRadius: 8, padding: '10px 12px', marginBottom: 8 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                          <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>§{s.section} · {s.scheduleType}</span>
+                          <span className={`badge ${s.openSection && s.seatsAvailable > 0 ? 'badge-green' : s.waitAvailable > 0 ? 'badge-yellow' : s.openSection ? 'badge-green' : 'badge-red'}`}>
+                            {s.openSection && s.seatsAvailable > 0 ? `${s.seatsAvailable} open` : s.waitAvailable > 0 ? (s.waitAvailable === 1 ? 'Waitlist available' : `Waitlist · ${s.waitAvailable} spots`) : s.openSection ? 'Open' : 'Full'}
+                          </span>
+                        </div>
+                        {s.instructor && <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>👤 {s.instructor}</div>}
+                        {s.meetings?.[0] && (
+                          <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
+                            {s.meetings[0].days && <span>📅 {s.meetings[0].days}</span>}
+                            {s.meetings[0].startTime && <span> · 🕐 {s.meetings[0].startTime.includes(' ') ? `${s.meetings[0].startTime} – ${s.meetings[0].endTime}` : `${s.meetings[0].startTime.slice(0,2)}:${s.meetings[0].startTime.slice(2)} – ${s.meetings[0].endTime.slice(0,2)}:${s.meetings[0].endTime.slice(2)}`}</span>}
+                            {s.meetings[0].building && <span> · {s.meetings[0].building} {s.meetings[0].room}</span>}
+                            {s.meetings[0].startDate && <span> · {s.meetings[0].startDate}{s.meetings[0].endDate ? ` – ${s.meetings[0].endDate}` : ''}</span>}
                           </div>
                         )}
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                          {scheduleLoading && (
-                            <div className="status"><div className="spinner" />Loading live sections...</div>
-                          )}
-                          {scheduleError && (
-                            <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>⚠️ Could not load live sections — <a className="avail-link" href={getScheduleUrl(selectedCC.ccName)} target="_blank" rel="noreferrer">check manually ↗</a></div>
-                          )}
-                          {liveSchedule && liveSchedule.length > 0 && (
-                            <div style={{ marginTop: 8 }}>
-                              <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', marginBottom: 12 }}>📅 Live Sections</div>
-                              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
-                                <select value={termFilter} onChange={e => setTermFilter(e.target.value)} style={{ fontSize: 12, padding: '5px 10px', borderRadius: 8, border: '1px solid var(--border-input)', background: 'var(--bg-card)', color: 'var(--text)', cursor: 'pointer' }}>
-                                  <option value="all">All terms</option>
-                                  {liveSchedule.filter(t => t.totalCount > 0).map(t => (
-                                    <option key={t.termCode} value={t.termCode}>{t.termDesc}</option>
-                                  ))}
-                                </select>
-                                <select value={formatFilter} onChange={e => setFormatFilter(e.target.value)} style={{ fontSize: 12, padding: '5px 10px', borderRadius: 8, border: '1px solid var(--border-input)', background: 'var(--bg-card)', color: 'var(--text)', cursor: 'pointer' }}>
-                                  <option value="all">All formats</option>
-                                  {[...new Set(liveSchedule.flatMap(t => t.sections.map(s => s.scheduleType)).filter(Boolean))].map(type => (
-                                    <option key={type} value={type}>{type}</option>
-                                  ))}
-                                </select>
-                                <select value={availFilter} onChange={e => setAvailFilter(e.target.value)} style={{ fontSize: 12, padding: '5px 10px', borderRadius: 8, border: '1px solid var(--border-input)', background: 'var(--bg-card)', color: 'var(--text)', cursor: 'pointer' }}>
-                                  <option value="all">All availability</option>
-                                  <option value="open">Open</option>
-                                  <option value="waitlist">Waitlist</option>
-                                  <option value="full">Full</option>
-                                </select>
-                              </div>
-                              {liveSchedule.filter(t => t.totalCount > 0 && (termFilter === 'all' || t.termCode === termFilter)).map((term, ti) => {
-                                const filteredSections = term.sections.filter(s => {
-                                  if (formatFilter !== 'all' && s.scheduleType !== formatFilter) return false
-                                  if (availFilter === 'open') return s.seatsAvailable > 0
-                                  if (availFilter === 'waitlist') return s.seatsAvailable === 0 && s.waitAvailable > 0
-                                  if (availFilter === 'full') return s.seatsAvailable === 0 && s.waitAvailable === 0
-                                  return true
-                                })
-                                if (filteredSections.length === 0) return null
-                                return (
-                                  <div key={ti} style={{ marginBottom: 16 }}>
-                                    <div style={{ fontSize: 12, fontWeight: 700, color: '#a78bfa', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>
-                                      {term.termDesc} · {filteredSections.length} section{filteredSections.length !== 1 ? 's' : ''}
-                                    </div>
-                                    {filteredSections.map((s, si) => (
-                                      <div key={si} style={{ background: 'var(--bg-hint)', borderRadius: 8, padding: '10px 12px', marginBottom: 8 }}>
-                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                                          <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>§{s.section} · {s.scheduleType}</span>
-                                          <span className={`badge ${s.openSection && s.seatsAvailable > 0 ? 'badge-green' : s.waitAvailable > 0 ? 'badge-yellow' : s.openSection ? 'badge-green' : 'badge-red'}`}>
-                                            {s.openSection && s.seatsAvailable > 0 ? `${s.seatsAvailable} open` : s.waitAvailable > 0 ? (s.waitAvailable === 1 ? 'Waitlist available' : `Waitlist · ${s.waitAvailable} spots`) : s.openSection ? 'Open' : 'Full'}
-                                          </span>
-                                        </div>
-                                        {s.instructor && <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>👤 {s.instructor}</div>}
-                                        {s.meetings?.[0] && (
-                                          <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
-                                            {s.meetings[0].days && <span>📅 {s.meetings[0].days}</span>}
-                                            {s.meetings[0].startTime && <span> · 🕐 {s.meetings[0].startTime.includes(' ') ? `${s.meetings[0].startTime} – ${s.meetings[0].endTime}` : `${s.meetings[0].startTime.slice(0,2)}:${s.meetings[0].startTime.slice(2)} – ${s.meetings[0].endTime.slice(0,2)}:${s.meetings[0].endTime.slice(2)}`}</span>}
-                                            {s.meetings[0].building && <span> · {s.meetings[0].building} {s.meetings[0].room}</span>}
-                                            {s.meetings[0].startDate && <span> · {s.meetings[0].startDate}{s.meetings[0].endDate ? ` – ${s.meetings[0].endDate}` : ''}</span>}
-                                          </div>
-                                        )}
-                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 2 }}>
-                                          <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>👥 {s.enrollment}/{s.maxEnrollment} enrolled · {s.units} units</div>
-                                          <span onClick={() => toggleSaveSection(s, term)} style={{ fontSize: 16, cursor: 'pointer', opacity: isSectionSaved(s, term.termDesc) ? 1 : 0.3, transition: 'opacity 0.15s' }}>📌</span>
-                                        </div>
-                                      </div>
-                                    ))}
-                                  </div>
-                                )
-                              })}
-                              {liveSchedule.every(t => t.totalCount === 0) && (
-                                <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 8 }}>No sections found for upcoming terms.</div>
-                              )}
-                            </div>
-                          )}
-                          {!hasLiveSchedule(selectedCC?.ccName) && (
-                            <a className="avail-link" href={getScheduleUrl(selectedCC.ccName)} target="_blank" rel="noreferrer" style={{ fontWeight: 600, fontSize: 14 }}>🔍 Search schedule at {selectedCC.ccName} ↗</a>
-                          )}
-                          <a className="avail-link" href="https://www.cccapply.org/" target="_blank" rel="noreferrer" style={{ color: 'var(--text-muted)', fontWeight: 400 }}>📋 Apply / Enroll via CCCApply ↗</a>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 2 }}>
+                          <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>👥 {s.enrollment}/{s.maxEnrollment} enrolled · {s.units} units</div>
+                          <span onClick={() => toggleSaveSection(s, term)} style={{ fontSize: 16, cursor: 'pointer', opacity: isSectionSaved(s, term.termDesc) ? 1 : 0.3, transition: 'opacity 0.15s' }}>📌</span>
                         </div>
                       </div>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
+                )
+              })
+            }
+
+            {(liveSchedule[selectedCourseIdx]?.terms || []).every(t => t.totalCount === 0) && (
+              <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 8 }}>No sections found for upcoming terms.</div>
+            )}
+          </div>
+        )}
+
+        {!hasLiveSchedule(selectedCC?.ccName) && (
+          <a className="avail-link" href={getScheduleUrl(selectedCC.ccName)} target="_blank" rel="noreferrer" style={{ fontWeight: 600, fontSize: 14 }}>🔍 Search schedule at {selectedCC.ccName} ↗</a>
+        )}
+        <a className="avail-link" href="https://www.cccapply.org/" target="_blank" rel="noreferrer" style={{ color: 'var(--text-muted)', fontWeight: 400 }}>📋 Apply / Enroll via CCCApply ↗</a>
+      </div>
+    </div>
+  )
+})()}
                 </>
               )}
             </>
