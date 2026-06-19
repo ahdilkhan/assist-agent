@@ -589,6 +589,7 @@ export default function Tab2() {
   const [expandedRow, setExpandedRow] = useState(null)
   const [completedCourses, setCompletedCourses] = useState(new Set())
   const [programFilter, setProgramFilter] = useState('all')
+  const [overflowExpanded, setOverflowExpanded] = useState(false)
 
   const [step, setStep] = useState(1)
   const [isWide, setIsWide] = useState(window.innerWidth > 768)
@@ -996,7 +997,8 @@ export default function Tab2() {
 
         {overlapData.programLabels.length > 1 && (
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
-            <div className={`pref-chip${programFilter === 'all' ? ' selected' : ''}`} style={{ padding: '6px 12px', fontSize: 12 }} onClick={() => setProgramFilter('all')}>All programs</div>
+            <div className={`pref-chip${programFilter === 'all' ? ' selected' : ''}`} style={{ padding: '6px 12px', fontSize: 12 }} onClick={() => setProgramFilter('all')}>All courses</div>
+            <div className={`pref-chip${programFilter === '__shared__' ? ' selected' : ''}`} style={{ padding: '6px 12px', fontSize: 12 }} onClick={() => setProgramFilter('__shared__')}>✓ Counts for every program</div>
             {overlapData.programLabels.map((label, i) => (
               <div key={i} className={`pref-chip${programFilter === label ? ' selected' : ''}`} style={{ padding: '6px 12px', fontSize: 12 }} onClick={() => setProgramFilter(label)}>{label}</div>
             ))}
@@ -1176,9 +1178,9 @@ export default function Tab2() {
                 <div key={ci} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 14px', borderBottom: '1px solid var(--border)' }}>
                   <div
                     onClick={() => toggleCourse(c.ccKey)}
-                    style={{ width: 16, height: 16, borderRadius: 4, flexShrink: 0, cursor: 'pointer', border: `2px solid ${completedCourses.has(c.ccKey) ? '#6C5CE7' : 'var(--border-input)'}`, background: completedCourses.has(c.ccKey) ? '#6C5CE7' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                    style={{ width: 24, height: 24, borderRadius: 6, flexShrink: 0, cursor: 'pointer', border: `2px solid ${completedCourses.has(c.ccKey) ? '#6C5CE7' : 'var(--border-input)'}`, background: completedCourses.has(c.ccKey) ? '#6C5CE7' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                   >
-                    {completedCourses.has(c.ccKey) && <span style={{ color: '#fff', fontSize: 10 }}>✓</span>}
+                    {completedCourses.has(c.ccKey) && <span style={{ color: '#fff', fontSize: 14 }}>✓</span>}
                   </div>
                   <div style={{ flex: 1, opacity: completedCourses.has(c.ccKey) ? 0.45 : 1 }}>
                     <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)', textDecoration: completedCourses.has(c.ccKey) ? 'line-through' : 'none', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
@@ -1205,27 +1207,37 @@ export default function Tab2() {
           )
         })}
 
-        {overflowSem && (overflowSem.courses.length > 0 || overflowSem.ge.length > 0) && (
+       {overflowSem && (overflowSem.courses.length > 0 || overflowSem.ge.length > 0) && (
           <div style={{ border: '1px dashed #5a4a10', borderRadius: 10, marginBottom: 10, overflow: 'hidden', background: '#1a1505' }}>
-            <div style={{ padding: '9px 14px', borderBottom: '1px dashed #5a4a10' }}>
-              <div style={{ fontSize: 13, fontWeight: 600, color: '#fbbf24' }}>Couldn't complete before transferring {plannerEnd}</div>
-              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>{overflowSem.courses.length} courses · {overflowSem.ge.length} GE</div>
+            <div
+              onClick={() => setOverflowExpanded(v => !v)}
+              style={{ padding: '9px 14px', borderBottom: overflowExpanded ? '1px dashed #5a4a10' : 'none', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+            >
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: '#fbbf24' }}>Couldn't complete before transferring {plannerEnd}</div>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>{overflowSem.courses.length} courses · {overflowSem.ge.length} GE</div>
+              </div>
+              <span style={{ fontSize: 11, color: '#fbbf24' }}>{overflowExpanded ? '▲ Hide' : '▼ Show'}</span>
             </div>
-            {overflowSem.courses.map((c, ci) => (
-              <div key={ci} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 14px', borderBottom: '1px solid #2a1a05' }}>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 12, fontWeight: 600, color: '#fbbf24' }}>{c.prefix} {c.number}</div>
-                  {c.title && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>{c.title}</div>}
-                </div>
-                <span style={{ fontSize: 11, color: 'var(--text-muted)', flexShrink: 0 }}>{c.units}u</span>
-              </div>
-            ))}
-            {overflowSem.ge.map((g, gi) => (
-              <div key={gi} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 14px', borderBottom: '1px dashed #2a1a05', opacity: 0.6 }}>
-                <div style={{ flex: 1, fontSize: 12, color: '#fbbf24' }}>{g.label}</div>
-                <span style={{ fontSize: 9, fontWeight: 600, padding: '2px 5px', borderRadius: 4, background: '#2a1a05', color: '#fbbf24' }}>Cal-GETC</span>
-              </div>
-            ))}
+            {overflowExpanded && (
+              <>
+                {overflowSem.courses.map((c, ci) => (
+                  <div key={ci} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 14px', borderBottom: '1px solid #2a1a05' }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: '#fbbf24' }}>{c.prefix} {c.number}</div>
+                      {c.title && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>{c.title}</div>}
+                    </div>
+                    <span style={{ fontSize: 11, color: 'var(--text-muted)', flexShrink: 0 }}>{c.units}u</span>
+                  </div>
+                ))}
+                {overflowSem.ge.map((g, gi) => (
+                  <div key={gi} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 14px', borderBottom: '1px dashed #2a1a05', opacity: 0.6 }}>
+                    <div style={{ flex: 1, fontSize: 12, color: '#fbbf24' }}>{g.label}</div>
+                    <span style={{ fontSize: 9, fontWeight: 600, padding: '2px 5px', borderRadius: 4, background: '#2a1a05', color: '#fbbf24' }}>Cal-GETC</span>
+                  </div>
+                ))}
+              </>
+            )}
           </div>
         )}
 
@@ -1292,6 +1304,8 @@ export default function Tab2() {
 
     const filteredRows = programFilter === 'all'
       ? overlapData.rows
+      : programFilter === '__shared__'
+      ? overlapData.rows.filter(row => row.coverage >= overlapData.totalPrograms)
       : overlapData.rows.filter(row => row.programEntries.some(pe => pe.program === programFilter))
 
     for (const row of filteredRows) {
