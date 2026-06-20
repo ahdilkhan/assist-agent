@@ -1149,7 +1149,7 @@ function goToSchedule(eq) {
                     </div>
                   </div>
                   <div className="field">
-                    <label>Which term are you planning for?</label>
+                    <label>Which term do you want to take it in?</label>
                     <select value={searchTerm} onChange={e => setSearchTerm(e.target.value)}>
                       {SEARCH_TERMS.map(t => <option key={t} value={t}>{t}</option>)}
                     </select>
