@@ -540,15 +540,7 @@ async function getLaccdSession() {
   if (!icsid) throw new Error('No LACCD ICSID found')
 
   // Scrape available terms directly from the term <select> so we never have to guess term codes
-  const termOptions: { code: string; label: string }[] = []
-  const selectBlock = html.match(/CLASS_SRCH_WRK2_STRM\$35\$[\s\S]*?<\/select>/)?.[0] || ''
-  const optRegex = /<option value='([^']*)'[^>]*>([^<]*)<\/option>/g
-  let m
-  while ((m = optRegex.exec(selectBlock)) !== null) {
-    if (m[1]) termOptions.push({ code: m[1], label: m[2].trim() })
-  }
-
-  return { cookieJar, icsid, icStateNum, termOptions }
+  return { cookieJar, icsid, icStateNum }
 }
 
 async function searchLaccd(cookieJar: Record<string, string>, icsid: string, icStateNum: string, subject: string, courseNumber: string, termCode: string) {
@@ -644,9 +636,16 @@ function parseLaccdResults(html: string) {
 }
 
 async function getLaccdSections(subject: string, courseNumber: string) {
-  const { cookieJar, icsid, icStateNum, termOptions } = await getLaccdSession()
+  const { cookieJar, icsid, icStateNum } = await getLaccdSession()
+  // Confirmed: 2266 = 2026 Summer, 2268 = 2026 Fall (increments of 2 per term)
+  const termsToTry = [
+    { code: '2268', label: '2026 Fall' },
+    { code: '2270', label: '2027 Spring' },   // unconfirmed guess
+    { code: '2272', label: '2027 Summer' },   // unconfirmed guess
+    { code: '2274', label: '2027 Fall' },     // unconfirmed guess
+  ]
   const results = []
-  for (const term of termOptions) {
+  for (const term of termsToTry) {
     try {
       const html = await searchLaccd(cookieJar, icsid, icStateNum, subject, courseNumber, term.code)
       const sections = parseLaccdResults(html)
