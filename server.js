@@ -301,20 +301,13 @@ app.get("/api/debug-banner", async (req, res) => {
     log.step5_classSearch_preview = (await page.evaluate(() => document.body.innerText)).slice(0, 300)
     log.step5_url = page.url()
 
-    // Step 6a - reset form first
-    await page.goto(`${base}/ssb/classSearch/resetDataForm`, { waitUntil: "networkidle2", timeout: 15000 })
-    log.step6a_reset = (await page.evaluate(() => document.body.innerText)).slice(0, 200)
-
-    // Step 6b - search with JUST subject, Fall 2026
+    // Step 6 - actual course search
     const subject = req.query.subject || 'MATH'
-    const searchUrl = `${base}/ssb/searchResults/searchResults?txt_term=${termCode}&txt_subject=${subject}&pageOffset=0&pageMaxSize=10`
+    const number = req.query.number || '1540'
+    const searchUrl = `${base}/ssb/searchResults/searchResults?txt_term=${termCode}&txt_subject=${subject}&txt_courseNumber=${number}&pageOffset=0&pageMaxSize=50`
     await page.goto(searchUrl, { waitUntil: "networkidle2", timeout: 15000 })
-    log.step6b_search_full = await page.evaluate(() => document.body.innerText)
-
-    // Step 6c - try Spring 2026 instead
-    const searchUrl2 = `${base}/ssb/searchResults/searchResults?txt_term=202620&txt_subject=${subject}&pageOffset=0&pageMaxSize=10`
-    await page.goto(searchUrl2, { waitUntil: "networkidle2", timeout: 15000 })
-    log.step6c_search_spring = await page.evaluate(() => document.body.innerText)
+    log.step6_search_full = await page.evaluate(() => document.body.innerText)
+    log.step6_url = page.url()
 
     res.json(log)
 

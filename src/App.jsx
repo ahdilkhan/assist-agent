@@ -164,11 +164,13 @@ async function getAgreement(key) {
   return assistGet(`/articulation/api/Agreements?Key=${encodeURIComponent(key)}`)
 }
 
-async function getAllMajorsKey(uniId, ccId) {
-  const result = await assistGet(`/articulation/api/Agreements/Published/for/${uniId}/to/${ccId}/in/${YEAR_ID}?types=Major`)
-  const key = result.allReports?.find(r => r.type === 'AllMajors')?.key || null
-  if (!key) console.log(`No AllMajors key for ccId ${ccId}`)
-  return key
+async function getAllReportKeys(uniId, ccId) {
+  const result = await assistGet(`/articulation/api/Agreements/Published/for/${uniId}/to/${ccId}/in/${YEAR_ID}?types=Major&types=Department`)
+  const allMajorsKey = result.allReports?.find(r => r.type === 'AllMajors')?.key || null
+  const allDeptKey = result.allReports?.find(r => r.type === 'AllDepartments')?.key || null
+  const keys = [allMajorsKey, allDeptKey].filter(Boolean)
+  if (keys.length === 0) console.log(`No report keys for ccId ${ccId}`)
+  return keys
 }
 
 function extractCourse(c) {
@@ -771,10 +773,15 @@ function softReset() {
         const batchResults = await Promise.all(batch.map(async cc => {
           const ccId = cc.receivingInstitution.id
           try {
-            const key = await getAllMajorsKey(uniId, ccId)
-            if (!key) return []
-            const agreement = await getAgreement(key)
-            return parseArticulations(agreement, prefix, courseNum)
+            const keys = await getAllReportKeys(uniId, ccId)
+            if (keys.length === 0) return []
+            const agreements = await Promise.all(keys.map(k => getAgreement(k).catch(() => null)))
+            const allMatches = []
+            for (const agreement of agreements) {
+              if (!agreement) continue
+              allMatches.push(...parseArticulations(agreement, prefix, courseNum))
+            }
+            return allMatches
           } catch (e) {
             console.warn(`Failed ccId ${ccId}:`, e.message)
             return []
@@ -1133,6 +1140,16 @@ function softReset() {
                   )}
                   {showSaved && savedEquivalents.length === 0 && <div className="key-note">No saved colleges yet. Click 💙 on any college to save it.</div>}
                   {showSavedSections && savedSections.length === 0 && <div className="key-note">No saved sections yet. Click 📌 on any section in Step 3 to save it.</div>}
+                  {!showSaved && !showSavedSections && equivalents.length === 0 && (
+                    <div className="card" style={{ textAlign: 'center', padding: '32px 20px' }}>
+                      <div style={{ fontSize: 32, marginBottom: 12 }}>🔍</div>
+                      <h3 style={{ fontSize: 15, color: 'var(--text)', marginBottom: 6 }}>No community college equivalents found</h3>
+                      <p style={{ fontSize: 13, color: 'var(--text-muted)', maxWidth: 380, margin: '0 auto 16px', lineHeight: 1.6 }}>
+                        No CC currently has an articulated equivalent for <strong style={{ color: 'var(--text)' }}>{prefix} {courseNum}</strong> at {uniName}. Double check the course prefix and number are correct, or try a different course.
+                      </p>
+                      <button className="btn-secondary" onClick={softReset}>← Try another search</button>
+                    </div>
+                  )}
                   {showSavedSections && savedSections.length > 0 && (
                     <div>
                       {Object.entries(savedSections.reduce((acc, s) => {
