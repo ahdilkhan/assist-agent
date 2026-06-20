@@ -368,6 +368,14 @@ export const KNOWN_CCS = [
 
 const BATCH_SIZE = 15
 
+const SEARCH_TERMS = ['Fall 2026', 'Spring 2027', 'Summer 2027', 'Fall 2027']
+
+// Maps a human term label to keywords for matching against live termDesc strings
+function termMatches(termDesc, selectedTerm) {
+  if (!termDesc || !selectedTerm) return false
+  return termDesc.toLowerCase().includes(selectedTerm.toLowerCase())
+}
+
 const BANNER_SSB_URLS = {
   'Las Positas College': 'https://banssprod.clpccd.cc.ca.us',
   'Chabot College': 'https://banssprod.clpccd.cc.ca.us',
@@ -502,6 +510,7 @@ export default function App() {
   const [uniName, setUniName] = useState('')
   const [prefix, setPrefix] = useState('')
   const [courseNum, setCourseNum] = useState('')
+  const [searchTerm, setSearchTerm] = useState(SEARCH_TERMS[0])
   const [loading, setLoading] = useState(false)
   const [loadingMsg, setLoadingMsg] = useState('')
   const [loadingProgress, setLoadingProgress] = useState(0)
@@ -653,7 +662,13 @@ const [selectedCourseIdx, setSelectedCourseIdx] = useState(0)
       const data = await res.json()
       return { course: c, terms: data.success ? data.terms : [], error: data.success ? null : (data.error || 'Failed') }
     }))
-    setLiveSchedule(results)
+   setLiveSchedule(results)
+    // Prefer the term the user selected in Step 1; fall back to soonest term with sections
+    const allTerms = results.flatMap(r => r.terms || []).filter(t => t.totalCount > 0)
+    const matchingSearchTerm = allTerms.find(t => termMatches(t.termDesc, searchTerm))
+    const fallback = allTerms.sort((a, b) => (a.termCode || '').localeCompare(b.termCode || ''))[0]
+    const chosen = matchingSearchTerm || fallback
+    if (chosen) setTermFilter(chosen.termCode)
   } catch (e) {
     setScheduleError(e.message)
   } finally {
@@ -694,11 +709,11 @@ function softReset() {
   }
 
   // Navigate to Step 3 for a given college card
-  function goToSchedule(eq) {
+function goToSchedule(eq) {
   setSelectedCC(eq)
   setLiveSchedule(null)
   setScheduleError('')
-  setTermFilter('all')
+  setTermFilter('all') // will auto-update once live data loads, see fetchLiveSections
   setFormatFilter('all')
   setAvailFilter('all')
   setSelectedOptionIdx(0)
@@ -803,12 +818,62 @@ function softReset() {
         }
       }
       const allEquivs = Object.values(byCC)
-      // Sort colleges with live schedule data to the top
-      allEquivs.sort((a, b) => {
-        const aLive = hasLiveSchedule(a.ccName) ? 0 : 1
-        const bLive = hasLiveSchedule(b.ccName) ? 0 : 1
-        return aLive - bLive
+
+      setLoadingMsg(`Checking live availability for ${searchTerm}...`)
+      setLoadingProgress(0)
+
+      const liveColleges = allEquivs.filter(eq => hasLiveSchedule(eq.ccName))
+      let checkedLive = 0
+      const liveResults = await Promise.all(liveColleges.map(async eq => {
+        const firstOption = eq.options?.[0]
+        if (!firstOption) { checkedLive++; return { ccName: eq.ccName, totalSections: 0 } }
+        const bannerUrl = getBannerBaseUrl(eq.ccName)
+        const colleagueUrl = getColleagueBaseUrl(eq.ccName)
+        const sdccdCampus = getSdccdCampus(eq.ccName)
+        const vcccdCampus = getVcccdCampus(eq.ccName)
+        const baseUrl = bannerUrl || colleagueUrl || (sdccdCampus ? 'https://mws-api.sdccd.edu' : null) || (vcccdCampus ? 'https://schedule.vcccd.edu' : null)
+        const system = sdccdCampus ? 'sdccd' : vcccdCampus ? 'vcccd' : colleagueUrl && !bannerUrl ? 'colleague' : 'banner'
+        try {
+          const courseResults = await Promise.all(firstOption.courses.map(async c => {
+            const res = await fetch(
+              `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/banner-sections`,
+              {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY },
+                body: JSON.stringify({ baseUrl, subject: c.prefix, courseNumber: c.number, system, campus: sdccdCampus || vcccdCampus }),
+              }
+            )
+            const data = await res.json()
+            if (!data.success) return 0
+            const matchingTerm = (data.terms || []).find(t => termMatches(t.termDesc, searchTerm))
+            return matchingTerm ? matchingTerm.totalCount : 0
+          }))
+          checkedLive++
+          setLoadingProgress(Math.round((checkedLive / liveColleges.length) * 100))
+          return { ccName: eq.ccName, totalSections: Math.min(...courseResults) }
+        } catch {
+          checkedLive++
+          return { ccName: eq.ccName, totalSections: null }
+        }
+      }))
+
+      const liveByName = {}
+      liveResults.forEach(r => { liveByName[r.ccName] = r.totalSections })
+
+      allEquivs.forEach(eq => {
+        if (hasLiveSchedule(eq.ccName)) {
+          eq._termSectionCount = liveByName[eq.ccName] ?? null
+        } else {
+          eq._termSectionCount = undefined // not verifiable
+        }
       })
+
+      allEquivs.sort((a, b) => {
+        const aHas = a._termSectionCount > 0 ? 0 : a._termSectionCount === undefined ? 1 : 2
+        const bHas = b._termSectionCount > 0 ? 0 : b._termSectionCount === undefined ? 1 : 2
+        return aHas - bHas
+      })
+
       setEquivalents(allEquivs)
       setStep(2)
     } catch (e) {
@@ -842,14 +907,21 @@ function softReset() {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                   <h3 style={{ margin: 0 }}>{eq.ccName}</h3>
                   {/* Live / manual schedule indicator */}
-                  <span style={{
-                    fontSize: 10, fontWeight: 600, padding: '2px 7px', borderRadius: 20, flexShrink: 0,
-                    background: live ? 'rgba(52,211,153,0.1)' : 'var(--bg-step)',
-                    color: live ? '#34d399' : 'var(--text-muted)',
-                    border: `1px solid ${live ? 'rgba(52,211,153,0.25)' : 'var(--border)'}`,
-                  }}>
-                    {live ? '🟢 Live schedule' : '🔗 Manual search'}
-                  </span>
+                  {eq._termSectionCount === undefined && (
+                    <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 7px', borderRadius: 20, flexShrink: 0, background: 'var(--bg-step)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>
+                      🔗 Term not verified — check manually
+                    </span>
+                  )}
+                  {eq._termSectionCount > 0 && (
+                    <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 7px', borderRadius: 20, flexShrink: 0, background: 'rgba(52,211,153,0.1)', color: '#34d399', border: '1px solid rgba(52,211,153,0.25)' }}>
+                      ✓ {eq._termSectionCount} section{eq._termSectionCount !== 1 ? 's' : ''} in {searchTerm}
+                    </span>
+                  )}
+                  {(eq._termSectionCount === 0 || eq._termSectionCount === null) && (
+                    <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 7px', borderRadius: 20, flexShrink: 0, background: 'rgba(239,68,68,0.1)', color: '#f87171', border: '1px solid rgba(239,68,68,0.25)' }}>
+                      No sections in {searchTerm}
+                    </span>
+                  )}
                 </div>
                 <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
                   {getCourseCountLabel(eq)}
@@ -1075,6 +1147,12 @@ function softReset() {
                       <label>Course number</label>
                       <input type="text" placeholder="e.g. 61A" value={courseNum} onChange={e => setCourseNum(e.target.value.toUpperCase())} />
                     </div>
+                  </div>
+                  <div className="field">
+                    <label>Which term are you planning for?</label>
+                    <select value={searchTerm} onChange={e => setSearchTerm(e.target.value)}>
+                      {SEARCH_TERMS.map(t => <option key={t} value={t}>{t}</option>)}
+                    </select>
                   </div>
                   {loading ? (
                     <div>
