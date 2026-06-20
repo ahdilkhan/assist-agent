@@ -583,7 +583,7 @@ export default function Tab2() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [overlapData, setOverlapData] = useState(null)
-  const [expandedRow, setExpandedRow] = useState(null)
+  const [expandedRows, setExpandedRows] = useState(new Set())
   const [completedCourses, setCompletedCourses] = useState(new Set())
   const [programFilter, setProgramFilter] = useState('all')
   const [overflowExpanded, setOverflowExpanded] = useState(false)
@@ -698,7 +698,7 @@ export default function Tab2() {
 
   async function generateOverlap() {
     if (!ccId || programs.length === 0) { setError('Select a CC and add at least one program.'); return }
-    setError(''); setLoading(true); setOverlapData(null); setExpandedRow(null)
+    setError(''); setLoading(true); setOverlapData(null); setExpandedRows(new Set())
     try {
       const programArts = await Promise.all(programs.map(async prog => {
         const agreement = await getAgreement(prog.majorKey)
@@ -1415,7 +1415,7 @@ export default function Tab2() {
 
       const renderCourseRow = (row, rowIdx, inPickGroup = false) => {
         const isDone = completedCourses.has(row.ccKey)
-        const isExpanded = expandedRow === row.ccKey
+        const isExpanded = expandedRows.has(row.ccKey)
         const label = row.primaryCourses.map(c => `${c.prefix} ${c.number}`).join(' + ')
         const subtitle = row.primaryCourses.map(c => c.title).filter(Boolean).join(' + ')
         const units = row.primaryCourses.reduce((sum, c) => sum + (c.units || 0), 0)
@@ -1432,7 +1432,7 @@ export default function Tab2() {
               >
                 {isDone && <span style={{ color: '#fff', fontSize: 11 }}>✓</span>}
               </div>
-              <div style={{ flex: 1, minWidth: 0 }} onClick={() => setExpandedRow(isExpanded ? null : row.ccKey)}>
+              <div style={{ flex: 1, minWidth: 0 }} onClick={() => setExpandedRows(prev => { const next = new Set(prev); next.has(row.ccKey) ? next.delete(row.ccKey) : next.add(row.ccKey); return next })}>
                 <div style={{ fontWeight: 600, fontSize: 13, textDecoration: isDone ? 'line-through' : 'none', color: isDone ? 'var(--text-muted)' : 'var(--text)', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                   {label}
                   {coverageAll && <span style={{ fontSize: 10, background: 'var(--bg-chip-selected)', color: '#a78bfa', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>ALL PROGRAMS</span>}
@@ -1442,7 +1442,7 @@ export default function Tab2() {
                 </div>
                 {subtitle && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>{subtitle}{units ? ` · ${units} units` : ''}</div>}
               </div>
-              <div style={{ display: 'flex', gap: 6, flexShrink: 0 }} onClick={() => setExpandedRow(isExpanded ? null : row.ccKey)}>
+              <div style={{ display: 'flex', gap: 6, flexShrink: 0 }} onClick={() => setExpandedRows(prev => { const next = new Set(prev); next.has(row.ccKey) ? next.delete(row.ccKey) : next.add(row.ccKey); return next })}>
                 {overlapData.programLabels.map((progLabel, pi) => {
                   const has = row.programEntries.some(pe => pe.program === progLabel)
                   return (
