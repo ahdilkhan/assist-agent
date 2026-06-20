@@ -481,9 +481,20 @@ function getVcccdCampus(ccName) {
   return null
 }
 
+const LACCD_COLLEGES = [
+  'East Los Angeles', 'Los Angeles City', 'Los Angeles Valley', 'Los Angeles Pierce',
+  'Los Angeles Harbor', 'Los Angeles Mission', 'Los Angeles Trade', 'Los Angeles Southwest',
+  'West Los Angeles',
+]
+
+function isLaccdCollege(ccName) {
+  if (!ccName) return false
+  return LACCD_COLLEGES.some(name => ccName.toLowerCase().includes(name.toLowerCase()))
+}
+
 // Returns true if this CC has integrated live schedule fetching
 function hasLiveSchedule(ccName) {
-  return !!(getBannerBaseUrl(ccName) || getColleagueBaseUrl(ccName) || getSdccdCampus(ccName) || getVcccdCampus(ccName))
+  return !!(getBannerBaseUrl(ccName) || getColleagueBaseUrl(ccName) || getSdccdCampus(ccName) || getVcccdCampus(ccName) || isLaccdCollege(ccName))
 }
 
 // Encode current search into URL query params for sharing
@@ -638,8 +649,9 @@ const [selectedCourseIdx, setSelectedCourseIdx] = useState(0)
   const colleagueUrl = getColleagueBaseUrl(ccName)
   const sdccdCampus = getSdccdCampus(ccName)
   const vcccdCampus = getVcccdCampus(ccName)
-  const baseUrl = bannerUrl || colleagueUrl || (sdccdCampus ? 'https://mws-api.sdccd.edu' : null) || (vcccdCampus ? 'https://schedule.vcccd.edu' : null)
-  const system = sdccdCampus ? 'sdccd' : vcccdCampus ? 'vcccd' : colleagueUrl && !bannerUrl ? 'colleague' : 'banner'
+  const isLaccd = isLaccdCollege(ccName)
+  const baseUrl = bannerUrl || colleagueUrl || (sdccdCampus ? 'https://mws-api.sdccd.edu' : null) || (vcccdCampus ? 'https://schedule.vcccd.edu' : null) || (isLaccd ? 'https://mycollege-guest.laccd.edu' : null)
+  const system = sdccdCampus ? 'sdccd' : vcccdCampus ? 'vcccd' : isLaccd ? 'laccd' : colleagueUrl && !bannerUrl ? 'colleague' : 'banner'
   if (!baseUrl) return
 
   setScheduleLoading(true)
@@ -831,8 +843,9 @@ function goToSchedule(eq) {
         const colleagueUrl = getColleagueBaseUrl(eq.ccName)
         const sdccdCampus = getSdccdCampus(eq.ccName)
         const vcccdCampus = getVcccdCampus(eq.ccName)
-        const baseUrl = bannerUrl || colleagueUrl || (sdccdCampus ? 'https://mws-api.sdccd.edu' : null) || (vcccdCampus ? 'https://schedule.vcccd.edu' : null)
-        const system = sdccdCampus ? 'sdccd' : vcccdCampus ? 'vcccd' : colleagueUrl && !bannerUrl ? 'colleague' : 'banner'
+        const isLaccd = isLaccdCollege(eq.ccName)
+        const baseUrl = bannerUrl || colleagueUrl || (sdccdCampus ? 'https://mws-api.sdccd.edu' : null) || (vcccdCampus ? 'https://schedule.vcccd.edu' : null) || (isLaccd ? 'https://mycollege-guest.laccd.edu' : null)
+        const system = sdccdCampus ? 'sdccd' : vcccdCampus ? 'vcccd' : isLaccd ? 'laccd' : colleagueUrl && !bannerUrl ? 'colleague' : 'banner'
         try {
           const courseResults = await Promise.all(firstOption.courses.map(async c => {
             const res = await fetch(

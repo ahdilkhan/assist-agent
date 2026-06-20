@@ -515,6 +515,149 @@ async function getVcccdSections(campus: string, subject: string, courseNumber: s
   return results
 }
 
+// ─── LACCD PEOPLESOFT ───────────────────────────────────────────
+
+const LACCD_BASE = 'https://mycollege-guest.laccd.edu/psc/classsearchguest/EMPLOYEE/HRMS/c/COMMUNITY_ACCESS.CLASS_SEARCH.GBL'
+
+async function getLaccdSession() {
+  const res1 = await fetch(LACCD_BASE, { redirect: 'manual', headers: { 'User-Agent': 'Mozilla/5.0' } })
+  const cookieJar: Record<string, string> = {}
+  res1.headers.forEach((val, key) => {
+    if (key.toLowerCase() === 'set-cookie') {
+      const [pair] = val.split(';')
+      const [k, v] = pair.split('=')
+      if (k && v) cookieJar[k.trim()] = v.trim()
+    }
+  })
+  const location = res1.headers.get('location') || LACCD_BASE
+  const res2 = await fetch(location, {
+    headers: { cookie: buildCookieHeader(cookieJar), 'User-Agent': 'Mozilla/5.0' },
+  })
+  const html = await res2.text()
+
+  const icsid = html.match(/name='ICSID' id='ICSID' value='([^']+)'/)?.[1]
+  const icStateNum = html.match(/name='ICStateNum' id='ICStateNum' value='(\d+)'/)?.[1] || '8'
+  if (!icsid) throw new Error('No LACCD ICSID found')
+
+  // Scrape available terms directly from the term <select> so we never have to guess term codes
+  const termOptions: { code: string; label: string }[] = []
+  const selectBlock = html.match(/CLASS_SRCH_WRK2_STRM\$35\$[\s\S]*?<\/select>/)?.[0] || ''
+  const optRegex = /<option value='([^']*)'[^>]*>([^<]*)<\/option>/g
+  let m
+  while ((m = optRegex.exec(selectBlock)) !== null) {
+    if (m[1]) termOptions.push({ code: m[1], label: m[2].trim() })
+  }
+
+  return { cookieJar, icsid, icStateNum, termOptions }
+}
+
+async function searchLaccd(cookieJar: Record<string, string>, icsid: string, icStateNum: string, subject: string, courseNumber: string, termCode: string) {
+  const body = new URLSearchParams({
+    ICAJAX: '1', ICNAVTYPEDROPDOWN: '0', ICType: 'Panel', ICElementNum: '0',
+    ICStateNum: icStateNum, ICAction: 'CLASS_SRCH_WRK2_SSR_PB_CLASS_SRCH', ICModelCancel: '0',
+    ICXPos: '0', ICYPos: '0', ResponsetoDiffFrame: '-1', TargetFrameName: 'None', FacetPath: 'None',
+    TA_BuildChoices: '1', SP_FldName: '', SP_FldValues: '', PrmtTbl: '', PrmtTbl_fn: '', PrmtTbl_fv: '',
+    TA_SkipFldNms: '', ICFocus: '', ICSaveWarningFilter: '0', ICChanged: '-1', ICSkipPending: '0',
+    ICAutoSave: '0', ICResubmit: '0', ICSID: icsid, ICActionPrompt: 'false', ICTypeAheadID: '',
+    EnableSmartPrompt: '1', SpValidate: '1', SpThreshold: '1000', SpMfuFirst: '1', SpMfuMax: '3', SpMruMax: '3',
+    EnableSmartSelect: '1', SsMin: '6', SsThreshold: '1000', SsMfuFirst: '1', SsMfuMax: '3', SsMruMax: '3',
+    ICBcDomData: 'UnknownValue', ICPanelHelpUrl: '', ICPanelName: '', ICFind: '', ICAddCount: '', ICAppClsData: '',
+    'CLASS_SRCH_WRK2_INSTITUTION$31$': 'LACCD',
+    'CLASS_SRCH_WRK2_STRM$35$': termCode,
+    'SSR_CLSRCH_WRK_SUBJECT$0': subject.toUpperCase(),
+    'SSR_CLSRCH_WRK_SSR_EXACT_MATCH1$1': 'C',
+    'SSR_CLSRCH_WRK_CATALOG_NBR$1': courseNumber,
+    'SSR_CLSRCH_WRK_ACAD_CAREER$2': '', 'SSR_CLSRCH_WRK_CAMPUS$3': '', 'ATTR_VAL$4': '',
+    'SSR_CLSRCH_WRK_SSR_OPEN_ONLY$chk$5': 'N',
+    'SSR_CLSRCH_WRK_SSR_START_TIME_OPR$6': 'GE', 'SSR_CLSRCH_WRK_MEETING_TIME_START$6': '',
+    'SSR_CLSRCH_WRK_SSR_END_TIME_OPR$6': 'LE', 'SSR_CLSRCH_WRK_MEETING_TIME_END$6': '',
+    'SSR_CLSRCH_WRK_INCLUDE_CLASS_DAYS$7': 'I',
+    'SSR_CLSRCH_WRK_MON$chk$7': '', 'SSR_CLSRCH_WRK_TUES$chk$7': '', 'SSR_CLSRCH_WRK_WED$chk$7': '',
+    'SSR_CLSRCH_WRK_THURS$chk$7': '', 'SSR_CLSRCH_WRK_FRI$chk$7': '', 'SSR_CLSRCH_WRK_SAT$chk$7': '',
+    'SSR_CLSRCH_WRK_SUN$chk$7': '',
+    'SSR_CLSRCH_WRK_SSR_EXACT_MATCH2$8': 'B', 'SSR_CLSRCH_WRK_LAST_NAME$8': '',
+    'SSR_CLSRCH_WRK_CLASS_NBR$9': '', 'SSR_CLSRCH_WRK_DESCR$10': '',
+    'SSR_CLSRCH_WRK_SSR_COMPONENT$11': '', 'SSR_CLSRCH_WRK_SESSION_CODE$12': '',
+  })
+
+  const res = await fetch(LACCD_BASE, {
+    method: 'POST',
+    headers: {
+      cookie: buildCookieHeader(cookieJar),
+      'content-type': 'application/x-www-form-urlencoded',
+      'User-Agent': 'Mozilla/5.0',
+      'Referer': LACCD_BASE,
+    },
+    body: body.toString(),
+  })
+  return await res.text()
+}
+
+function laccdCampusFromRoom(room: string) {
+  // Room field looks like "Harbor-Online", "Southwest-Online", "Valley-MATH 101"
+  const map: Record<string, string> = {
+    harbor: 'Los Angeles Harbor College', city: 'Los Angeles City College',
+    valley: 'Los Angeles Valley College', pierce: 'Los Angeles Pierce College',
+    mission: 'Los Angeles Mission College', trade: 'Los Angeles Trade Technical College',
+    southwest: 'Los Angeles Southwest College', west: 'West Los Angeles College',
+    eastla: 'East Los Angeles College', 'east la': 'East Los Angeles College',
+  }
+  const lower = (room || '').toLowerCase()
+  for (const [key, name] of Object.entries(map)) {
+    if (lower.includes(key)) return name
+  }
+  return null
+}
+
+function parseLaccdResults(html: string) {
+  const out: any[] = []
+  const groupRegex = /title='Collapse section ([A-Z]+) ([A-Z0-9]+) - ([^']+)'([\s\S]*?)(?=title='Collapse section|<SYSVAR)/g
+  let gm
+  while ((gm = groupRegex.exec(html)) !== null) {
+    const [, prefix, number, title, block] = gm
+    const rowRegex = /MTG_CLASS_NBR\$(\d+)'[\s\S]*?>([^<]+)<\/a>[\s\S]*?MTG_CLASSNAME\$\1'[\s\S]*?>([^<]+)<br \/>\s*([^<]*)<\/a>[\s\S]*?MTG_DAYTIME\$\1'[^>]*>([^<]*)<[\s\S]*?MTG_ROOM\$\1'[^>]*>([^<]*)<[\s\S]*?MTG_INSTR\$\1'[^>]*>([^<]*)<[\s\S]*?MTG_TOPIC\$\1'[^>]*>([^<]*)<[\s\S]*?alt="([^"]+)"/g
+    let rm
+    while ((rm = rowRegex.exec(block)) !== null) {
+      const room = rm[6].trim()
+      out.push({
+        crn: rm[2].trim(),
+        section: rm[3].trim(),
+        campus: laccdCampusFromRoom(room),
+        title: `${prefix} ${number} — ${title.trim()}`,
+        units: null,
+        scheduleType: room.toLowerCase().includes('online') ? 'Online' : 'In-Person',
+        enrollment: null, maxEnrollment: null,
+        seatsAvailable: rm[9].toLowerCase().includes('open') ? 1 : 0,
+        waitCount: 0,
+        waitAvailable: rm[9].toLowerCase().includes('wait') ? 1 : 0,
+        openSection: rm[9].toLowerCase().includes('open'),
+        instructor: rm[7].trim() || null,
+        meetings: [{
+          days: rm[5].trim() || null, startTime: null, endTime: null,
+          building: room, room: null,
+          startDate: rm[8].trim() || null, endDate: null,
+        }],
+      })
+    }
+  }
+  return out
+}
+
+async function getLaccdSections(subject: string, courseNumber: string) {
+  const { cookieJar, icsid, icStateNum, termOptions } = await getLaccdSession()
+  const results = []
+  for (const term of termOptions) {
+    try {
+      const html = await searchLaccd(cookieJar, icsid, icStateNum, subject, courseNumber, term.code)
+      const sections = parseLaccdResults(html)
+      results.push({ termCode: term.code, termDesc: term.label, totalCount: sections.length, sections })
+    } catch (e) {
+      console.warn(`LACCD term ${term.code} failed:`, e.message)
+    }
+  }
+  return results
+}
+
 // ─── MAIN HANDLER ─────────────────────────────────────────────
 
 export default {
@@ -534,6 +677,8 @@ export default {
         data = await getSdccdSections(campus || "", subject, courseNumber);
       } else if (system === "vcccd") {
         data = await getVcccdSections(campus || "", subject, courseNumber);
+      } else if (system === "laccd") {              // ← ADD THIS
+        data = await getLaccdSections(subject, courseNumber);   // ← ADD THIS
       } else {
         data = await getBannerSections(baseUrl, subject, courseNumber);
       }
