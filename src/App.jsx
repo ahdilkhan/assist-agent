@@ -1176,17 +1176,18 @@ function goToSchedule(eq) {
                       <p>{showSaved ? `${savedEquivalents.length} saved college${savedEquivalents.length !== 1 ? 's' : ''}` : `${filteredEquivalents.length} of ${equivalents.length} colleges shown${selectedRegions.length > 0 ? ` · ${selectedRegions.join(', ')}` : ''}`}</p>
                     </div>
                     <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0 }}>
-                      {/* Share link button */}
-                      <button
-                        className="btn-secondary"
-                        style={{ fontSize: 12, padding: '7px 14px' }}
-                        onClick={copyShareLink}
-                      >
-                        {shareCopied ? '✓ Copied!' : '🔗 Share'}
-                      </button>
-                      {/* Soft reset — keeps saved data, pre-fills form */}
                       <button className="btn-secondary" onClick={softReset}>← New search</button>
                     </div>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Showing availability for:</span>
+                    <select
+                      value={searchTerm}
+                      onChange={e => { setSearchTerm(e.target.value); handleSearch() }}
+                      style={{ fontSize: 12, padding: '5px 10px', borderRadius: 8, border: '1px solid var(--border-input)', background: 'var(--bg-card)', color: 'var(--text)', cursor: 'pointer' }}
+                    >
+                      {SEARCH_TERMS.map(t => <option key={t} value={t}>{t}</option>)}
+                    </select>
                   </div>
                   <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
                     <div className={`pref-chip${!showSaved && !showSavedSections ? ' selected' : ''}`} style={{ padding: '6px 12px', fontSize: 12 }} onClick={() => { setShowSaved(false); setShowSavedSections(false) }}>All colleges ({equivalents.length})</div>
