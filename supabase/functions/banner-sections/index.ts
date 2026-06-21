@@ -533,6 +533,14 @@ async function getLaccdSession() {
   const res2 = await fetch(location, {
     headers: { cookie: buildCookieHeader(cookieJar), 'User-Agent': 'Mozilla/5.0' },
   })
+  // Merge any additional cookies set on this second response too
+  res2.headers.forEach((val, key) => {
+    if (key.toLowerCase() === 'set-cookie') {
+      const [pair] = val.split(';')
+      const [k, v] = pair.split('=')
+      if (k && v) cookieJar[k.trim()] = v.trim()
+    }
+  })
   const html = await res2.text()
 
   const icsid = html.match(/name='ICSID' id='ICSID' value='([^']+)'/)?.[1]
