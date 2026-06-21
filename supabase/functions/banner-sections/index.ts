@@ -648,16 +648,16 @@ async function getLaccdSections(subject: string, courseNumber: string) {
   // Confirmed: 2266 = 2026 Summer, 2268 = 2026 Fall (increments of 2 per term)
   const termsToTry = [
     { code: '2268', label: '2026 Fall' },
-    { code: '2270', label: '2027 Spring' },   // unconfirmed guess
-    { code: '2272', label: '2027 Summer' },   // unconfirmed guess
-    { code: '2274', label: '2027 Fall' },     // unconfirmed guess
+    { code: '2272', label: '2027 Summer' },
+    { code: '2274', label: '2027 Fall' },
   ]
   const results = []
   for (const term of termsToTry) {
     try {
       const html = await searchLaccd(cookieJar, icsid, icStateNum, subject, courseNumber, term.code)
       const sections = parseLaccdResults(html)
-      results.push({ termCode: term.code, termDesc: term.label, totalCount: sections.length, sections, _debugHtmlSnippet: html.slice(0, 1500) })
+      const debugMatch = html.match(/MTG_CLASS_NBR\$0[\s\S]{0,1200}/)
+      results.push({ termCode: term.code, termDesc: term.label, totalCount: sections.length, sections, _debugHtmlSnippet: debugMatch?.[0] || 'no match' })
     } catch (e) {
       console.warn(`LACCD term ${term.code} failed:`, e.message)
     }
