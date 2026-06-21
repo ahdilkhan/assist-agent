@@ -615,7 +615,7 @@ function parseLaccdResults(html: string) {
   let gm
   while ((gm = groupRegex.exec(html)) !== null) {
     const [, prefix, number, title, block] = gm
-    const rowRegex = /MTG_CLASS_NBR\$(\d+)'[\s\S]*?>([^<]+)<\/a>[\s\S]*?MTG_CLASSNAME\$\1'[\s\S]*?>([^<]+)<br \/>\s*([^<]*)<\/a>[\s\S]*?MTG_DAYTIME\$\1'[^>]*>([^<]*)<[\s\S]*?MTG_ROOM\$\1'[^>]*>([^<]*)<[\s\S]*?MTG_INSTR\$\1'[^>]*>([^<]*)<[\s\S]*?MTG_TOPIC\$\1'[^>]*>([^<]*)<[\s\S]*?alt="([^"]+)"/g
+    const rowRegex = /MTG_CLASS_NBR\$(\d+)'[\s\S]*?>([^<]+)<\/a>[\s\S]*?MTG_CLASSNAME\$\1'[\s\S]*?>([^<]+)<br \/>\s*([^<]*)<\/a>[\s\S]*?class='PSLONGEDITBOX' id='MTG_DAYTIME\$\1' >([^<]*)<[\s\S]*?class='PSLONGEDITBOX' id='MTG_ROOM\$\1' >([^<]*)<[\s\S]*?class='PSLONGEDITBOX' id='MTG_INSTR\$\1' >([^<]*)<[\s\S]*?class='PSLONGEDITBOX' id='MTG_TOPIC\$\1' >([^<]*)<[\s\S]*?alt="([^"]+)"/g
     let rm
     while ((rm = rowRegex.exec(block)) !== null) {
       const room = rm[6].trim()
