@@ -633,6 +633,9 @@ const [selectedCourseIdx, setSelectedCourseIdx] = useState(0)
         wait_available: s.waitAvailable,
         open_section: s.openSection,
         meeting_display: s.meetings?.[0]?.days || null,
+        meetings_json: s.meetings || null,
+        enrollment: s.enrollment ?? null,
+        max_enrollment: s.maxEnrollment ?? null,
         units: s.units || null,
       }
       const { data } = await supabase.from('saved_sections').insert(row).select().single()
@@ -711,6 +714,18 @@ function softReset() {
   setSelectedCourseIdx(0)
   // Intentionally NOT clearing: savedCCs, savedSections, uniId, uniName, prefix, courseNum
 }
+
+  function renderMeetingLine(m) {
+    if (!m) return null
+    return (
+      <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
+        {m.days && <span>📅 {m.days}</span>}
+        {m.startTime && <span> · 🕐 {m.startTime.includes(' ') ? `${m.startTime} – ${m.endTime}` : `${m.startTime.slice(0,2)}:${m.startTime.slice(2)} – ${m.endTime.slice(0,2)}:${m.endTime.slice(2)}`}</span>}
+        {m.building && <span> · {m.building} {m.room}</span>}
+        {m.startDate && <span> · {m.startDate}{m.endDate ? ` – ${m.endDate}` : ''}</span>}
+      </div>
+    )
+  }
 
   function copyShareLink() {
     const url = buildShareUrl(uniId, uniName, prefix, courseNum)
@@ -1268,8 +1283,11 @@ function goToSchedule(eq) {
                                     <div style={{ fontWeight: 500, color: 'var(--text)' }}>{s.section} · {s.term_desc}</div>
                                     <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{s.course_prefix} {s.course_number} → {s.uni_course} at {s.uni_name}</div>
                                     {s.instructor && <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>👤 {s.instructor}</div>}
-                                    {s.meeting_display && <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>📅 {s.meeting_display}</div>}
+                                    {renderMeetingLine(s.meetings_json?.[0])}
                                     {s.schedule_type && <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{s.schedule_type}</div>}
+                                    {(s.enrollment != null || s.max_enrollment != null) && (
+                                      <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>👥 {s.enrollment ?? '?'}/{s.max_enrollment ?? '?'} enrolled{s.units ? ` · ${s.units} units` : ''}</div>
+                                    )}
                                   </div>
                                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
                                     <span className={`badge ${s.open_section ? 'badge-green' : s.wait_available > 0 ? 'badge-yellow' : 'badge-red'}`}>
@@ -1433,20 +1451,13 @@ function goToSchedule(eq) {
                     {filteredSections.map((s, si) => (
                       <div key={si} style={{ background: 'var(--bg-hint)', borderRadius: 8, padding: '10px 12px', marginBottom: 8 }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                          <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>§{s.section} · {s.scheduleType}</span>
+                          <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>{s.section} · {s.scheduleType}</span>
                           <span className={`badge ${s.openSection && s.seatsAvailable > 0 ? 'badge-green' : s.waitAvailable > 0 ? 'badge-yellow' : s.openSection ? 'badge-green' : 'badge-red'}`}>
                             {s.openSection && s.seatsAvailable > 0 ? `${s.seatsAvailable} open` : s.waitAvailable > 0 ? (s.waitAvailable === 1 ? 'Waitlist available' : `Waitlist · ${s.waitAvailable} spots`) : s.openSection ? 'Open' : 'Full'}
                           </span>
                         </div>
                         {s.instructor && <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>👤 {s.instructor}</div>}
-                        {s.meetings?.[0] && (
-                          <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
-                            {s.meetings[0].days && <span>📅 {s.meetings[0].days}</span>}
-                            {s.meetings[0].startTime && <span> · 🕐 {s.meetings[0].startTime.includes(' ') ? `${s.meetings[0].startTime} – ${s.meetings[0].endTime}` : `${s.meetings[0].startTime.slice(0,2)}:${s.meetings[0].startTime.slice(2)} – ${s.meetings[0].endTime.slice(0,2)}:${s.meetings[0].endTime.slice(2)}`}</span>}
-                            {s.meetings[0].building && <span> · {s.meetings[0].building} {s.meetings[0].room}</span>}
-                            {s.meetings[0].startDate && <span> · {s.meetings[0].startDate}{s.meetings[0].endDate ? ` – ${s.meetings[0].endDate}` : ''}</span>}
-                          </div>
-                        )}
+                        {renderMeetingLine(s.meetings?.[0])}
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 2 }}>
                           <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>👥 {s.enrollment}/{s.maxEnrollment} enrolled · {s.units} units</div>
                           <span onClick={() => toggleSaveSection(s, term)} style={{ fontSize: 16, cursor: 'pointer', opacity: isSectionSaved(s, term.termDesc) ? 1 : 0.3, transition: 'opacity 0.15s' }}>📌</span>
