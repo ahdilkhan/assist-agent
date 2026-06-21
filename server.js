@@ -51,11 +51,12 @@ app.use("/api/transferability", async (req, res) => {
   try {
     const url = `${ASSIST_ORG}/api/transferability${req.url}`
     const response = await axios.get(url, {
-      headers: { ...browserHeaders, accept: "application/json" },
+      headers: { ...browserHeaders, accept: "application/json", referer: "https://assist.org/", origin: "https://assist.org" },
     })
     res.set("Cache-Control", "no-store")
     res.json(response.data)
   } catch (err) {
+    console.error("transferability proxy error:", err.response?.status, err.response?.data)
     res.status(err.response?.status || 500).json({ error: err.message })
   }
 })
