@@ -656,8 +656,7 @@ async function getLaccdSections(subject: string, courseNumber: string) {
     try {
       const html = await searchLaccd(cookieJar, icsid, icStateNum, subject, courseNumber, term.code)
       const sections = parseLaccdResults(html)
-      const debugMatch = html.match(/MTG_CLASS_NBR\$0[\s\S]{0,1200}/)
-      results.push({ termCode: term.code, termDesc: term.label, totalCount: sections.length, sections, _debugHtmlSnippet: debugMatch?.[0] || 'no match' })
+      results.push({ termCode: term.code, termDesc: term.label, totalCount: sections.length, sections })
     } catch (e) {
       console.warn(`LACCD term ${term.code} failed:`, e.message)
     }
