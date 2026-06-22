@@ -431,6 +431,7 @@ function buildSemesterPlan({ rows, noArtCourses, completedCourses, geState, plan
       isRec,
       isNoArt: false,
       programs: [...new Set(row.programEntries.map(pe => pe.program))],
+      allCourseLabels: row.primaryCourses.map(c => `${c.prefix} ${c.number}`),
     })
   }
 
@@ -1393,7 +1394,7 @@ export default function Tab2() {
                     <div key={ci} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 14px', borderBottom: '1px solid #2a1a05' }}>
                       <div style={{ flex: 1 }}>
                         <div style={{ fontSize: 12, fontWeight: 600, color: '#fbbf24', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                          {c.prefix} {c.number}
+                          {c.allCourseLabels ? c.allCourseLabels.join(' + ') : `${c.prefix} ${c.number}`}
                           {c.isRec && <span style={{ fontSize: 9, fontWeight: 600, padding: '2px 5px', borderRadius: 4, background: '#1a2a10', color: '#86efac' }}>REC</span>}
                         </div>
                         {c.title && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>{c.title}</div>}
@@ -1411,9 +1412,20 @@ export default function Tab2() {
                         )}
                         {liveBadges && liveBadges.length > 0 && (() => {
                           const termData = tab2LiveData[c.ccKey]
-                          const allSections = Object.values(termData || {}).flatMap(t =>
-                            (t.sections || []).map(s => ({ ...s, termDesc: t.termDesc }))
-                          )
+                          const now = new Date()
+                          const currentYear = now.getFullYear()
+                          const currentMonth = now.getMonth()
+                          const allSections = Object.entries(termData || {})
+                            .filter(([code, v]) => {
+                              const year = parseInt(code.toString().slice(0, 4))
+                              const term = code.toString().slice(4)
+                              if (year < currentYear) return false
+                              if (year > currentYear) return true
+                              if (term >= '30') return currentMonth < 8
+                              if (term >= '20') return currentMonth < 5
+                              return true
+                            })
+                            .flatMap(([, t]) => (t.sections || []).map(s => ({ ...s, termDesc: t.termDesc })))
                           if (allSections.length === 0) return null
                           const isExp = expandedRows.has(`live_${c.ccKey}`)
                           return (
