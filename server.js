@@ -279,6 +279,21 @@ app.get("/api/ge-courses", async (req, res) => {
     res.status(500).json({ error: err.message })
   }
 })
+app.post("/Transferability/api/Courses", async (req, res) => {
+  try {
+    const response = await axios.post(
+      `${ASSIST_BASE}/Transferability/api/Courses`,
+      req.body,
+      { headers: { ...browserHeaders, accept: "application/json", "Content-Type": "application/json" } }
+    )
+    res.set("Cache-Control", "no-store")
+    res.json(response.data)
+  } catch (err) {
+    console.error("Transferability proxy error:", err.response?.status, err.response?.data)
+    res.status(err.response?.status || 500).json({ error: err.message })
+  }
+})
+
 
 // ── Health Check ──
 app.get("/", (req, res) => {
