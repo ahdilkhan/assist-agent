@@ -626,7 +626,7 @@ export default function Tab2() {
           // Store per-term counts keyed by termCode
           const termCounts = {}
           for (const t of (data.terms || [])) {
-            termCounts[t.termCode] = { count: t.totalCount, termDesc: t.termDesc }
+            termCounts[t.termCode] = { count: t.totalCount, termDesc: t.termDesc, sections: t.sections || [] }
           }
           newLiveData[row.ccKey] = termCounts
         }
@@ -1390,6 +1390,43 @@ export default function Tab2() {
                         {isLive && !liveBadges && (
                           <span style={{ fontSize: 9, fontWeight: 600, padding: '2px 5px', borderRadius: 4, background: 'rgba(239,68,68,0.1)', color: '#f87171', border: '1px solid rgba(239,68,68,0.2)', marginTop: 4, display: 'inline-block' }}>⚠ No sections found</span>
                         )}
+                        {liveBadges && liveBadges.length > 0 && (() => {
+                          const termData = tab2LiveData[c.ccKey]
+                          const allSections = Object.values(termData || {}).flatMap(t =>
+                            (t.sections || []).map(s => ({ ...s, termDesc: t.termDesc }))
+                          )
+                          if (allSections.length === 0) return null
+                          const isExp = expandedRows.has(`live_${c.ccKey}`)
+                          return (
+                            <div style={{ marginTop: 5 }}>
+                              <span
+                                onClick={e => { e.stopPropagation(); setExpandedRows(prev => { const next = new Set(prev); next.has(`live_${c.ccKey}`) ? next.delete(`live_${c.ccKey}`) : next.add(`live_${c.ccKey}`); return next }) }}
+                                style={{ fontSize: 10, color: '#a78bfa', cursor: 'pointer', fontWeight: 600 }}
+                              >
+                                {isExp ? '▲ hide' : `▼ ${allSections.length} section${allSections.length !== 1 ? 's' : ''} — tap to view`}
+                              </span>
+                              {isExp && (
+                                <div style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                                  {allSections.map((s, si) => (
+                                    <div key={si} style={{ borderLeft: '2px solid rgba(108,92,231,0.3)', paddingLeft: 8, fontSize: 11 }}>
+                                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                        <span style={{ color: 'var(--text)', fontWeight: 600 }}>{s.termDesc} · {s.section}</span>
+                                        <span style={{ fontSize: 9, fontWeight: 600, color: s.openSection && s.seatsAvailable > 0 ? '#34d399' : s.waitAvailable > 0 ? '#fbbf24' : '#f87171' }}>
+                                          {s.openSection && s.seatsAvailable > 0 ? `${s.seatsAvailable} open` : s.waitAvailable > 0 ? 'waitlist' : 'full'}
+                                        </span>
+                                      </div>
+                                      <div style={{ color: 'var(--text-muted)', marginTop: 1 }}>
+                                        {s.instructor && <span>👤 {s.instructor}</span>}
+                                        {s.scheduleType && <span>{s.instructor ? ' · ' : ''}{s.scheduleType}</span>}
+                                        {s.meetings?.[0]?.days && <span> · {s.meetings[0].days}{s.meetings[0].startTime ? ` ${s.meetings[0].startTime}–${s.meetings[0].endTime}` : ''}</span>}
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          )
+                        })()}
                       </div>
                       <span style={{ fontSize: 9, fontWeight: 600, padding: '2px 5px', borderRadius: 4, flexShrink: 0, background: c.badge === 'all' ? 'var(--bg-chip-selected)' : c.badge === 'multi' ? '#0d2a28' : '#0d1a2e', color: c.badge === 'all' ? '#a78bfa' : c.badge === 'multi' ? '#34d399' : '#60a5fa' }}>
                         {c.badge === 'all' ? 'ALL' : c.badge === 'multi' ? 'MULTI' : 'SCHOOL'}
