@@ -386,6 +386,17 @@ function getPrereqKey(course) {
   return PREREQ_CHAINS[key] || null
 }
 
+function renderTab2MeetingLine(m) {
+  if (!m) return null
+  return (
+    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+      {m.days && <span>📅 {m.days}</span>}
+      {m.startTime && <span> · 🕐 {m.startTime.includes(' ') ? `${m.startTime} – ${m.endTime}` : `${m.startTime.slice(0,2)}:${m.startTime.slice(2)} – ${m.endTime.slice(0,2)}:${m.endTime.slice(2)}`}</span>}
+      {m.building && <span> · {m.building} {m.room}</span>}
+    </div>
+  )
+}
+
 function topoSortCourses(courses) {
   const byKey = {}
   courses.forEach(c => { byKey[`${c.prefix} ${c.number}`] = c })
@@ -519,6 +530,7 @@ export default function Tab2() {
   const majorCache = useState({})[0]
 
   const [overCapSem, setOverCapSem] = useState(null)
+  const [expandedLiveKeys, setExpandedLiveKeys] = useState(new Set())
 
   // Live schedule data for Tab2: { ccKey -> { termCode -> sectionCount } }
   const [tab2LiveData, setTab2LiveData] = useState({})
@@ -710,6 +722,94 @@ export default function Tab2() {
       }
       return next
     })
+  }
+
+  function toggleLiveExpand(key) {
+  setExpandedLiveKeys(prev => {
+    const next = new Set(prev)
+    next.has(key) ? next.delete(key) : next.add(key)
+    return next
+  })
+}
+
+  function renderLiveBadgeBlock(liveBadge, ccKey, isLiveArg) {
+    return (
+      <>
+        {liveBadge?.perCourse && (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 3 }}>
+            {liveBadge.perCourse.map((pc, i) => {
+              const k = `${ccKey}__${pc.label}`
+              const open = expandedLiveKeys.has(k)
+              return (
+                <span key={i} onClick={(e) => { e.stopPropagation(); toggleLiveExpand(k) }} style={{ cursor: 'pointer', fontSize: 9, fontWeight: 600, padding: '2px 5px', borderRadius: 4, background: 'rgba(52,211,153,0.1)', color: '#34d399', border: '1px solid rgba(52,211,153,0.2)' }}>
+                  ✓ {pc.label}: {pc.count} section{pc.count !== 1 ? 's' : ''} {open ? '▲' : '▼'}
+                </span>
+              )
+            })}
+          </div>
+        )}
+        {liveBadge?.perCourse && liveBadge.perCourse.map((pc, i) => {
+          const k = `${ccKey}__${pc.label}`
+          if (!expandedLiveKeys.has(k)) return null
+          return (
+            <div key={`exp-${i}`} style={{ marginTop: 4 }}>
+              {pc.terms.map((t, ti) => (
+                <div key={ti} style={{ marginBottom: 6 }}>
+                  <div style={{ fontSize: 10, color: '#34d399', fontWeight: 600, marginBottom: 3 }}>{t.termDesc}</div>
+                  {(t.sections || []).map((s, si) => (
+                    <div key={si} style={{ background: 'rgba(255,255,255,0.03)', borderRadius: 6, padding: '6px 8px', marginBottom: 4 }}>
+                      <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text)' }}>{s.section} · {s.scheduleType}</div>
+                      {s.instructor && <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>👤 {s.instructor}</div>}
+                      {renderTab2MeetingLine(s.meetings?.[0])}
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+                        {s.openSection ? `✓ ${s.seatsAvailable} open` : s.waitAvailable > 0 ? `Waitlist · ${s.waitAvailable}` : 'Full'} · {s.enrollment}/{s.maxEnrollment} enrolled
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          )
+        })}
+        {liveBadge?.terms && (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 3 }}>
+            {liveBadge.terms.map((t, i) => {
+              const k = `${ccKey}__${t.code}`
+              const open = expandedLiveKeys.has(k)
+              return (
+                <span key={i} onClick={(e) => { e.stopPropagation(); toggleLiveExpand(k) }} style={{ cursor: 'pointer', fontSize: 9, fontWeight: 600, padding: '2px 5px', borderRadius: 4, background: 'rgba(52,211,153,0.1)', color: '#34d399', border: '1px solid rgba(52,211,153,0.2)' }}>
+                  ✓ {t.count} section{t.count !== 1 ? 's' : ''} · {t.label} {open ? '▲' : '▼'}
+                </span>
+              )
+            })}
+          </div>
+        )}
+        {liveBadge?.terms && liveBadge.terms.map((t, i) => {
+          const k = `${ccKey}__${t.code}`
+          if (!expandedLiveKeys.has(k)) return null
+          return (
+            <div key={`exp-${i}`} style={{ marginTop: 4 }}>
+              {(t.sections || []).map((s, si) => (
+                <div key={si} style={{ background: 'rgba(255,255,255,0.03)', borderRadius: 6, padding: '6px 8px', marginBottom: 4 }}>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text)' }}>{s.section} · {s.scheduleType}</div>
+                  {s.instructor && <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>👤 {s.instructor}</div>}
+                  {renderTab2MeetingLine(s.meetings?.[0])}
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+                    {s.openSection ? `✓ ${s.seatsAvailable} open` : s.waitAvailable > 0 ? `Waitlist · ${s.waitAvailable}` : 'Full'} · {s.enrollment}/{s.maxEnrollment} enrolled
+                  </div>
+                </div>
+              ))}
+            </div>
+          )
+        })}
+        {isLiveArg && !liveBadge && (
+          <span style={{ fontSize: 9, fontWeight: 600, padding: '2px 5px', borderRadius: 4, background: 'rgba(239,68,68,0.1)', color: '#f87171', border: '1px solid rgba(239,68,68,0.2)', marginTop: 3, display: 'inline-block' }}>⚠ Verify availability</span>
+        )}
+        {!isLiveArg && (
+          <span style={{ fontSize: 9, fontWeight: 600, padding: '2px 5px', borderRadius: 4, background: 'rgba(251,191,36,0.1)', color: '#fbbf24', border: '1px solid rgba(251,191,36,0.2)', marginTop: 3, display: 'inline-block' }}>⚠ Verify availability</span>
+        )}
+      </>
+    )
   }
 
   function moveCourse(itemKey, direction, currentSemIdx, isGe = false) {
@@ -964,7 +1064,7 @@ export default function Tab2() {
         if (!termData) return null
         const upcoming = filterUpcoming(termData)
         const total = upcoming.reduce((s, [, v]) => s + v.count, 0)
-        return total > 0 ? { label, count: total } : null
+        return total > 0 ? { label, count: total, terms: upcoming.map(([code, v]) => ({ code, termDesc: v.termDesc, sections: v.sections })) } : null
       }).filter(Boolean)
       return perCourse.length > 0 ? { perCourse } : null
     }
@@ -973,7 +1073,7 @@ export default function Tab2() {
     if (!termData) return null
     const upcoming = filterUpcoming(termData)
     if (upcoming.length === 0) return null
-    return { terms: upcoming.map(([, v]) => ({ count: v.count, label: v.termDesc })) }
+    return { terms: upcoming.map(([code, v]) => ({ count: v.count, label: v.termDesc, code, sections: v.sections })) }
   }
 
   function renderStep1() {
@@ -1359,30 +1459,7 @@ export default function Tab2() {
                         {c.isRec && <span style={{ fontSize: 9, fontWeight: 600, padding: '2px 5px', borderRadius: 4, background: '#1a2a10', color: '#86efac' }}>REC</span>}
                       </div>
                       {c.title && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>{c.title}</div>}
-                      {liveBadge?.perCourse && (
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 3 }}>
-                          {liveBadge.perCourse.map((pc, i) => (
-                            <span key={i} style={{ fontSize: 9, fontWeight: 600, padding: '2px 5px', borderRadius: 4, background: 'rgba(52,211,153,0.1)', color: '#34d399', border: '1px solid rgba(52,211,153,0.2)' }}>
-                              ✓ {pc.label}: {pc.count} section{pc.count !== 1 ? 's' : ''}
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                      {liveBadge?.terms && (
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 3 }}>
-                          {liveBadge.terms.map((t, i) => (
-                            <span key={i} style={{ fontSize: 9, fontWeight: 600, padding: '2px 5px', borderRadius: 4, background: 'rgba(52,211,153,0.1)', color: '#34d399', border: '1px solid rgba(52,211,153,0.2)' }}>
-                              ✓ {t.count} section{t.count !== 1 ? 's' : ''} · {t.label}
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                      {isLive && !liveBadge && (
-                        <span style={{ fontSize: 9, fontWeight: 600, padding: '2px 5px', borderRadius: 4, background: 'rgba(239,68,68,0.1)', color: '#f87171', border: '1px solid rgba(239,68,68,0.2)', marginTop: 3, display: 'inline-block' }}>⚠ Verify availability</span>
-                      )}
-                      {!isLive && (
-                        <span style={{ fontSize: 9, fontWeight: 600, padding: '2px 5px', borderRadius: 4, background: 'rgba(251,191,36,0.1)', color: '#fbbf24', border: '1px solid rgba(251,191,36,0.2)', marginTop: 3, display: 'inline-block' }}>⚠ Verify availability</span>
-                      )}
+                      {renderLiveBadgeBlock(liveBadge, c.ccKey, isLive)}
                       {c.programs && c.programs.length > 0 && (
                         <div style={{ fontSize: 9, color: 'var(--text-muted)', marginTop: 2 }}>{c.programs.join(' · ')}</div>
                       )}
@@ -1491,27 +1568,7 @@ export default function Tab2() {
                                     {c.isRec && <span style={{ fontSize: 9, padding: '1px 4px', borderRadius: 3, background: '#1a2a10', color: '#86efac', fontWeight: 600 }}>REC</span>}
                                   </div>
                                   {c.title && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>{c.title}</div>}
-                                  {liveBadge?.perCourse && (
-                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 3 }}>
-                                      {liveBadge.perCourse.map((pc, i) => (
-                                        <span key={i} style={{ fontSize: 9, fontWeight: 600, padding: '2px 5px', borderRadius: 4, background: 'rgba(52,211,153,0.1)', color: '#34d399', border: '1px solid rgba(52,211,153,0.2)' }}>
-                                          ✓ {pc.label}: {pc.count} section{pc.count !== 1 ? 's' : ''}
-                                        </span>
-                                      ))}
-                                    </div>
-                                  )}
-                                  {liveBadge?.terms && (
-                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 3 }}>
-                                      {liveBadge.terms.map((t, i) => (
-                                        <span key={i} style={{ fontSize: 9, fontWeight: 600, padding: '2px 5px', borderRadius: 4, background: 'rgba(52,211,153,0.1)', color: '#34d399', border: '1px solid rgba(52,211,153,0.2)' }}>
-                                          ✓ {t.count} section{t.count !== 1 ? 's' : ''} · {t.label}
-                                        </span>
-                                      ))}
-                                    </div>
-                                  )}
-                                  {isLive && !liveBadge && (
-                                    <span style={{ fontSize: 9, fontWeight: 600, padding: '2px 5px', borderRadius: 4, background: 'rgba(239,68,68,0.1)', color: '#f87171', border: '1px solid rgba(239,68,68,0.2)', marginTop: 3, display: 'inline-block' }}>⚠ Verify availability</span>
-                                  )}
+                                  {renderLiveBadgeBlock(liveBadge, c.ccKey, isLive)}
                                 </div>
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flexShrink: 0, alignItems: 'center' }}>
                                   <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>{c.units}u</span>
@@ -1540,27 +1597,7 @@ export default function Tab2() {
                             {c.isRec && <span style={{ fontSize: 9, fontWeight: 600, padding: '2px 5px', borderRadius: 4, background: '#1a2a10', color: '#86efac' }}>REC</span>}
                           </div>
                           {c.title && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>{c.title}</div>}
-                          {liveBadge?.perCourse && (
-                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 3 }}>
-                              {liveBadge.perCourse.map((pc, i) => (
-                                <span key={i} style={{ fontSize: 9, fontWeight: 600, padding: '2px 5px', borderRadius: 4, background: 'rgba(52,211,153,0.1)', color: '#34d399', border: '1px solid rgba(52,211,153,0.2)' }}>
-                                  ✓ {pc.label}: {pc.count} section{pc.count !== 1 ? 's' : ''}
-                                </span>
-                              ))}
-                            </div>
-                          )}
-                          {liveBadge?.terms && (
-                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 3 }}>
-                              {liveBadge.terms.map((t, i) => (
-                                <span key={i} style={{ fontSize: 9, fontWeight: 600, padding: '2px 5px', borderRadius: 4, background: 'rgba(52,211,153,0.1)', color: '#34d399', border: '1px solid rgba(52,211,153,0.2)' }}>
-                                  ✓ {t.count} section{t.count !== 1 ? 's' : ''} · {t.label}
-                                </span>
-                              ))}
-                            </div>
-                          )}
-                          {isLive && !liveBadge && (
-                            <span style={{ fontSize: 9, fontWeight: 600, padding: '2px 5px', borderRadius: 4, background: 'rgba(239,68,68,0.1)', color: '#f87171', border: '1px solid rgba(239,68,68,0.2)', marginTop: 3, display: 'inline-block' }}>⚠ Verify availability</span>
-                          )}
+                          {renderLiveBadgeBlock(liveBadge, c.ccKey, isLive)}
                         </div>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flexShrink: 0, alignItems: 'center' }}>
                           <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>{c.units}u</span>
