@@ -134,10 +134,9 @@ const CC_SCHEDULE_URLS = {
   'Los Angeles Trade': 'https://mycollege-guest.laccd.edu/psc/classsearchguest/EMPLOYEE/HRMS/c/COMMUNITY_ACCESS.CLASS_SEARCH.GBL?Campus=LAVC&strm=2264',
   'Los Angeles Southwest': 'https://mycollege-guest.laccd.edu/psc/classsearchguest/EMPLOYEE/HRMS/c/COMMUNITY_ACCESS.CLASS_SEARCH.GBL?Campus=LAVC&strm=2264',
   'West Los Angeles': 'https://mycollege-guest.laccd.edu/psc/classsearchguest/EMPLOYEE/HRMS/c/COMMUNITY_ACCESS.CLASS_SEARCH.GBL?Campus=LAVC&strm=2264',
-  'Kings River': 'https://selfservice.scccd.edu/Student/Courses',
 }
 
-function getScheduleUrl(ccName) {
+export function getScheduleUrl(ccName) {
   for (const [key, url] of Object.entries(CC_SCHEDULE_URLS)) {
     if (ccName.toLowerCase().includes(key.toLowerCase())) return url
   }
@@ -370,7 +369,6 @@ const BATCH_SIZE = 15
 
 const SEARCH_TERMS = ['Fall 2026', 'Spring 2027', 'Summer 2027', 'Fall 2027']
 
-// Maps a human term label to keywords for matching against live termDesc strings
 function termMatches(termDesc, selectedTerm) {
   if (!termDesc || !selectedTerm) return false
   return termDesc.toLowerCase().includes(selectedTerm.toLowerCase())
@@ -399,7 +397,7 @@ const BANNER_SSB_URLS = {
   'Taft College': 'https://ct-prod-bsr.taftcollege.edu:8443',
 }
 
-function getBannerBaseUrl(ccName) {
+export function getBannerBaseUrl(ccName) {
   if (!ccName) return null
   for (const [key, url] of Object.entries(BANNER_SSB_URLS)) {
     if (ccName.toLowerCase().includes(key.toLowerCase()) ||
@@ -442,7 +440,7 @@ const COLLEAGUE_URLS = {
   'Saddleback College': 'https://classes.socccd.edu',
 }
 
-function getColleagueBaseUrl(ccName) {
+export function getColleagueBaseUrl(ccName) {
   if (!ccName) return null
   for (const [key, url] of Object.entries(COLLEAGUE_URLS)) {
     if (ccName.toLowerCase().includes(key.toLowerCase()) ||
@@ -457,7 +455,7 @@ const SDCCD_CAMPUSES = {
   'San Diego Miramar College': 'MIRAMAR',
 }
 
-function getSdccdCampus(ccName) {
+export function getSdccdCampus(ccName) {
   if (!ccName) return null
   for (const [key, campus] of Object.entries(SDCCD_CAMPUSES)) {
     if (ccName.toLowerCase().includes(key.toLowerCase()) ||
@@ -472,7 +470,7 @@ const VCCCD_COLLEGES = {
   'Oxnard College': 'Oxnard',
 }
 
-function getVcccdCampus(ccName) {
+export function getVcccdCampus(ccName) {
   if (!ccName) return null
   for (const [key, campus] of Object.entries(VCCCD_COLLEGES)) {
     if (ccName.toLowerCase().includes(key.toLowerCase()) ||
@@ -487,23 +485,21 @@ const LACCD_COLLEGES = [
   'West Los Angeles',
 ]
 
-function isLaccdCollege(ccName) {
+export function isLaccdCollege(ccName) {
   if (!ccName) return false
   return LACCD_COLLEGES.some(name => ccName.toLowerCase().includes(name.toLowerCase()))
 }
 
-// Returns true if this CC has integrated live schedule fetching
-function hasLiveSchedule(ccName) {
+// Export so Tab2 can use it to decide live vs manual mode
+export function hasLiveSchedule(ccName) {
   return !!(getBannerBaseUrl(ccName) || getColleagueBaseUrl(ccName) || getSdccdCampus(ccName) || getVcccdCampus(ccName) || isLaccdCollege(ccName))
 }
 
-// Encode current search into URL query params for sharing
 function buildShareUrl(uniId, uniName, pfx, course) {
   const params = new URLSearchParams({ uni: uniId, uname: uniName, prefix: pfx, course })
   return `${window.location.origin}${window.location.pathname}?${params.toString()}`
 }
 
-// Read pre-filled search params from URL on first load
 function readShareParams() {
   const params = new URLSearchParams(window.location.search)
   return {
@@ -539,7 +535,7 @@ export default function App() {
   const [guestMode, setGuestMode] = useState(false)
   const [liveSchedule, setLiveSchedule] = useState(null)
   const [selectedOptionIdx, setSelectedOptionIdx] = useState(0)
-const [selectedCourseIdx, setSelectedCourseIdx] = useState(0)
+  const [selectedCourseIdx, setSelectedCourseIdx] = useState(0)
   const [scheduleLoading, setScheduleLoading] = useState(false)
   const [scheduleError, setScheduleError] = useState('')
   const [termFilter, setTermFilter] = useState('all')
@@ -547,11 +543,9 @@ const [selectedCourseIdx, setSelectedCourseIdx] = useState(0)
   const [availFilter, setAvailFilter] = useState('all')
   const [savedSections, setSavedSections] = useState([])
   const [showSavedSections, setShowSavedSections] = useState(false)
-  // Share link copy state
   const [shareCopied, setShareCopied] = useState(false)
   const dropdownRef = useRef(null)
 
-  // On mount: pre-fill from URL share params if present
   useEffect(() => {
     const shared = readShareParams()
     if (shared.uniId && shared.prefix && shared.courseNum) {
@@ -648,48 +642,47 @@ const [selectedCourseIdx, setSelectedCourseIdx] = useState(0)
   }
 
   async function fetchLiveSections(ccName, courses) {
-  const bannerUrl = getBannerBaseUrl(ccName)
-  const colleagueUrl = getColleagueBaseUrl(ccName)
-  const sdccdCampus = getSdccdCampus(ccName)
-  const vcccdCampus = getVcccdCampus(ccName)
-  const isLaccd = isLaccdCollege(ccName)
-  const baseUrl = bannerUrl || colleagueUrl || (sdccdCampus ? 'https://mws-api.sdccd.edu' : null) || (vcccdCampus ? 'https://schedule.vcccd.edu' : null) || (isLaccd ? 'https://mycollege-guest.laccd.edu' : null)
-  const system = sdccdCampus ? 'sdccd' : vcccdCampus ? 'vcccd' : isLaccd ? 'laccd' : colleagueUrl && !bannerUrl ? 'colleague' : 'banner'
-  if (!baseUrl) return
+    const bannerUrl = getBannerBaseUrl(ccName)
+    const colleagueUrl = getColleagueBaseUrl(ccName)
+    const sdccdCampus = getSdccdCampus(ccName)
+    const vcccdCampus = getVcccdCampus(ccName)
+    const isLaccd = isLaccdCollege(ccName)
+    const baseUrl = bannerUrl || colleagueUrl || (sdccdCampus ? 'https://mws-api.sdccd.edu' : null) || (vcccdCampus ? 'https://schedule.vcccd.edu' : null) || (isLaccd ? 'https://mycollege-guest.laccd.edu' : null)
+    const system = sdccdCampus ? 'sdccd' : vcccdCampus ? 'vcccd' : isLaccd ? 'laccd' : colleagueUrl && !bannerUrl ? 'colleague' : 'banner'
+    if (!baseUrl) return
 
-  setScheduleLoading(true)
-  setScheduleError('')
-  setLiveSchedule(null)
+    setScheduleLoading(true)
+    setScheduleError('')
+    setLiveSchedule(null)
 
-  try {
-    const results = await Promise.all(courses.map(async c => {
-      const res = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/banner-sections`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
-          },
-          body: JSON.stringify({ baseUrl, subject: c.prefix, courseNumber: c.number, system, campus: sdccdCampus || vcccdCampus }),
-        }
-      )
-      const data = await res.json()
-      return { course: c, terms: data.success ? data.terms : [], error: data.success ? null : (data.error || 'Failed') }
-    }))
-   setLiveSchedule(results)
-    // Prefer the term the user selected in Step 1; fall back to soonest term with sections
-    const allTerms = results.flatMap(r => r.terms || []).filter(t => t.totalCount > 0)
-    const matchingSearchTerm = allTerms.find(t => termMatches(t.termDesc, searchTerm))
-    const fallback = allTerms.sort((a, b) => (a.termCode || '').localeCompare(b.termCode || ''))[0]
-    const chosen = matchingSearchTerm || fallback
-    if (chosen) setTermFilter(chosen.termCode)
-  } catch (e) {
-    setScheduleError(e.message)
-  } finally {
-    setScheduleLoading(false)
+    try {
+      const results = await Promise.all(courses.map(async c => {
+        const res = await fetch(
+          `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/banner-sections`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
+            },
+            body: JSON.stringify({ baseUrl, subject: c.prefix, courseNumber: c.number, system, campus: sdccdCampus || vcccdCampus }),
+          }
+        )
+        const data = await res.json()
+        return { course: c, terms: data.success ? data.terms : [], error: data.success ? null : (data.error || 'Failed') }
+      }))
+      setLiveSchedule(results)
+      const allTerms = results.flatMap(r => r.terms || []).filter(t => t.totalCount > 0)
+      const matchingSearchTerm = allTerms.find(t => termMatches(t.termDesc, searchTerm))
+      const fallback = allTerms.sort((a, b) => (a.termCode || '').localeCompare(b.termCode || ''))[0]
+      const chosen = matchingSearchTerm || fallback
+      if (chosen) setTermFilter(chosen.termCode)
+    } catch (e) {
+      setScheduleError(e.message)
+    } finally {
+      setScheduleLoading(false)
+    }
   }
-}
 
   function goHome() {
     setStep(1); setActiveTab('tab1'); setEquivalents([]); setSelectedCC(null)
@@ -697,23 +690,20 @@ const [selectedCourseIdx, setSelectedCourseIdx] = useState(0)
     setShowSaved(false); setOpenBlocks({}); setError(''); setGuestMode(false)
   }
 
-  // Soft reset: clears results and goes back to Step 1, but keeps saved data
-  // and existing form values so the user can tweak rather than start from scratch.
-function softReset() {
-  setStep(1)
-  setEquivalents([])
-  setSelectedCC(null)
-  setSelectedRegions([])
-  setCourseFilter('any')
-  setShowSaved(false)
-  setOpenBlocks({})
-  setError('')
-  setLiveSchedule(null)
-  setScheduleError('')
-  setSelectedOptionIdx(0)
-  setSelectedCourseIdx(0)
-  // Intentionally NOT clearing: savedCCs, savedSections, uniId, uniName, prefix, courseNum
-}
+  function softReset() {
+    setStep(1)
+    setEquivalents([])
+    setSelectedCC(null)
+    setSelectedRegions([])
+    setCourseFilter('any')
+    setShowSaved(false)
+    setOpenBlocks({})
+    setError('')
+    setLiveSchedule(null)
+    setScheduleError('')
+    setSelectedOptionIdx(0)
+    setSelectedCourseIdx(0)
+  }
 
   function renderMeetingLine(m) {
     if (!m) return null
@@ -735,20 +725,19 @@ function softReset() {
     })
   }
 
-  // Navigate to Step 3 for a given college card
-function goToSchedule(eq) {
-  setSelectedCC(eq)
-  setLiveSchedule(null)
-  setScheduleError('')
-  setTermFilter('all') // will auto-update once live data loads, see fetchLiveSections
-  setFormatFilter('all')
-  setAvailFilter('all')
-  setSelectedOptionIdx(0)
-  setSelectedCourseIdx(0)
-  setStep(3)
-  const firstOption = eq.options?.[0]
-  if (firstOption) fetchLiveSections(eq.ccName, firstOption.courses)
-}
+  function goToSchedule(eq) {
+    setSelectedCC(eq)
+    setLiveSchedule(null)
+    setScheduleError('')
+    setTermFilter('all')
+    setFormatFilter('all')
+    setAvailFilter('all')
+    setSelectedOptionIdx(0)
+    setSelectedCourseIdx(0)
+    setStep(3)
+    const firstOption = eq.options?.[0]
+    if (firstOption) fetchLiveSections(eq.ccName, firstOption.courses)
+  }
 
   function toggleBlock(key) { setOpenBlocks(prev => ({ ...prev, [key]: !prev[key] })) }
   function toggleRegion(region) {
@@ -892,7 +881,7 @@ function goToSchedule(eq) {
         if (hasLiveSchedule(eq.ccName)) {
           eq._termSectionCount = liveByName[eq.ccName] ?? null
         } else {
-          eq._termSectionCount = undefined // not verifiable
+          eq._termSectionCount = undefined
         }
       })
 
@@ -922,7 +911,6 @@ function goToSchedule(eq) {
 
   function renderCCList(list) {
     return list.map((eq, i) => {
-      const live = hasLiveSchedule(eq.ccName)
       return (
         <div className="result-block" key={i}>
           <div className="result-header" onClick={() => toggleBlock(eq.ccName)}>
@@ -934,7 +922,6 @@ function goToSchedule(eq) {
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                   <h3 style={{ margin: 0 }}>{eq.ccName}</h3>
-                  {/* Live / manual schedule indicator */}
                   {eq._termSectionCount === undefined && (
                     <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 7px', borderRadius: 20, flexShrink: 0, background: 'var(--bg-step)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>
                       🔗 Term not verified — check manually
@@ -957,7 +944,6 @@ function goToSchedule(eq) {
                 </div>
               </div>
             </div>
-            {/* Always-visible schedule button + chevron */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
               <button
                 className="btn-primary"
@@ -1014,8 +1000,6 @@ function goToSchedule(eq) {
 
   return (
     <div className={`app${activeTab === 'tab2' ? ' wide' : ''}`}>
-
-      {/* ── Header ── */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 32, paddingTop: 16 }}>
         {user ? (
           <div onClick={goHome} title="Go home" style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', flexShrink: 0 }}>
@@ -1083,7 +1067,6 @@ function goToSchedule(eq) {
         )}
       </div>
 
-      {/* ── Not signed in ── */}
       {!user && !guestMode ? (
         <div className="card" style={{ textAlign: 'center' }}>
           <h3 style={{ marginBottom: 6, fontSize: 17, color: 'var(--text)' }}>Sign in to get started</h3>
@@ -1104,7 +1087,6 @@ function goToSchedule(eq) {
         </div>
       ) : (
         <>
-          {/* ── Tab switcher ── */}
           <div style={{ display: 'flex', gap: 10, marginBottom: 20, flexWrap: 'wrap' }}>
             {[['tab1', '🎯 Find CC equivalents for a university course'], ['tab2', '🗺️ Plan for multiple schools at once']].map(([id, label]) => (
               <div key={id} className={`pref-chip${activeTab === id ? ' selected' : ''}`} style={{ padding: '8px 16px', fontSize: 13 }} onClick={() => setActiveTab(id)}>{label}</div>
@@ -1125,34 +1107,17 @@ function goToSchedule(eq) {
 
               {error && <div className="error-box">{error}</div>}
 
-              {/* ── Guest mode warning banner — shown on all steps ── */}
               {guestMode && (
-                <div style={{
-                  background: 'rgba(251,191,36,0.07)',
-                  border: '1px solid rgba(251,191,36,0.22)',
-                  borderRadius: 10,
-                  padding: '10px 14px',
-                  marginBottom: 14,
-                  fontSize: 12,
-                  color: '#fbbf24',
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  gap: 12,
-                }}>
+                <div style={{ background: 'rgba(251,191,36,0.07)', border: '1px solid rgba(251,191,36,0.22)', borderRadius: 10, padding: '10px 14px', marginBottom: 14, fontSize: 12, color: '#fbbf24', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
                   <span>
                     ⚠️ You're browsing as a guest — your progress won't be saved if you refresh or close this tab.{' '}
-                    <button
-                      onClick={() => setGuestMode(false)}
-                      style={{ background: 'none', border: 'none', color: '#fbbf24', fontWeight: 700, cursor: 'pointer', padding: 0, fontSize: 12, textDecoration: 'underline' }}
-                    >
+                    <button onClick={() => setGuestMode(false)} style={{ background: 'none', border: 'none', color: '#fbbf24', fontWeight: 700, cursor: 'pointer', padding: 0, fontSize: 12, textDecoration: 'underline' }}>
                       Sign in to save
                     </button>
                   </span>
                 </div>
               )}
 
-              {/* ── Step 1 ── */}
               {step === 1 && (
                 <div className="card">
                   <div className="field">
@@ -1195,7 +1160,6 @@ function goToSchedule(eq) {
                 </div>
               )}
 
-              {/* ── Step 2 ── */}
               {step === 2 && (
                 <>
                   <div className="top-row">
@@ -1311,7 +1275,6 @@ function goToSchedule(eq) {
                 </>
               )}
 
-              {/* ── Step 3 ── */}
               {step === 3 && selectedCC && (
                 <>
                   <div className="top-row">
@@ -1321,168 +1284,132 @@ function goToSchedule(eq) {
                     </div>
                     <button className="btn-secondary" onClick={() => setStep(2)}>← Back</button>
                   </div>
-                  {/* Option picker — only show if more than one option */}
-{selectedCC.options.length > 1 && (
-  <div style={{ marginBottom: 16 }}>
-    <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 8 }}>
-      Which option will you take?
-    </div>
-    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-      {selectedCC.options.map((opt, i) => (
-        <div
-          key={i}
-          className={`pref-chip${selectedOptionIdx === i ? ' selected' : ''}`}
-          style={{ padding: '6px 14px', fontSize: 13 }}
-          onClick={() => {
-            setSelectedOptionIdx(i)
-            setSelectedCourseIdx(0)
-            fetchLiveSections(selectedCC.ccName, opt.courses)
-          }}
-        >
-          {opt.courses.map(c => `${c.prefix} ${c.number}`).join(' + ')}
-        </div>
-      ))}
-    </div>
-  </div>
-)}
-
-{/* Selected option details */}
-{(() => {
-  const opt = selectedCC.options[selectedOptionIdx]
-  if (!opt) return null
-  return (
-    <div className="avail-card">
-      {opt.groupNote && <div style={{ fontSize: 12, color: '#f59e0b', marginBottom: 8 }}>⚠️ {opt.groupNote}</div>}
-      {opt.courses.map((c, j) => (
-        <div key={j} style={{ marginBottom: j < opt.courses.length - 1 ? 10 : 12 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-            <h4>{c.prefix} {c.number} — {c.title}</h4>
-            <span className="badge badge-green">Articulated</span>
-          </div>
-          {c.units && <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>{c.units} units</div>}
-          {c.note && <div style={{ fontSize: 12, color: '#f59e0b', marginTop: 4 }}>⚠️ {c.note}</div>}
-        </div>
-      ))}
-
-      {!hasLiveSchedule(selectedCC?.ccName) && (
-        <div style={{ background: 'var(--bg-hint)', borderRadius: 8, padding: '10px 12px', marginBottom: 14 }}>
-          <div style={{ fontSize: 12, fontWeight: 600, color: '#a78bfa', marginBottom: 6 }}>💡 When you get to the schedule:</div>
-          {opt.courses.length === 1
-            ? <div style={{ fontSize: 13, color: 'var(--text)' }}>Search for <span style={{ fontFamily: 'monospace', fontWeight: 600, color: '#a78bfa' }}>{opt.courses[0].prefix} {opt.courses[0].number}</span></div>
-            : <ol style={{ paddingLeft: 18, margin: 0 }}>{opt.courses.map((c, k) => <li key={k} style={{ fontSize: 13, color: 'var(--text)', marginBottom: 4 }}>Search for <span style={{ fontFamily: 'monospace', fontWeight: 600, color: '#a78bfa' }}>{c.prefix} {c.number}</span></li>)}</ol>
-          }
-        </div>
-      )}
-
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-        {scheduleLoading && (
-          <div className="status"><div className="spinner" />Loading live sections...</div>
-        )}
-        {scheduleError && (
-          <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>⚠️ Could not load live sections — <a className="avail-link" href={getScheduleUrl(selectedCC.ccName)} target="_blank" rel="noreferrer">check manually ↗</a></div>
-        )}
-
-        {liveSchedule && liveSchedule.length > 0 && (
-          <div style={{ marginTop: 8 }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', marginBottom: 12 }}>📅 Live Sections</div>
-
-            {/* Course tab filter — only show if bundle (2+ courses in option) */}
-            {opt.courses.length > 1 && (
-              <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
-                {opt.courses.map((c, i) => (
-                  <div
-                    key={i}
-                    className={`pref-chip${selectedCourseIdx === i ? ' selected' : ''}`}
-                    style={{ padding: '6px 12px', fontSize: 12 }}
-                    onClick={() => setSelectedCourseIdx(i)}
-                  >
-                    {c.prefix} {c.number}
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* Term / format / availability filters */}
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
-              <select value={termFilter} onChange={e => setTermFilter(e.target.value)} style={{ fontSize: 12, padding: '5px 10px', borderRadius: 8, border: '1px solid var(--border-input)', background: 'var(--bg-card)', color: 'var(--text)', cursor: 'pointer' }}>
-                <option value="all">All terms</option>
-                {(liveSchedule[selectedCourseIdx]?.terms || []).filter(t => t.totalCount > 0).map(t => (
-                  <option key={t.termCode} value={t.termCode}>{t.termDesc}</option>
-                ))}
-              </select>
-              <select value={formatFilter} onChange={e => setFormatFilter(e.target.value)} style={{ fontSize: 12, padding: '5px 10px', borderRadius: 8, border: '1px solid var(--border-input)', background: 'var(--bg-card)', color: 'var(--text)', cursor: 'pointer' }}>
-                <option value="all">All formats</option>
-                {[...new Set((liveSchedule[selectedCourseIdx]?.terms || []).flatMap(t => t.sections.map(s => s.scheduleType)).filter(Boolean))].map(type => (
-                  <option key={type} value={type}>{type}</option>
-                ))}
-              </select>
-              <select value={availFilter} onChange={e => setAvailFilter(e.target.value)} style={{ fontSize: 12, padding: '5px 10px', borderRadius: 8, border: '1px solid var(--border-input)', background: 'var(--bg-card)', color: 'var(--text)', cursor: 'pointer' }}>
-                <option value="all">All availability</option>
-                <option value="open">Open</option>
-                <option value="waitlist">Waitlist</option>
-                <option value="full">Full</option>
-              </select>
-            </div>
-
-            {/* Show error for this specific course if fetch failed */}
-            {liveSchedule[selectedCourseIdx]?.error && (
-              <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 8 }}>
-                ⚠️ Could not load sections for {liveSchedule[selectedCourseIdx].course.prefix} {liveSchedule[selectedCourseIdx].course.number}
-              </div>
-            )}
-
-            {/* Sections for the active course */}
-            {(liveSchedule[selectedCourseIdx]?.terms || [])
-              .filter(t => t.totalCount > 0 && (termFilter === 'all' || t.termCode === termFilter))
-              .map((term, ti) => {
-                const filteredSections = term.sections.filter(s => {
-                  if (formatFilter !== 'all' && s.scheduleType !== formatFilter) return false
-                  if (availFilter === 'open') return s.seatsAvailable > 0
-                  if (availFilter === 'waitlist') return s.seatsAvailable === 0 && s.waitAvailable > 0
-                  if (availFilter === 'full') return s.seatsAvailable === 0 && s.waitAvailable === 0
-                  return true
-                })
-                if (filteredSections.length === 0) return null
-                return (
-                  <div key={ti} style={{ marginBottom: 16 }}>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: '#a78bfa', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>
-                      {term.termDesc} · {filteredSections.length} section{filteredSections.length !== 1 ? 's' : ''}
+                  {selectedCC.options.length > 1 && (
+                    <div style={{ marginBottom: 16 }}>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 8 }}>Which option will you take?</div>
+                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                        {selectedCC.options.map((opt, i) => (
+                          <div key={i} className={`pref-chip${selectedOptionIdx === i ? ' selected' : ''}`} style={{ padding: '6px 14px', fontSize: 13 }} onClick={() => { setSelectedOptionIdx(i); setSelectedCourseIdx(0); fetchLiveSections(selectedCC.ccName, opt.courses) }}>
+                            {opt.courses.map(c => `${c.prefix} ${c.number}`).join(' + ')}
+                          </div>
+                        ))}
+                      </div>
                     </div>
-                    {filteredSections.map((s, si) => (
-                      <div key={si} style={{ background: 'var(--bg-hint)', borderRadius: 8, padding: '10px 12px', marginBottom: 8 }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                          <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>{s.section} · {s.scheduleType}</span>
-                          <span className={`badge ${s.openSection && s.seatsAvailable > 0 ? 'badge-green' : s.waitAvailable > 0 ? 'badge-yellow' : s.openSection ? 'badge-green' : 'badge-red'}`}>
-                            {s.openSection && s.seatsAvailable > 0 ? `${s.seatsAvailable} open` : s.waitAvailable > 0 ? (s.waitAvailable === 1 ? 'Waitlist available' : `Waitlist · ${s.waitAvailable} spots`) : s.openSection ? 'Open' : 'Full'}
-                          </span>
-                        </div>
-                        {s.instructor && <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>👤 {s.instructor}</div>}
-                        {renderMeetingLine(s.meetings?.[0])}
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 2 }}>
-                          <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>👥 {s.enrollment}/{s.maxEnrollment} enrolled · {s.units} units</div>
-                          <span onClick={() => toggleSaveSection(s, term)} style={{ fontSize: 16, cursor: 'pointer', opacity: isSectionSaved(s, term.termDesc) ? 1 : 0.3, transition: 'opacity 0.15s' }}>📌</span>
+                  )}
+                  {(() => {
+                    const opt = selectedCC.options[selectedOptionIdx]
+                    if (!opt) return null
+                    return (
+                      <div className="avail-card">
+                        {opt.groupNote && <div style={{ fontSize: 12, color: '#f59e0b', marginBottom: 8 }}>⚠️ {opt.groupNote}</div>}
+                        {opt.courses.map((c, j) => (
+                          <div key={j} style={{ marginBottom: j < opt.courses.length - 1 ? 10 : 12 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                              <h4>{c.prefix} {c.number} — {c.title}</h4>
+                              <span className="badge badge-green">Articulated</span>
+                            </div>
+                            {c.units && <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>{c.units} units</div>}
+                            {c.note && <div style={{ fontSize: 12, color: '#f59e0b', marginTop: 4 }}>⚠️ {c.note}</div>}
+                          </div>
+                        ))}
+                        {!hasLiveSchedule(selectedCC?.ccName) && (
+                          <div style={{ background: 'var(--bg-hint)', borderRadius: 8, padding: '10px 12px', marginBottom: 14 }}>
+                            <div style={{ fontSize: 12, fontWeight: 600, color: '#a78bfa', marginBottom: 6 }}>💡 When you get to the schedule:</div>
+                            {opt.courses.length === 1
+                              ? <div style={{ fontSize: 13, color: 'var(--text)' }}>Search for <span style={{ fontFamily: 'monospace', fontWeight: 600, color: '#a78bfa' }}>{opt.courses[0].prefix} {opt.courses[0].number}</span></div>
+                              : <ol style={{ paddingLeft: 18, margin: 0 }}>{opt.courses.map((c, k) => <li key={k} style={{ fontSize: 13, color: 'var(--text)', marginBottom: 4 }}>Search for <span style={{ fontFamily: 'monospace', fontWeight: 600, color: '#a78bfa' }}>{c.prefix} {c.number}</span></li>)}</ol>
+                            }
+                          </div>
+                        )}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                          {scheduleLoading && <div className="status"><div className="spinner" />Loading live sections...</div>}
+                          {scheduleError && <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>⚠️ Could not load live sections — <a className="avail-link" href={getScheduleUrl(selectedCC.ccName)} target="_blank" rel="noreferrer">check manually ↗</a></div>}
+                          {liveSchedule && liveSchedule.length > 0 && (
+                            <div style={{ marginTop: 8 }}>
+                              <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', marginBottom: 12 }}>📅 Live Sections</div>
+                              {opt.courses.length > 1 && (
+                                <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
+                                  {opt.courses.map((c, i) => (
+                                    <div key={i} className={`pref-chip${selectedCourseIdx === i ? ' selected' : ''}`} style={{ padding: '6px 12px', fontSize: 12 }} onClick={() => setSelectedCourseIdx(i)}>
+                                      {c.prefix} {c.number}
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
+                                <select value={termFilter} onChange={e => setTermFilter(e.target.value)} style={{ fontSize: 12, padding: '5px 10px', borderRadius: 8, border: '1px solid var(--border-input)', background: 'var(--bg-card)', color: 'var(--text)', cursor: 'pointer' }}>
+                                  <option value="all">All terms</option>
+                                  {(liveSchedule[selectedCourseIdx]?.terms || []).filter(t => t.totalCount > 0).map(t => (
+                                    <option key={t.termCode} value={t.termCode}>{t.termDesc}</option>
+                                  ))}
+                                </select>
+                                <select value={formatFilter} onChange={e => setFormatFilter(e.target.value)} style={{ fontSize: 12, padding: '5px 10px', borderRadius: 8, border: '1px solid var(--border-input)', background: 'var(--bg-card)', color: 'var(--text)', cursor: 'pointer' }}>
+                                  <option value="all">All formats</option>
+                                  {[...new Set((liveSchedule[selectedCourseIdx]?.terms || []).flatMap(t => t.sections.map(s => s.scheduleType)).filter(Boolean))].map(type => (
+                                    <option key={type} value={type}>{type}</option>
+                                  ))}
+                                </select>
+                                <select value={availFilter} onChange={e => setAvailFilter(e.target.value)} style={{ fontSize: 12, padding: '5px 10px', borderRadius: 8, border: '1px solid var(--border-input)', background: 'var(--bg-card)', color: 'var(--text)', cursor: 'pointer' }}>
+                                  <option value="all">All availability</option>
+                                  <option value="open">Open</option>
+                                  <option value="waitlist">Waitlist</option>
+                                  <option value="full">Full</option>
+                                </select>
+                              </div>
+                              {liveSchedule[selectedCourseIdx]?.error && (
+                                <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 8 }}>
+                                  ⚠️ Could not load sections for {liveSchedule[selectedCourseIdx].course.prefix} {liveSchedule[selectedCourseIdx].course.number}
+                                </div>
+                              )}
+                              {(liveSchedule[selectedCourseIdx]?.terms || [])
+                                .filter(t => t.totalCount > 0 && (termFilter === 'all' || t.termCode === termFilter))
+                                .map((term, ti) => {
+                                  const filteredSections = term.sections.filter(s => {
+                                    if (formatFilter !== 'all' && s.scheduleType !== formatFilter) return false
+                                    if (availFilter === 'open') return s.seatsAvailable > 0
+                                    if (availFilter === 'waitlist') return s.seatsAvailable === 0 && s.waitAvailable > 0
+                                    if (availFilter === 'full') return s.seatsAvailable === 0 && s.waitAvailable === 0
+                                    return true
+                                  })
+                                  if (filteredSections.length === 0) return null
+                                  return (
+                                    <div key={ti} style={{ marginBottom: 16 }}>
+                                      <div style={{ fontSize: 12, fontWeight: 700, color: '#a78bfa', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>
+                                        {term.termDesc} · {filteredSections.length} section{filteredSections.length !== 1 ? 's' : ''}
+                                      </div>
+                                      {filteredSections.map((s, si) => (
+                                        <div key={si} style={{ background: 'var(--bg-hint)', borderRadius: 8, padding: '10px 12px', marginBottom: 8 }}>
+                                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                                            <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>{s.section} · {s.scheduleType}</span>
+                                            <span className={`badge ${s.openSection && s.seatsAvailable > 0 ? 'badge-green' : s.waitAvailable > 0 ? 'badge-yellow' : s.openSection ? 'badge-green' : 'badge-red'}`}>
+                                              {s.openSection && s.seatsAvailable > 0 ? `${s.seatsAvailable} open` : s.waitAvailable > 0 ? (s.waitAvailable === 1 ? 'Waitlist available' : `Waitlist · ${s.waitAvailable} spots`) : s.openSection ? 'Open' : 'Full'}
+                                            </span>
+                                          </div>
+                                          {s.instructor && <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>👤 {s.instructor}</div>}
+                                          {renderMeetingLine(s.meetings?.[0])}
+                                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 2 }}>
+                                            <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>👥 {s.enrollment}/{s.maxEnrollment} enrolled · {s.units} units</div>
+                                            <span onClick={() => toggleSaveSection(s, term)} style={{ fontSize: 16, cursor: 'pointer', opacity: isSectionSaved(s, term.termDesc) ? 1 : 0.3, transition: 'opacity 0.15s' }}>📌</span>
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )
+                                })
+                              }
+                              {(liveSchedule[selectedCourseIdx]?.terms || []).every(t => t.totalCount === 0) && (
+                                <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 8 }}>No sections found for upcoming terms.</div>
+                              )}
+                            </div>
+                          )}
+                          {!hasLiveSchedule(selectedCC?.ccName) && (
+                            <a className="avail-link" href={getScheduleUrl(selectedCC.ccName)} target="_blank" rel="noreferrer" style={{ fontWeight: 600, fontSize: 14 }}>🔍 Search schedule at {selectedCC.ccName} ↗</a>
+                          )}
+                          <a className="avail-link" href="https://www.cccapply.org/" target="_blank" rel="noreferrer" style={{ color: 'var(--text-muted)', fontWeight: 400 }}>📋 Apply / Enroll via CCCApply ↗</a>
                         </div>
                       </div>
-                    ))}
-                  </div>
-                )
-              })
-            }
-
-            {(liveSchedule[selectedCourseIdx]?.terms || []).every(t => t.totalCount === 0) && (
-              <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 8 }}>No sections found for upcoming terms.</div>
-            )}
-          </div>
-        )}
-
-        {!hasLiveSchedule(selectedCC?.ccName) && (
-          <a className="avail-link" href={getScheduleUrl(selectedCC.ccName)} target="_blank" rel="noreferrer" style={{ fontWeight: 600, fontSize: 14 }}>🔍 Search schedule at {selectedCC.ccName} ↗</a>
-        )}
-        <a className="avail-link" href="https://www.cccapply.org/" target="_blank" rel="noreferrer" style={{ color: 'var(--text-muted)', fontWeight: 400 }}>📋 Apply / Enroll via CCCApply ↗</a>
-      </div>
-    </div>
-  )
-})()}
+                    )
+                  })()}
                 </>
               )}
             </>
@@ -1490,7 +1417,6 @@ function goToSchedule(eq) {
         </>
       )}
 
-      {/* ── Footer ── */}
       <div className="footer">
         <span>Kourzo v1.0.0</span>
         <a href="mailto:info@kourzo.com">info@kourzo.com</a>

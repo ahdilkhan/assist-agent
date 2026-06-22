@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from './lib/supabase'
-import { KNOWN_UNIVERSITIES, KNOWN_CCS } from './App'
+import { KNOWN_UNIVERSITIES, KNOWN_CCS, hasLiveSchedule, getBannerBaseUrl, getColleagueBaseUrl, getSdccdCampus, getVcccdCampus, isLaccdCollege, getScheduleUrl } from './App'
 
 const ASSIST_BASE = import.meta.env.VITE_ASSIST_BASE
 // YEAR_ID 77 is used for Tab2 (newer articulation cycle). Tab1 uses 76.
@@ -36,7 +36,6 @@ function initGeState() {
   return s
 }
 
-
 async function assistGet(path) {
   const res = await fetch(`${ASSIST_BASE}${path}`, { headers: { accept: 'application/json' } })
   if (!res.ok) throw new Error(`ASSIST ${res.status}: ${path}`)
@@ -44,8 +43,6 @@ async function assistGet(path) {
   if (!data.isSuccessful) throw new Error(data.validationFailure || 'ASSIST error')
   return data.result
 }
-
-
 
 async function getMajorsForUni(uniId, ccId) {
   try {
@@ -407,7 +404,9 @@ function topoSortCourses(courses) {
   return result
 }
 
-function buildSemesterPlan({ rows, noArtCourses, completedCourses, geState, plannerStart, plannerEnd, includeSummer, maxUnitsPerSem = 15 }) {
+// hasLive: true  → auto-schedule into terms based on prerequisite order (live CC)
+// hasLive: false → put everything in "Unscheduled" bucket so user manually assigns terms
+function buildSemesterPlan({ rows, noArtCourses, completedCourses, geState, plannerStart, plannerEnd, includeSummer, maxUnitsPerSem = 15, hasLive = true }) {
   const GE_UNIT = 3
   const MAX_AREA4_PER_SEM = 1
 
@@ -454,6 +453,62 @@ function buildSemesterPlan({ rows, noArtCourses, completedCourses, geState, plan
 
   const allPending = [...sorted, ...noArtPending]
 
+  // If no live data → put all scheduleable courses in "Unscheduled" bucket
+  // User will manually move them into terms using ↑↓ arrows
+  if (!hasLive) {
+    const scheduleable = allPending.filter(c => !c.isNoArt)
+    const noArtList = allPending.filter(c => c.isNoArt)
+
+    const geNeeded = []
+    for (const area of CAL_GETC_AREAS) {
+      for (let i = 0; i < area.slots; i++) {
+        const key = area.slots > 1 ? `${area.code}_${i}` : area.code
+        if (!geState[key]) {
+          geNeeded.push({
+            areaCode: area.code,
+            slotIdx: i,
+            geKey: key,
+            label: area.slots > 1
+              ? `Area ${area.code} – ${area.name} (${i + 1} of ${area.slots})`
+              : `Area ${area.code} – ${area.name}`,
+          })
+        }
+      }
+    }
+
+    // Build term slots (empty) so user can move things into them
+    const scheduleEndIdx = endIdx - 1
+    const semSlots = []
+    for (let ti = startIdx; ti <= scheduleEndIdx; ti++) {
+      semSlots.push({ term: termList[ti], courses: [], ge: [], units: 0 })
+    }
+
+    const result = [...semSlots]
+
+    if (scheduleable.length > 0 || geNeeded.length > 0) {
+      result.push({
+        term: 'Unscheduled',
+        courses: scheduleable,
+        ge: geNeeded,
+        units: scheduleable.reduce((s, c) => s + c.units, 0) + geNeeded.length * GE_UNIT,
+        isUnscheduled: true,
+      })
+    }
+
+    if (noArtList.length > 0) {
+      result.push({
+        term: 'No CC Equivalent',
+        courses: noArtList,
+        ge: [],
+        units: 0,
+        isNoArtSection: true,
+      })
+    }
+
+    return result
+  }
+
+  // hasLive === true: auto-schedule as before
   const geNeeded = []
   for (const area of CAL_GETC_AREAS) {
     for (let i = 0; i < area.slots; i++) {
@@ -461,6 +516,8 @@ function buildSemesterPlan({ rows, noArtCourses, completedCourses, geState, plan
       if (!geState[key]) {
         geNeeded.push({
           areaCode: area.code,
+          slotIdx: i,
+          geKey: key,
           label: area.slots > 1
             ? `Area ${area.code} – ${area.name} (${i + 1} of ${area.slots})`
             : `Area ${area.code} – ${area.name}`,
@@ -494,14 +551,13 @@ function buildSemesterPlan({ rows, noArtCourses, completedCourses, geState, plan
     anyPlaced = false
     for (let si = 0; si < semSlots.length; si++) {
       const sem = semSlots[si]
-      const isLastSem = si === semSlots.length - 1
 
-      const geTarget = isLastSem ? geNeeded.length : GE_PER_SEM
+      // ── GE: spread evenly, treat last semester like any other ──
       const area4ThisSem = sem.ge.filter(g => g.areaCode === '4').length
       let area4Count = area4ThisSem
       let gi = 0
       let geThisSem = sem.ge.length
-      while (gi < geNeeded.length && geThisSem < geTarget && sem.units + GE_UNIT <= UNIT_CAP) {
+      while (gi < geNeeded.length && geThisSem < GE_PER_SEM && sem.units + GE_UNIT <= UNIT_CAP) {
         const g = geNeeded[gi]
         if (g.areaCode === '4' && area4Count >= MAX_AREA4_PER_SEM) { gi++; continue }
         if (g.areaCode === '4') area4Count++
@@ -531,6 +587,7 @@ function buildSemesterPlan({ rows, noArtCourses, completedCourses, geState, plan
         }
       }
 
+      // Fill any remaining unit space with GE (balanced, not a last-term dump)
       area4Count = sem.ge.filter(g => g.areaCode === '4').length
       gi = 0
       while (gi < geNeeded.length && sem.units + GE_UNIT <= UNIT_CAP) {
@@ -581,6 +638,11 @@ export default function Tab2() {
   const [programs, setPrograms] = useState([])
   const majorCache = useState({})[0]
 
+  const [overCapSem, setOverCapSem] = useState(null)
+
+  // Live schedule data for Tab2: { ccKey -> { termCode -> sectionCount } }
+  const [tab2LiveData, setTab2LiveData] = useState({})
+  const [tab2LiveLoading, setTab2LiveLoading] = useState(false)
 
   const [geState, setGeState] = useState(initGeState)
 
@@ -591,8 +653,9 @@ export default function Tab2() {
   const [completedCourses, setCompletedCourses] = useState(new Set())
   const [programFilter, setProgramFilter] = useState('all')
   const [overflowExpanded, setOverflowExpanded] = useState(false)
+  const [unscheduledExpanded, setUnscheduledExpanded] = useState(true)
   const [courseOverrides, setCourseOverrides] = useState({})
-
+  const [geOverrides, setGeOverrides] = useState({})
 
   const [step, setStep] = useState(1)
   const [isWide, setIsWide] = useState(window.innerWidth > 768)
@@ -610,8 +673,6 @@ export default function Tab2() {
     window.addEventListener('resize', handler)
     return () => window.removeEventListener('resize', handler)
   }, [])
-
-  
 
   useEffect(() => {
     supabase.auth.getUser().then(async ({ data: { user } }) => {
@@ -649,6 +710,54 @@ export default function Tab2() {
         if (data?.completed_courses) setCompletedCourses(new Set(data.completed_courses))
       })
   }, [overlapData])
+
+  // Fetch live section counts for all CC courses once we have overlap data
+  useEffect(() => {
+    if (!overlapData || !ccName || !hasLiveSchedule(ccName)) return
+    fetchTab2LiveData(ccName, overlapData.rows)
+  }, [overlapData, ccName])
+
+  async function fetchTab2LiveData(ccNameVal, rows) {
+    setTab2LiveLoading(true)
+    const bannerUrl = getBannerBaseUrl(ccNameVal)
+    const colleagueUrl = getColleagueBaseUrl(ccNameVal)
+    const sdccdCampus = getSdccdCampus(ccNameVal)
+    const vcccdCampus = getVcccdCampus(ccNameVal)
+    const isLaccd = isLaccdCollege(ccNameVal)
+    const baseUrl = bannerUrl || colleagueUrl
+      || (sdccdCampus ? 'https://mws-api.sdccd.edu' : null)
+      || (vcccdCampus ? 'https://schedule.vcccd.edu' : null)
+      || (isLaccd ? 'https://mycollege-guest.laccd.edu' : null)
+    const system = sdccdCampus ? 'sdccd' : vcccdCampus ? 'vcccd' : isLaccd ? 'laccd'
+      : colleagueUrl && !bannerUrl ? 'colleague' : 'banner'
+
+    const newLiveData = {}
+    await Promise.all(rows.map(async row => {
+      const primaryCourse = row.primaryCourses[0]
+      if (!primaryCourse) return
+      try {
+        const res = await fetch(
+          `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/banner-sections`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY },
+            body: JSON.stringify({ baseUrl, subject: primaryCourse.prefix, courseNumber: primaryCourse.number, system, campus: sdccdCampus || vcccdCampus }),
+          }
+        )
+        const data = await res.json()
+        if (data.success) {
+          // Store per-term counts keyed by termCode
+          const termCounts = {}
+          for (const t of (data.terms || [])) {
+            termCounts[t.termCode] = { count: t.totalCount, termDesc: t.termDesc }
+          }
+          newLiveData[row.ccKey] = termCounts
+        }
+      } catch {}
+    }))
+    setTab2LiveData(newLiveData)
+    setTab2LiveLoading(false)
+  }
 
   async function saveProgress(newCompleted, progs) {
     if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current)
@@ -698,11 +807,31 @@ export default function Tab2() {
     })
   }
 
-  function moveCourse(ccKey, direction, currentSemIdx) {
-  const targetIdx = currentSemIdx + direction
-  if (targetIdx < 0 || targetIdx >= realSems.length) return
-  setCourseOverrides(prev => ({ ...prev, [ccKey]: targetIdx }))
-}
+  // Move a course/GE up or down one semester slot
+  // For no-live CCs: courses start in "Unscheduled" (last real slot before no-art)
+  // and move into term slots. For live CCs: move between auto-scheduled term slots.
+  function moveCourse(itemKey, direction, currentSemIdx, isGe = false) {
+    const targetIdx = currentSemIdx + direction
+    if (targetIdx < 0 || targetIdx >= allSems.length) return
+
+    // Only enforce unit cap when moving INTO a term slot (not into Unscheduled)
+    const targetSem = allSems[targetIdx]
+    if (!targetSem.isUnscheduled) {
+      const dragUnits = isGe ? 3 : (allSems[currentSemIdx]?.courses.find(c => c.ccKey === itemKey)?.units || 3)
+      const targetUnits = targetSem.courses.reduce((s, c) => s + c.units, 0) + targetSem.ge.length * 3
+      if (targetUnits + dragUnits > maxUnitsPerSem) {
+        setOverCapSem(targetIdx)
+        setTimeout(() => setOverCapSem(null), 800)
+        return
+      }
+    }
+
+    if (isGe) {
+      setGeOverrides(prev => ({ ...prev, [itemKey]: targetIdx }))
+    } else {
+      setCourseOverrides(prev => ({ ...prev, [itemKey]: targetIdx }))
+    }
+  }
 
   function toggleGeSlot(key) {
     const next = { ...geState, [key]: !geState[key] }
@@ -713,6 +842,7 @@ export default function Tab2() {
   async function generateOverlap() {
     if (!ccId || programs.length === 0) { setError('Select a CC and add at least one program.'); return }
     setError(''); setLoading(true); setOverlapData(null); setExpandedRows(new Set())
+    setCourseOverrides({}); setGeOverrides({})
     try {
       const programArts = await Promise.all(programs.map(async prog => {
         const agreement = await getAgreement(prog.majorKey)
@@ -840,34 +970,68 @@ export default function Tab2() {
     ? (overlapData.noArticulation || []).filter(na => !na.coveredByAnotherOption)
     : []
 
+  const isLive = hasLiveSchedule(ccName)
+
   const semesterPlan = overlapData
     ? buildSemesterPlan({
         rows: overlapData.rows,
         noArtCourses: noArtForPlanner,
         completedCourses, geState, plannerStart, plannerEnd, includeSummer, maxUnitsPerSem,
+        hasLive: isLive,
       })
     : []
 
- const rawRealSems = semesterPlan.filter(s => !s.overflow && !s.isNoArtSection)
+  // For live CCs: allSems = real term slots only (no overflow/noart/unscheduled)
+  // For no-live CCs: allSems = term slots + Unscheduled bucket
+  const rawAllSems = semesterPlan.filter(s => !s.overflow && !s.isNoArtSection)
 
-const realSems = (() => {
-  if (Object.keys(courseOverrides).length === 0) return rawRealSems
-  const sems = rawRealSems.map(s => ({ ...s, courses: [...s.courses] }))
-  for (const [ccKey, targetIdx] of Object.entries(courseOverrides)) {
-    if (targetIdx < 0 || targetIdx >= sems.length) continue
-    for (let si = 0; si < sems.length; si++) {
-      const idx = sems[si].courses.findIndex(c => c.ccKey === ccKey)
-      if (idx !== -1 && si !== targetIdx) {
-        const [course] = sems[si].courses.splice(idx, 1)
-        sems[targetIdx].courses.push(course)
-        break
+  const allSems = (() => {
+    if (Object.keys(courseOverrides).length === 0 && Object.keys(geOverrides).length === 0) return rawAllSems
+    const sems = rawAllSems.map(s => ({ ...s, courses: [...s.courses], ge: [...s.ge] }))
+
+    for (const [ccKey, targetIdx] of Object.entries(courseOverrides)) {
+      if (targetIdx < 0 || targetIdx >= sems.length) continue
+      for (let si = 0; si < sems.length; si++) {
+        const idx = sems[si].courses.findIndex(c => c.ccKey === ccKey)
+        if (idx !== -1 && si !== targetIdx) {
+          const [course] = sems[si].courses.splice(idx, 1)
+          sems[targetIdx].courses.push(course)
+          break
+        }
       }
     }
-  }
-  return sems
-})()
+
+    for (const [geKey, targetIdx] of Object.entries(geOverrides)) {
+      if (targetIdx < 0 || targetIdx >= sems.length) continue
+      for (let si = 0; si < sems.length; si++) {
+        const idx = sems[si].ge.findIndex(g => g.geKey === geKey)
+        if (idx !== -1 && si !== targetIdx) {
+          const [ge] = sems[si].ge.splice(idx, 1)
+          sems[targetIdx].ge.push(ge)
+          break
+        }
+      }
+    }
+
+    return sems
+  })()
+
+  // Separate views
+  const realSems = allSems.filter(s => !s.isUnscheduled)
+  const unscheduledSem = allSems.find(s => s.isUnscheduled)
   const overflowSem = semesterPlan.find(s => s.overflow)
   const noArtSem = semesterPlan.find(s => s.isNoArtSection)
+
+  // Helper: get section count badge for a course in the planner (live CCs only)
+  function getLiveBadge(ccKey) {
+    if (!isLive || !tab2LiveData[ccKey]) return null
+    const termData = tab2LiveData[ccKey]
+    // Find the best upcoming term with sections
+    const entries = Object.entries(termData).filter(([, v]) => v.count > 0)
+    if (entries.length === 0) return { count: 0, label: 'No upcoming sections' }
+    const best = entries.sort(([a], [b]) => a.localeCompare(b))[0]
+    return { count: best[1].count, label: best[1].termDesc }
+  }
 
   function renderStep1() {
     return (
@@ -1081,7 +1245,7 @@ const realSems = (() => {
             )
             const slotsDone = slotKeys.filter(k => geState[k]).length
 
-return (
+            return (
               <div key={area.code} style={{ background: 'var(--bg-card)', border: `1px solid ${slotsDone === area.slots ? '#4a3a7a' : 'var(--border)'}`, borderRadius: 10, padding: '14px 16px', transition: 'border-color 0.2s' }}>
                 <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
                   <div style={{ flex: 1 }}>
@@ -1140,12 +1304,13 @@ return (
 
   function renderStep4() {
     const majorLeft = realSems.reduce((s, sem) => s + sem.courses.filter(c => !c.isNoArt).length, 0)
+      + (unscheduledSem ? unscheduledSem.courses.filter(c => !c.isNoArt).length : 0)
     const geLeft = geTotal() - geDone()
     const noArtLeft = noArtSem ? noArtSem.courses.length : 0
 
     return (
       <div>
-        {/* Print-only header — hidden on screen, shown when printing */}
+        {/* Print-only header */}
         <div className="print-only" style={{ display: 'none', marginBottom: 20 }}>
           <div style={{ fontSize: 20, fontWeight: 700 }}>Kourzo — Semester Plan</div>
           <div style={{ fontSize: 13, color: '#555', marginTop: 4 }}>
@@ -1164,17 +1329,27 @@ return (
             </div>
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
-            {/* Print plan button */}
-            <button
-              className="btn-secondary"
-              style={{ fontSize: 12 }}
-              onClick={() => window.print()}
-            >
-              🖨 Print plan
-            </button>
+            <button className="btn-secondary" style={{ fontSize: 12 }} onClick={() => window.print()}>🖨 Print plan</button>
             <button className="btn-secondary" style={{ fontSize: 12 }} onClick={() => setStep(3)}>← Back</button>
           </div>
         </div>
+
+        {/* Mode banner */}
+        <div className="no-print" style={{ background: isLive ? 'rgba(52,211,153,0.07)' : 'rgba(251,191,36,0.07)', border: `1px solid ${isLive ? 'rgba(52,211,153,0.25)' : 'rgba(251,191,36,0.22)'}`, borderRadius: 8, padding: '10px 14px', marginBottom: 16, fontSize: 12, color: isLive ? '#34d399' : '#fbbf24' }}>
+          {isLive ? (
+            <span>✓ <strong>Live schedule data available</strong> for {ccName} — courses are auto-scheduled by term. Use ↑ ↓ to adjust based on format, instructor, or personal preference.</span>
+          ) : (
+            <span>⚠️ <strong>No live schedule data</strong> for {ccName}. All courses start in "Unscheduled" — use ↑ ↓ to move them into terms after <a href={getScheduleUrl(ccName)} target="_blank" rel="noreferrer" style={{ color: '#fbbf24', fontWeight: 600 }}>checking availability ↗</a>. Moving a course into a full semester is blocked.</span>
+          )}
+        </div>
+
+        {/* Arrow hint */}
+        {(realSems.length > 0 || unscheduledSem) && (
+          <div className="no-print" style={{ background: 'var(--bg-hint)', border: '1px solid var(--border)', borderRadius: 8, padding: '9px 14px', marginBottom: 16, fontSize: 12, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: 14 }}>↕</span>
+            <span>Use the <strong style={{ color: 'var(--text)' }}>↑ ↓ arrows</strong> on each course to move it to a different term — for example, after checking if it's offered that semester.</span>
+          </div>
+        )}
 
         <div className="no-print" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: 20 }}>
           {[
@@ -1212,62 +1387,165 @@ return (
           </div>
         )}
 
+        {/* Render real term slots */}
         {realSems.map((sem, si) => {
           const totalU = sem.courses.reduce((s, c) => s + c.units, 0) + sem.ge.length * 3
+          const semIdxInAll = allSems.indexOf(sem)
           return (
-            <div key={si} style={{ border: '1px solid var(--border)', borderRadius: 10, marginBottom: 10, overflow: 'hidden', background: 'var(--bg-card)', pageBreakInside: 'avoid' }}>
+            <div key={si} style={{ border: `1px solid ${overCapSem === semIdxInAll ? '#ef4444' : 'var(--border)'}`, borderRadius: 10, marginBottom: 10, overflow: 'hidden', background: overCapSem === semIdxInAll ? '#1a0808' : 'var(--bg-card)', transition: 'border-color 0.2s, background 0.2s', pageBreakInside: 'avoid' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '9px 14px', background: 'var(--bg-step)', borderBottom: '1px solid var(--border)' }}>
                 <div>
                   <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>{sem.term}</div>
                   <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>{sem.courses.length} courses · {sem.ge.length} GE · {Math.round(totalU)}u</div>
                 </div>
               </div>
-              {sem.courses.map((c, ci) => (
-  <div key={ci} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 14px', borderBottom: '1px solid var(--border)' }}>
-    <div
-      className="no-print"
-      onClick={() => toggleCourse(c.ccKey)}
-      style={{ width: 24, height: 24, borderRadius: 6, flexShrink: 0, cursor: 'pointer', border: `2px solid ${completedCourses.has(c.ccKey) ? '#6C5CE7' : 'var(--border-input)'}`, background: completedCourses.has(c.ccKey) ? '#6C5CE7' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-    >
-      {completedCourses.has(c.ccKey) && <span style={{ color: '#fff', fontSize: 14 }}>✓</span>}
-    </div>
-    <div style={{ flex: 1, opacity: completedCourses.has(c.ccKey) ? 0.45 : 1 }}>
-      <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)', textDecoration: completedCourses.has(c.ccKey) ? 'line-through' : 'none', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-        {c.prefix} {c.number}
-        {c.isRec && <span style={{ fontSize: 9, fontWeight: 600, padding: '2px 5px', borderRadius: 4, background: '#1a2a10', color: '#86efac' }}>REC</span>}
-      </div>
-      {c.title && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>{c.title}</div>}
-    </div>
-    <span style={{ fontSize: 9, fontWeight: 600, padding: '2px 5px', borderRadius: 4, flexShrink: 0, background: c.badge === 'all' ? 'var(--bg-chip-selected)' : c.badge === 'multi' ? '#0d2a28' : '#0d1a2e', color: c.badge === 'all' ? '#a78bfa' : c.badge === 'multi' ? '#34d399' : '#60a5fa' }}>
-      {c.badge === 'all' ? 'ALL' : c.badge === 'multi' ? 'MULTI' : 'SCHOOL'}
-    </span>
-    <span style={{ fontSize: 11, color: 'var(--text-muted)', flexShrink: 0 }}>{c.units}u</span>
-    <div className="no-print" style={{ display: 'flex', gap: 2, flexShrink: 0 }}>
-      <button
-        onClick={() => moveCourse(c.ccKey, -1, si)}
-        disabled={si === 0}
-        style={{ width: 20, height: 20, borderRadius: 4, border: '1px solid var(--border-input)', background: 'var(--bg-step)', color: si === 0 ? 'var(--border-input)' : 'var(--text-muted)', cursor: si === 0 ? 'default' : 'pointer', fontSize: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}
-      >←</button>
-      <button
-        onClick={() => moveCourse(c.ccKey, 1, si)}
-        disabled={si === realSems.length - 1}
-        style={{ width: 20, height: 20, borderRadius: 4, border: '1px solid var(--border-input)', background: 'var(--bg-step)', color: si === realSems.length - 1 ? 'var(--border-input)' : 'var(--text-muted)', cursor: si === realSems.length - 1 ? 'default' : 'pointer', fontSize: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}
-      >→</button>
-    </div>
-  </div>
-))}
+              {sem.courses.map((c, ci) => {
+                const liveBadge = getLiveBadge(c.ccKey)
+                return (
+                  <div key={ci} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 14px', borderBottom: '1px solid var(--border)' }}>
+                    <div
+                      className="no-print"
+                      onClick={() => toggleCourse(c.ccKey)}
+                      style={{ width: 24, height: 24, borderRadius: 6, flexShrink: 0, cursor: 'pointer', border: `2px solid ${completedCourses.has(c.ccKey) ? '#6C5CE7' : 'var(--border-input)'}`, background: completedCourses.has(c.ccKey) ? '#6C5CE7' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                    >
+                      {completedCourses.has(c.ccKey) && <span style={{ color: '#fff', fontSize: 14 }}>✓</span>}
+                    </div>
+                    <div style={{ flex: 1, opacity: completedCourses.has(c.ccKey) ? 0.45 : 1 }}>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)', textDecoration: completedCourses.has(c.ccKey) ? 'line-through' : 'none', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                        {c.prefix} {c.number}
+                        {c.isRec && <span style={{ fontSize: 9, fontWeight: 600, padding: '2px 5px', borderRadius: 4, background: '#1a2a10', color: '#86efac' }}>REC</span>}
+                        {/* Live section badge */}
+                        {isLive && liveBadge && (
+                          liveBadge.count > 0
+                            ? <span style={{ fontSize: 9, fontWeight: 600, padding: '2px 5px', borderRadius: 4, background: 'rgba(52,211,153,0.1)', color: '#34d399', border: '1px solid rgba(52,211,153,0.2)' }}>✓ {liveBadge.count} section{liveBadge.count !== 1 ? 's' : ''} · {liveBadge.label}</span>
+                            : <span style={{ fontSize: 9, fontWeight: 600, padding: '2px 5px', borderRadius: 4, background: 'rgba(239,68,68,0.1)', color: '#f87171', border: '1px solid rgba(239,68,68,0.2)' }}>⚠ Verify availability</span>
+                        )}
+                        {!isLive && <span style={{ fontSize: 9, fontWeight: 600, padding: '2px 5px', borderRadius: 4, background: 'rgba(251,191,36,0.1)', color: '#fbbf24', border: '1px solid rgba(251,191,36,0.2)' }}>⚠ Verify availability</span>}
+                      </div>
+                      {c.title && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>{c.title}</div>}
+                    </div>
+                    <span style={{ fontSize: 9, fontWeight: 600, padding: '2px 5px', borderRadius: 4, flexShrink: 0, background: c.badge === 'all' ? 'var(--bg-chip-selected)' : c.badge === 'multi' ? '#0d2a28' : '#0d1a2e', color: c.badge === 'all' ? '#a78bfa' : c.badge === 'multi' ? '#34d399' : '#60a5fa' }}>
+                      {c.badge === 'all' ? 'ALL' : c.badge === 'multi' ? 'MULTI' : 'SCHOOL'}
+                    </span>
+                    <span style={{ fontSize: 11, color: 'var(--text-muted)', flexShrink: 0 }}>{c.units}u</span>
+                    <div className="no-print" style={{ display: 'flex', flexDirection: 'column', gap: 2, flexShrink: 0 }}>
+                      <button
+                        onClick={() => moveCourse(c.ccKey, -1, semIdxInAll)}
+                        disabled={semIdxInAll === 0}
+                        style={{ width: 20, height: 20, borderRadius: 4, border: '1px solid var(--border-input)', background: 'var(--bg-step)', color: semIdxInAll === 0 ? 'var(--border-input)' : 'var(--text-muted)', cursor: semIdxInAll === 0 ? 'default' : 'pointer', fontSize: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}
+                      >↑</button>
+                      <button
+                        onClick={() => moveCourse(c.ccKey, 1, semIdxInAll)}
+                        disabled={semIdxInAll === allSems.length - 1}
+                        style={{ width: 20, height: 20, borderRadius: 4, border: '1px solid var(--border-input)', background: 'var(--bg-step)', color: semIdxInAll === allSems.length - 1 ? 'var(--border-input)' : 'var(--text-muted)', cursor: semIdxInAll === allSems.length - 1 ? 'default' : 'pointer', fontSize: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}
+                      >↓</button>
+                    </div>
+                  </div>
+                )
+              })}
               {sem.ge.map((g, gi) => (
-                <div key={gi} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 14px', borderBottom: '1px dashed var(--border)', opacity: 0.6 }}>
-                  <div className="no-print" style={{ width: 16, height: 16, borderRadius: 4, border: '1.5px dashed var(--border-input)', flexShrink: 0 }} />
-                  <div style={{ flex: 1, fontSize: 12, color: 'var(--text)' }}>{g.label}</div>
+                <div key={gi} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 14px', borderBottom: '1px dashed var(--border)', opacity: geState[g.geKey] ? 0.4 : 1 }}>
+                  <div
+                    className="no-print"
+                    onClick={() => toggleGeSlot(g.geKey)}
+                    style={{ width: 24, height: 24, borderRadius: 6, flexShrink: 0, cursor: 'pointer', border: `2px solid ${geState[g.geKey] ? '#6C5CE7' : 'var(--border-input)'}`, background: geState[g.geKey] ? '#6C5CE7' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                  >
+                    {geState[g.geKey] && <span style={{ color: '#fff', fontSize: 14 }}>✓</span>}
+                  </div>
+                  <div style={{ flex: 1, fontSize: 12, color: 'var(--text)', textDecoration: geState[g.geKey] ? 'line-through' : 'none' }}>{g.label}</div>
                   <span style={{ fontSize: 9, fontWeight: 600, padding: '2px 5px', borderRadius: 4, background: 'var(--bg-step)', color: 'var(--text-muted)' }}>Cal-GETC</span>
                   <span style={{ fontSize: 11, color: 'var(--text-muted)', flexShrink: 0 }}>3u</span>
+                  <div className="no-print" style={{ display: 'flex', flexDirection: 'column', gap: 2, flexShrink: 0 }}>
+                    <button
+                      onClick={() => moveCourse(g.geKey, -1, semIdxInAll, true)}
+                      disabled={semIdxInAll === 0}
+                      style={{ width: 20, height: 20, borderRadius: 4, border: '1px solid var(--border-input)', background: 'var(--bg-step)', color: semIdxInAll === 0 ? 'var(--border-input)' : 'var(--text-muted)', cursor: semIdxInAll === 0 ? 'default' : 'pointer', fontSize: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}
+                    >↑</button>
+                    <button
+                      onClick={() => moveCourse(g.geKey, 1, semIdxInAll, true)}
+                      disabled={semIdxInAll === allSems.length - 1}
+                      style={{ width: 20, height: 20, borderRadius: 4, border: '1px solid var(--border-input)', background: 'var(--bg-step)', color: semIdxInAll === allSems.length - 1 ? 'var(--border-input)' : 'var(--text-muted)', cursor: semIdxInAll === allSems.length - 1 ? 'default' : 'pointer', fontSize: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}
+                    >↓</button>
+                  </div>
                 </div>
               ))}
             </div>
           )
         })}
 
+        {/* Unscheduled bucket (no-live CCs only) */}
+        {unscheduledSem && (unscheduledSem.courses.length > 0 || unscheduledSem.ge.length > 0) && (
+          <div className="no-print" style={{ border: '1.5px dashed #5a4a10', borderRadius: 10, marginBottom: 10, overflow: 'hidden', background: '#1a1505' }}>
+            <div
+              onClick={() => setUnscheduledExpanded(v => !v)}
+              style={{ padding: '9px 14px', borderBottom: unscheduledExpanded ? '1px dashed #5a4a10' : 'none', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+            >
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: '#fbbf24' }}>Unscheduled — move courses into terms above</div>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>{unscheduledSem.courses.length} courses · {unscheduledSem.ge.length} GE · check availability first</div>
+              </div>
+              <span style={{ fontSize: 11, color: '#fbbf24' }}>{unscheduledExpanded ? '▲ Hide' : '▼ Show'}</span>
+            </div>
+            {unscheduledExpanded && (
+              <>
+                {unscheduledSem.courses.map((c, ci) => {
+                  const semIdxInAll = allSems.indexOf(unscheduledSem)
+                  return (
+                    <div key={ci} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 14px', borderBottom: '1px solid #2a1a05' }}>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 12, fontWeight: 600, color: '#fbbf24', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                          {c.prefix} {c.number}
+                          {c.isRec && <span style={{ fontSize: 9, fontWeight: 600, padding: '2px 5px', borderRadius: 4, background: '#1a2a10', color: '#86efac' }}>REC</span>}
+                        </div>
+                        {c.title && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>{c.title}</div>}
+                      </div>
+                      <span style={{ fontSize: 9, fontWeight: 600, padding: '2px 5px', borderRadius: 4, flexShrink: 0, background: c.badge === 'all' ? 'var(--bg-chip-selected)' : c.badge === 'multi' ? '#0d2a28' : '#0d1a2e', color: c.badge === 'all' ? '#a78bfa' : c.badge === 'multi' ? '#34d399' : '#60a5fa' }}>
+                        {c.badge === 'all' ? 'ALL' : c.badge === 'multi' ? 'MULTI' : 'SCHOOL'}
+                      </span>
+                      <span style={{ fontSize: 11, color: 'var(--text-muted)', flexShrink: 0 }}>{c.units}u</span>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flexShrink: 0 }}>
+                        <button
+                          onClick={() => moveCourse(c.ccKey, -1, semIdxInAll)}
+                          disabled={semIdxInAll === 0}
+                          style={{ width: 20, height: 20, borderRadius: 4, border: '1px solid #5a4a10', background: '#221a05', color: semIdxInAll === 0 ? '#5a4a10' : '#fbbf24', cursor: semIdxInAll === 0 ? 'default' : 'pointer', fontSize: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}
+                        >↑</button>
+                        <button
+                          onClick={() => moveCourse(c.ccKey, 1, semIdxInAll)}
+                          disabled={true}
+                          style={{ width: 20, height: 20, borderRadius: 4, border: '1px solid #5a4a10', background: '#221a05', color: '#5a4a10', cursor: 'default', fontSize: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}
+                        >↓</button>
+                      </div>
+                    </div>
+                  )
+                })}
+                {unscheduledSem.ge.map((g, gi) => {
+                  const semIdxInAll = allSems.indexOf(unscheduledSem)
+                  return (
+                    <div key={gi} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 14px', borderBottom: '1px dashed #2a1a05' }}>
+                      <div style={{ flex: 1, fontSize: 12, color: '#fbbf24' }}>{g.label}</div>
+                      <span style={{ fontSize: 9, fontWeight: 600, padding: '2px 5px', borderRadius: 4, background: '#221a05', color: '#fbbf24' }}>Cal-GETC</span>
+                      <span style={{ fontSize: 11, color: 'var(--text-muted)', flexShrink: 0 }}>3u</span>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flexShrink: 0 }}>
+                        <button
+                          onClick={() => moveCourse(g.geKey, -1, semIdxInAll, true)}
+                          disabled={semIdxInAll === 0}
+                          style={{ width: 20, height: 20, borderRadius: 4, border: '1px solid #5a4a10', background: '#221a05', color: semIdxInAll === 0 ? '#5a4a10' : '#fbbf24', cursor: semIdxInAll === 0 ? 'default' : 'pointer', fontSize: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}
+                        >↑</button>
+                        <button
+                          onClick={() => moveCourse(g.geKey, 1, semIdxInAll, true)}
+                          disabled={true}
+                          style={{ width: 20, height: 20, borderRadius: 4, border: '1px solid #5a4a10', background: '#221a05', color: '#5a4a10', cursor: 'default', fontSize: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}
+                        >↓</button>
+                      </div>
+                    </div>
+                  )
+                })}
+              </>
+            )}
+          </div>
+        )}
+
+        {/* Overflow (live CCs only, when auto-schedule couldn't fit everything) */}
         {overflowSem && (overflowSem.courses.length > 0 || overflowSem.ge.length > 0) && (
           <div className="no-print" style={{ border: '1px dashed #5a4a10', borderRadius: 10, marginBottom: 10, overflow: 'hidden', background: '#1a1505' }}>
             <div
@@ -1652,7 +1930,6 @@ return (
 
   return (
     <div>
-      {/* Print styles — scoped inside Tab2's render so they only apply here */}
       <style>{`
         @media print {
           .no-print { display: none !important; }
