@@ -37,11 +37,12 @@ function initGeState() {
 }
 
 async function getCalGetcCourses(ccId, yearId = 76) {
-  const res = await fetch(`${ASSIST_BASE}/api/ge-courses?institutionId=${ccId}&academicYearId=${yearId}`)
+  const res = await fetch(
+    `https://assist.org/api/transferability/courses?institutionId=${ccId}&academicYearId=${yearId}&listType=CALGETC`,
+    { headers: { accept: 'application/json, text/plain, */*' } }
+  )
   if (!res.ok) throw new Error(`GE courses ${res.status}`)
-  const data = await res.json()
-  // normalize to same shape as the POST endpoint
-  return Array.isArray(data) ? data : (data.transferabilityAreas || data.areas || [])
+  return res.json()
 }
 
 async function assistGet(path) {
