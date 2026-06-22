@@ -36,6 +36,16 @@ function initGeState() {
   return s
 }
 
+async function getCalGetcCourses(ccId, yearId = 76) {
+  const res = await fetch(`${ASSIST_BASE}/Transferability/api/Courses`, {
+    method: 'POST',
+    headers: { accept: 'application/json', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ academicYearId: yearId, institutionId: Number(ccId), calgetcAreaIds: [] })
+  })
+  if (!res.ok) throw new Error(`ASSIST transferability ${res.status}`)
+  return res.json()
+}
+
 async function assistGet(path) {
   const res = await fetch(`${ASSIST_BASE}${path}`, { headers: { accept: 'application/json' } })
   if (!res.ok) throw new Error(`ASSIST ${res.status}: ${path}`)
@@ -43,6 +53,8 @@ async function assistGet(path) {
   if (!data.isSuccessful) throw new Error(data.validationFailure || 'ASSIST error')
   return data.result
 }
+
+
 
 async function getMajorsForUni(uniId, ccId) {
   try {
@@ -578,6 +590,7 @@ export default function Tab2() {
   const [programs, setPrograms] = useState([])
   const majorCache = useState({})[0]
 
+
   const [geState, setGeState] = useState(initGeState)
 
   const [loading, setLoading] = useState(false)
@@ -587,6 +600,9 @@ export default function Tab2() {
   const [completedCourses, setCompletedCourses] = useState(new Set())
   const [programFilter, setProgramFilter] = useState('all')
   const [overflowExpanded, setOverflowExpanded] = useState(false)
+  const [geCoursesData, setGeCoursesData] = useState(null)
+  const [geCoursesLoading, setGeCoursesLoading] = useState(false)
+  const [expandedGeAreas, setExpandedGeAreas] = useState(new Set())
 
   const [step, setStep] = useState(1)
   const [isWide, setIsWide] = useState(window.innerWidth > 768)
@@ -604,6 +620,21 @@ export default function Tab2() {
     window.addEventListener('resize', handler)
     return () => window.removeEventListener('resize', handler)
   }, [])
+
+  useEffect(() => {
+    if (!ccId) { setGeCoursesData(null); return }
+    setGeCoursesLoading(true)
+    getCalGetcCourses(ccId)
+      .then(data => {
+        const byCode = {}
+        for (const area of (Array.isArray(data) ? data : [])) {
+          byCode[area.code] = (area.courses || []).filter(c => !c.isTerminated)
+        }
+        setGeCoursesData(byCode)
+      })
+      .catch(() => setGeCoursesData(null))
+      .finally(() => setGeCoursesLoading(false))
+  }, [ccId])
 
   useEffect(() => {
     supabase.auth.getUser().then(async ({ data: { user } }) => {
@@ -1050,9 +1081,9 @@ export default function Tab2() {
             )
             const slotsDone = slotKeys.filter(k => geState[k]).length
 
-            return (
-              <div key={area.code} style={{ background: 'var(--bg-card)', border: `1px solid ${slotsDone === area.slots ? '#4a3a7a' : 'var(--border)'}`, borderRadius: 10, padding: '14px 16px', transition: 'border-color 0.2s' }}>
-                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+return (
+              <div key={area.code} style={{ background: 'var(--bg-card)', border: `1px solid ${slotsDone === area.slots ? '#4a3a7a' : 'var(--border)'}`, borderRadius: 10, overflow: 'hidden', transition: 'border-color 0.2s' }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, padding: '14px 16px' }}>
                   <div style={{ flex: 1 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
                       <span style={{ fontSize: 12, fontWeight: 700, background: slotsDone === area.slots ? '#4a3a7a' : 'var(--bg-step)', color: slotsDone === area.slots ? '#a78bfa' : 'var(--text-muted)', borderRadius: 4, padding: '2px 7px' }}>
@@ -1067,22 +1098,48 @@ export default function Tab2() {
                       <div key={k} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
                         <div
                           onClick={() => toggleGeSlot(k)}
-                          style={{
-                            width: 22, height: 22, borderRadius: 6, flexShrink: 0,
-                            border: `2px solid ${geState[k] ? '#6C5CE7' : 'var(--border-input)'}`,
-                            background: geState[k] ? '#6C5CE7' : 'transparent',
-                            cursor: 'pointer',
-                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            transition: 'all 0.15s',
-                          }}
+                          style={{ width: 22, height: 22, borderRadius: 6, flexShrink: 0, border: `2px solid ${geState[k] ? '#6C5CE7' : 'var(--border-input)'}`, background: geState[k] ? '#6C5CE7' : 'transparent', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.15s' }}
                         >
                           {geState[k] && <span style={{ color: '#fff', fontSize: 12, lineHeight: 1 }}>✓</span>}
                         </div>
                         {isMulti && <span style={{ fontSize: 9, color: 'var(--text-muted)' }}>{i + 1}</span>}
                       </div>
                     ))}
+                    <div
+                      onClick={() => setExpandedGeAreas(prev => { const next = new Set(prev); next.has(area.code) ? next.delete(area.code) : next.add(area.code); return next })}
+                      style={{ cursor: 'pointer', fontSize: 11, color: 'var(--text-muted)', padding: '4px 6px', borderRadius: 6, background: 'var(--bg-step)', marginLeft: 4 }}
+                    >
+                      {expandedGeAreas.has(area.code) ? '▲' : '▼ courses'}
+                    </div>
                   </div>
                 </div>
+
+                {expandedGeAreas.has(area.code) && (
+                  <div style={{ borderTop: '1px solid var(--border)', background: 'var(--bg-step)', padding: '10px 14px' }}>
+                    {geCoursesLoading && <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Loading courses...</div>}
+                    {!geCoursesLoading && geCoursesData && (() => {
+                      const courses = geCoursesData[area.code] || []
+                      if (courses.length === 0) return <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>No courses found for this area at {ccName}.</div>
+                      return (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 6 }}>
+                            {courses.length} course{courses.length !== 1 ? 's' : ''} at {ccName} satisfy Area {area.code} — check the box above once you've completed one.
+                          </div>
+                          {courses.map(c => (
+                            <div key={c.courseIdentifierParentId} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', background: 'var(--bg-card)', borderRadius: 7, border: '1px solid var(--border)' }}>
+                              <div style={{ flex: 1 }}>
+                                <span style={{ fontFamily: 'monospace', fontWeight: 600, fontSize: 12, color: '#a78bfa' }}>{c.prefix} {c.courseNumber}</span>
+                                <span style={{ fontSize: 12, color: 'var(--text)', marginLeft: 8 }}>{c.courseTitle}</span>
+                              </div>
+                              <span style={{ fontSize: 11, color: 'var(--text-muted)', flexShrink: 0 }}>{c.minUnits}u</span>
+                            </div>
+                          ))}
+                        </div>
+                      )
+                    })()}
+                    {!geCoursesLoading && !geCoursesData && <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Could not load courses. Check your connection.</div>}
+                  </div>
+                )}
               </div>
             )
           })}
