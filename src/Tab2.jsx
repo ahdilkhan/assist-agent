@@ -1343,7 +1343,7 @@ export default function Tab2() {
                 </div>
               </div>
               {sem.courses.map((c, ci) => {
-                const liveBadge = getLiveBadge(c.ccKey)
+                const liveBadge = getLiveBadge(c.ccKey, c.allCourseLabels)
                 return (
                   <div key={ci} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 14px', borderBottom: '1px solid var(--border)' }}>
                     <div
@@ -1355,17 +1355,34 @@ export default function Tab2() {
                     </div>
                     <div style={{ flex: 1, opacity: completedCourses.has(c.ccKey) ? 0.45 : 1 }}>
                       <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)', textDecoration: completedCourses.has(c.ccKey) ? 'line-through' : 'none', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                        {c.prefix} {c.number}
+                        {c.allCourseLabels ? c.allCourseLabels.join(' + ') : `${c.prefix} ${c.number}`}
                         {c.isRec && <span style={{ fontSize: 9, fontWeight: 600, padding: '2px 5px', borderRadius: 4, background: '#1a2a10', color: '#86efac' }}>REC</span>}
-                        {/* Live section badge */}
-                        {isLive && liveBadge && (
-                          liveBadge.count > 0
-                            ? <span style={{ fontSize: 9, fontWeight: 600, padding: '2px 5px', borderRadius: 4, background: 'rgba(52,211,153,0.1)', color: '#34d399', border: '1px solid rgba(52,211,153,0.2)' }}>✓ {liveBadge.count} section{liveBadge.count !== 1 ? 's' : ''} · {liveBadge.label}</span>
-                            : <span style={{ fontSize: 9, fontWeight: 600, padding: '2px 5px', borderRadius: 4, background: 'rgba(239,68,68,0.1)', color: '#f87171', border: '1px solid rgba(239,68,68,0.2)' }}>⚠ Verify availability</span>
-                        )}
-                        {!isLive && <span style={{ fontSize: 9, fontWeight: 600, padding: '2px 5px', borderRadius: 4, background: 'rgba(251,191,36,0.1)', color: '#fbbf24', border: '1px solid rgba(251,191,36,0.2)' }}>⚠ Verify availability</span>}
                       </div>
                       {c.title && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>{c.title}</div>}
+                      {liveBadge?.perCourse && (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 3 }}>
+                          {liveBadge.perCourse.map((pc, i) => (
+                            <span key={i} style={{ fontSize: 9, fontWeight: 600, padding: '2px 5px', borderRadius: 4, background: 'rgba(52,211,153,0.1)', color: '#34d399', border: '1px solid rgba(52,211,153,0.2)' }}>
+                              ✓ {pc.label}: {pc.count} section{pc.count !== 1 ? 's' : ''}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      {liveBadge?.terms && (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 3 }}>
+                          {liveBadge.terms.map((t, i) => (
+                            <span key={i} style={{ fontSize: 9, fontWeight: 600, padding: '2px 5px', borderRadius: 4, background: 'rgba(52,211,153,0.1)', color: '#34d399', border: '1px solid rgba(52,211,153,0.2)' }}>
+                              ✓ {t.count} section{t.count !== 1 ? 's' : ''} · {t.label}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      {isLive && !liveBadge && (
+                        <span style={{ fontSize: 9, fontWeight: 600, padding: '2px 5px', borderRadius: 4, background: 'rgba(239,68,68,0.1)', color: '#f87171', border: '1px solid rgba(239,68,68,0.2)', marginTop: 3, display: 'inline-block' }}>⚠ Verify availability</span>
+                      )}
+                      {!isLive && (
+                        <span style={{ fontSize: 9, fontWeight: 600, padding: '2px 5px', borderRadius: 4, background: 'rgba(251,191,36,0.1)', color: '#fbbf24', border: '1px solid rgba(251,191,36,0.2)', marginTop: 3, display: 'inline-block' }}>⚠ Verify availability</span>
+                      )}
                       {c.programs && c.programs.length > 0 && (
                         <div style={{ fontSize: 9, color: 'var(--text-muted)', marginTop: 2 }}>{c.programs.join(' · ')}</div>
                       )}
