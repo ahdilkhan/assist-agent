@@ -210,10 +210,26 @@ async function fetchGeCoursesViaBrowser(institutionId, academicYearId) {
   try {
     const page = await browser.newPage()
     await page.setUserAgent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36")
-    const url = `https://assist.org/api/transferability/courses?institutionId=${institutionId}&academicYearId=${academicYearId}&listType=CALGETC`
-    await page.goto(url, { waitUntil: "networkidle2", timeout: 20000 })
-    const text = await page.evaluate(() => document.body.innerText)
-    return JSON.parse(text)
+
+    // Visit assist.org first to get session cookies
+    await page.goto("https://assist.org", { waitUntil: "networkidle2", timeout: 20000 })
+
+    // Now hit the transferability page which fires the real API calls
+    const transferUrl = `https://assist.org/transfer/results?year=${academicYearId}&institution=${institutionId}&type=CALGETC&view=transferability&viewBy=calgetcArea&viewByKey=all&viewSendingAgreements=false`
+    await page.goto(transferUrl, { waitUntil: "networkidle2", timeout: 30000 })
+
+    // Intercept the API response by re-fetching it with the session cookies
+    const cookies = await page.cookies()
+    const cookieStr = cookies.map(c => `${c.name}=${c.value}`).join('; ')
+
+    const result = await page.evaluate(async (institutionId, academicYearId, cookieStr) => {
+      const res = await fetch(`/api/transferability/courses?institutionId=${institutionId}&academicYearId=${academicYearId}&listType=CALGETC`, {
+        headers: { accept: 'application/json' }
+      })
+      return res.json()
+    }, institutionId, academicYearId, cookieStr)
+
+    return result
   } finally {
     await browser.close()
   }
