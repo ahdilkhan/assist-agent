@@ -203,22 +203,52 @@ async function scrapeColleague(baseUrl, subject, courseNumber) {
 }
 
 async function fetchGeCoursesViaBrowser(institutionId, academicYearId) {
-  const url = `https://assist.org/api/transferability/courses?institutionId=${institutionId}&academicYearId=${academicYearId}&listType=CALGETC`
+  const jar = {}
   
-  // Try with different referer/origin headers to pass the 400
-  const response = await axios.get(url, {
-    headers: {
-      ...browserHeaders,
-      accept: 'application/json, text/plain, */*',
-      referer: `https://assist.org/transfer/results?year=${academicYearId}&institution=${institutionId}&type=CALGETC&view=transferability&viewBy=calgetcArea&viewByKey=all&viewSendingAgreements=false`,
-      origin: 'https://assist.org',
-      'x-requested-with': 'XMLHttpRequest',
-    }
+  // Step 1: hit assist.org homepage to get ARRAffinity cookies
+  const homeRes = await axios.get('https://assist.org', {
+    headers: browserHeaders,
+    maxRedirects: 5,
+    validateStatus: () => true,
   })
   
-  // Parse into byCode map: { "1A": [...courses], "2": [...], ... }
+  const homeCookies = (homeRes.headers['set-cookie'] || []).map(c => c.split(';')[0])
+  
+  // Step 2: hit the specific transferability page to get XSRF token
+  const pageRes = await axios.get(
+    `https://assist.org/transfer/results?year=${academicYearId}&institution=${institutionId}&type=CALGETC&view=transferability&viewBy=calgetcArea&viewByKey=all&viewSendingAgreements=false`,
+    {
+      headers: { ...browserHeaders, cookie: homeCookies.join('; ') },
+      maxRedirects: 5,
+      validateStatus: () => true,
+    }
+  )
+  
+  const pageCookies = (pageRes.headers['set-cookie'] || []).map(c => c.split(';')[0])
+  const allCookies = [...new Set([...homeCookies, ...pageCookies])].join('; ')
+  
+  // Extract XSRF token from cookies
+  const xsrfCookie = [...homeCookies, ...pageCookies].find(c => c.startsWith('XSRF-TOKEN='))
+  const xsrfToken = xsrfCookie ? xsrfCookie.split('=')[1] : ''
+  
+  // Step 3: hit the API with full session
+  const dataRes = await axios.get(
+    `https://assist.org/api/transferability/courses?institutionId=${institutionId}&academicYearId=${academicYearId}&listType=CALGETC`,
+    {
+      headers: {
+        ...browserHeaders,
+        accept: 'application/json, text/plain, */*',
+        cookie: allCookies,
+        referer: `https://assist.org/transfer/results?year=${academicYearId}&institution=${institutionId}&type=CALGETC&view=transferability&viewBy=calgetcArea&viewByKey=all&viewSendingAgreements=false`,
+        origin: 'https://assist.org',
+        'x-xsrf-token': decodeURIComponent(xsrfToken),
+        'x-requested-with': 'XMLHttpRequest',
+      }
+    }
+  )
+
   const byCode = {}
-  for (const course of (response.data.courseInformationList || [])) {
+  for (const course of (dataRes.data.courseInformationList || [])) {
     for (const area of (course.transferAreas || [])) {
       if (!byCode[area.code]) byCode[area.code] = []
       byCode[area.code].push({
@@ -227,7 +257,6 @@ async function fetchGeCoursesViaBrowser(institutionId, academicYearId) {
         courseTitle: course.courseTitle,
         minUnits: course.minUnits,
         courseIdentifierParentId: course.courseIdentifierParentId,
-        isTerminated: false,
       })
     }
   }
