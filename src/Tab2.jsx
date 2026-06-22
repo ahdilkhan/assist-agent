@@ -432,6 +432,8 @@ function buildSemesterPlan({ rows, noArtCourses, completedCourses, geState, plan
       isNoArt: false,
       programs: [...new Set(row.programEntries.map(pe => pe.program))],
       allCourseLabels: row.primaryCourses.map(c => `${c.prefix} ${c.number}`),
+      groupId: row.groupId ?? null,
+      nRequired: row.nRequired ?? null,
     })
   }
 
@@ -612,33 +614,39 @@ export default function Tab2() {
     const newLiveData = {}
     await Promise.all(rows.map(async row => {
       if (!row.primaryCourses?.length) return
-      try {
-        const courseResults = await Promise.all(row.primaryCourses.map(course =>
-          fetch(
-            `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/banner-sections`,
-            {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json', 'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY },
-              body: JSON.stringify({ baseUrl, subject: course.prefix, courseNumber: course.number, system, campus: sdccdCampus || vcccdCampus }),
-            }
-          ).then(r => r.json())
-        ))
-        const termCounts = {}
-        for (const data of courseResults) {
-          if (!data.success) continue
-          for (const t of (data.terms || [])) {
-            if (!termCounts[t.termCode]) {
-              termCounts[t.termCode] = { count: t.totalCount, termDesc: t.termDesc, sections: t.sections || [] }
-            } else {
-              termCounts[t.termCode].sections = [
-                ...termCounts[t.termCode].sections,
-                ...(t.sections || []).map(s => ({ ...s, _courseLabel: `${data.subject || ''} ${data.courseNumber || ''}`.trim() }))
-              ]
+        try {
+          const courseResults = await Promise.all(row.primaryCourses.map(course =>
+            fetch(
+              `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/banner-sections`,
+              {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY },
+                body: JSON.stringify({ baseUrl, subject: course.prefix, courseNumber: course.number, system, campus: sdccdCampus || vcccdCampus }),
+              }
+            ).then(r => r.json())
+          ))
+          const termCounts = {}
+          for (const data of courseResults) {
+            if (!data.success) continue
+            for (const t of (data.terms || [])) {
+              if (!termCounts[t.termCode]) {
+                termCounts[t.termCode] = { count: t.totalCount, termDesc: t.termDesc, sections: t.sections || [] }
+              }
             }
           }
-        }
-        if (Object.keys(termCounts).length > 0) newLiveData[row.ccKey] = termCounts
-      } catch {}
+          if (Object.keys(termCounts).length > 0) {
+            newLiveData[row.ccKey] = termCounts
+            row.primaryCourses.forEach((course, idx) => {
+              const courseData = courseResults[idx]
+              if (!courseData?.success) return
+              const ct = {}
+              for (const t of (courseData.terms || [])) {
+                ct[t.termCode] = { count: t.totalCount, termDesc: t.termDesc, sections: t.sections || [] }
+              }
+              newLiveData[`${row.ccKey}__${course.prefix}_${course.number}`] = ct
+            })
+          }
+        } catch {}
     }))
     setTab2LiveData(newLiveData)
     setTab2LiveLoading(false)
@@ -686,8 +694,20 @@ export default function Tab2() {
   function toggleCourse(ccKey) {
     setCompletedCourses(prev => {
       const next = new Set(prev)
+      const isNowDone = !prev.has(ccKey)
       next.has(ccKey) ? next.delete(ccKey) : next.add(ccKey)
       saveProgress(next, programs)
+      if (isNowDone) {
+        const course = allSems.flatMap(s => s.courses).find(c => c.ccKey === ccKey)
+        if (course?.groupId && course?.nRequired !== null) {
+          const siblings = allSems.flatMap(s => s.courses).filter(c => c.groupId === course.groupId && c.ccKey !== ccKey)
+          setCourseOverrides(prev => {
+            const updated = { ...prev }
+            siblings.forEach(s => { updated[s.ccKey] = -999 })
+            return updated
+          })
+        }
+      }
       return next
     })
   }
@@ -699,7 +719,6 @@ export default function Tab2() {
     const targetIdx = currentSemIdx + direction
     if (targetIdx < 0 || targetIdx >= allSems.length) return
 
-    // Only enforce unit cap when moving INTO a term slot (not into Unscheduled)
     const targetSem = allSems[targetIdx]
     if (!targetSem.isUnscheduled) {
       const dragUnits = isGe ? 3 : (allSems[currentSemIdx]?.courses.find(c => c.ccKey === itemKey)?.units || 3)
@@ -713,9 +732,21 @@ export default function Tab2() {
 
     if (isGe) {
       setGeOverrides(prev => ({ ...prev, [itemKey]: targetIdx }))
-    } else {
-      setCourseOverrides(prev => ({ ...prev, [itemKey]: targetIdx }))
+      return
     }
+
+    const movedCourse = allSems[currentSemIdx]?.courses.find(c => c.ccKey === itemKey)
+    if (movedCourse?.groupId && movedCourse?.nRequired !== null) {
+      const siblings = allSems.flatMap(s => s.courses).filter(c => c.groupId === movedCourse.groupId && c.ccKey !== itemKey)
+      setCourseOverrides(prev => {
+        const next = { ...prev, [itemKey]: targetIdx }
+        siblings.forEach(s => { next[s.ccKey] = -999 })
+        return next
+      })
+      return
+    }
+
+    setCourseOverrides(prev => ({ ...prev, [itemKey]: targetIdx }))
   }
 
   function toggleGeSlot(key) {
@@ -874,6 +905,13 @@ export default function Tab2() {
     const sems = rawAllSems.map(s => ({ ...s, courses: [...s.courses], ge: [...s.ge] }))
 
     for (const [ccKey, targetIdx] of Object.entries(courseOverrides)) {
+      if (targetIdx === -999) {
+        for (const sem of sems) {
+          const idx = sem.courses.findIndex(c => c.ccKey === ccKey)
+          if (idx !== -1) { sem.courses.splice(idx, 1); break }
+        }
+        continue
+      }
       if (targetIdx < 0 || targetIdx >= sems.length) continue
       for (let si = 0; si < sems.length; si++) {
         const idx = sems[si].courses.findIndex(c => c.ccKey === ccKey)
@@ -907,26 +945,42 @@ export default function Tab2() {
   const noArtSem = semesterPlan.find(s => s.isNoArtSection)
 
   // Helper: get section count badge for a course in the planner (live CCs only)
-  function getLiveBadge(ccKey) {
-    const termData = tab2LiveData[ccKey]
-    if (!termData) return null
+  function getLiveBadge(ccKey, allCourseLabels) {
     const now = new Date()
     const currentYear = now.getFullYear()
     const currentMonth = now.getMonth()
-    const entries = Object.entries(termData)
-      .filter(([code, v]) => {
-        if (v.count === 0) return false
-        const year = parseInt(code.toString().slice(0, 4))
-        const term = code.toString().slice(4)
-        if (year < currentYear) return false
-        if (year > currentYear) return true
-        if (term >= '30') return currentMonth < 8
-        if (term >= '20') return currentMonth < 5
-        return true
-      })
-      .sort(([a], [b]) => Number(a) - Number(b))
-    if (entries.length === 0) return null
-    return entries.map(([, v]) => ({ count: v.count, label: v.termDesc }))
+
+    function filterUpcoming(termData) {
+      return Object.entries(termData || {})
+        .filter(([code, v]) => {
+          if (v.count === 0) return false
+          const year = parseInt(code.toString().slice(0, 4))
+          const term = code.toString().slice(4)
+          if (year < currentYear) return false
+          if (year > currentYear) return true
+          if (term >= '30') return currentMonth < 8
+          if (term >= '20') return currentMonth < 5
+          return true
+        })
+    }
+
+    if (allCourseLabels?.length > 1) {
+      const perCourse = allCourseLabels.map(label => {
+        const k = `${ccKey}__${label.replace(' ', '_')}`
+        const termData = tab2LiveData[k]
+        if (!termData) return null
+        const upcoming = filterUpcoming(termData)
+        const total = upcoming.reduce((s, [, v]) => s + v.count, 0)
+        return total > 0 ? { label, count: total } : null
+      }).filter(Boolean)
+      return perCourse.length > 0 ? { perCourse } : null
+    }
+
+    const termData = tab2LiveData[ccKey]
+    if (!termData) return null
+    const upcoming = filterUpcoming(termData)
+    if (upcoming.length === 0) return null
+    return { terms: upcoming.map(([, v]) => ({ count: v.count, label: v.termDesc })) }
   }
 
   function renderStep1() {
@@ -1387,97 +1441,136 @@ export default function Tab2() {
             </div>
             {unscheduledExpanded && (
               <>
-                {unscheduledSem.courses.map((c, ci) => {
-                  const semIdxInAll = allSems.indexOf(unscheduledSem)
-                  const liveBadges = getLiveBadge(c.ccKey)
-                  return (
-                    <div key={ci} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 14px', borderBottom: '1px solid #2a1a05' }}>
-                      <div style={{ flex: 1 }}>
-                        <div style={{ fontSize: 12, fontWeight: 600, color: '#fbbf24', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                          {c.allCourseLabels ? c.allCourseLabels.join(' + ') : `${c.prefix} ${c.number}`}
-                          {c.isRec && <span style={{ fontSize: 9, fontWeight: 600, padding: '2px 5px', borderRadius: 4, background: '#1a2a10', color: '#86efac' }}>REC</span>}
+                {(() => {
+                  const pickGroups = {}
+                  const standalone = []
+                  for (const c of unscheduledSem.courses) {
+                    if (c.groupId && c.nRequired !== null) {
+                      if (!pickGroups[c.groupId]) pickGroups[c.groupId] = []
+                      pickGroups[c.groupId].push(c)
+                    } else {
+                      standalone.push(c)
+                    }
+                  }
+
+                  const items = []
+
+                  for (const [gid, options] of Object.entries(pickGroups)) {
+                    if (options.length === 1) { standalone.push(options[0]); continue }
+                    items.push(
+                      <div key={`pickgroup-${gid}`} style={{ border: '1.5px solid #5a4a10', borderRadius: 8, marginBottom: 8, overflow: 'hidden', background: '#1a1505' }}>
+                        <div style={{ padding: '6px 12px', background: '#221a05', borderBottom: '1px solid #5a4a10' }}>
+                          <span style={{ fontSize: 11, fontWeight: 600, color: '#fbbf24' }}>✓ Choose 1 of these {options.length} options</span>
                         </div>
-                        {c.title && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>{c.title}</div>}
-                        {liveBadges && liveBadges.length > 0 && (
-                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 4 }}>
-                            {liveBadges.map((b, bi) => (
-                              <span key={bi} style={{ fontSize: 9, fontWeight: 600, padding: '2px 5px', borderRadius: 4, background: 'rgba(52,211,153,0.1)', color: '#34d399', border: '1px solid rgba(52,211,153,0.2)' }}>
-                                ✓ {b.count} section{b.count !== 1 ? 's' : ''} · {b.label}
-                              </span>
-                            ))}
-                          </div>
-                        )}
-                        {isLive && !liveBadges && (
-                          <span style={{ fontSize: 9, fontWeight: 600, padding: '2px 5px', borderRadius: 4, background: 'rgba(239,68,68,0.1)', color: '#f87171', border: '1px solid rgba(239,68,68,0.2)', marginTop: 4, display: 'inline-block' }}>⚠ No sections found</span>
-                        )}
-                        {liveBadges && liveBadges.length > 0 && (() => {
-                          const termData = tab2LiveData[c.ccKey]
-                          const now = new Date()
-                          const currentYear = now.getFullYear()
-                          const currentMonth = now.getMonth()
-                          const allSections = Object.entries(termData || {})
-                            .filter(([code, v]) => {
-                              const year = parseInt(code.toString().slice(0, 4))
-                              const term = code.toString().slice(4)
-                              if (year < currentYear) return false
-                              if (year > currentYear) return true
-                              if (term >= '30') return currentMonth < 8
-                              if (term >= '20') return currentMonth < 5
-                              return true
-                            })
-                            .flatMap(([, t]) => (t.sections || []).map(s => ({ ...s, termDesc: t.termDesc })))
-                          if (allSections.length === 0) return null
-                          const isExp = expandedRows.has(`live_${c.ccKey}`)
+                        {options.map((c, oi) => {
+                          const semIdxInAll = allSems.indexOf(unscheduledSem)
+                          const liveBadge = getLiveBadge(c.ccKey, c.allCourseLabels)
                           return (
-                            <div style={{ marginTop: 5 }}>
-                              <span
-                                onClick={e => { e.stopPropagation(); setExpandedRows(prev => { const next = new Set(prev); next.has(`live_${c.ccKey}`) ? next.delete(`live_${c.ccKey}`) : next.add(`live_${c.ccKey}`); return next }) }}
-                                style={{ fontSize: 10, color: '#a78bfa', cursor: 'pointer', fontWeight: 600 }}
-                              >
-                                {isExp ? '▲ hide' : `▼ ${allSections.length} section${allSections.length !== 1 ? 's' : ''} — tap to view`}
-                              </span>
-                              {isExp && (
-                                <div style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 4 }}>
-                                  {allSections.map((s, si) => (
-                                    <div key={si} style={{ borderLeft: '2px solid rgba(108,92,231,0.3)', paddingLeft: 8, fontSize: 11 }}>
-                                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                                        <span style={{ color: 'var(--text)', fontWeight: 600 }}>{s.termDesc} · {s.section}</span>
-                                        <span style={{ fontSize: 9, fontWeight: 600, color: s.openSection && s.seatsAvailable > 0 ? '#34d399' : s.waitAvailable > 0 ? '#fbbf24' : '#f87171' }}>
-                                          {s.openSection && s.seatsAvailable > 0 ? `${s.seatsAvailable} open` : s.waitAvailable > 0 ? 'waitlist' : 'full'}
-                                        </span>
-                                      </div>
-                                      <div style={{ color: 'var(--text-muted)', marginTop: 1 }}>
-                                        {s.instructor && <span>👤 {s.instructor}</span>}
-                                        {s.scheduleType && <span>{s.instructor ? ' · ' : ''}{s.scheduleType}</span>}
-                                        {s.meetings?.[0]?.days && <span> · {s.meetings[0].days}{s.meetings[0].startTime ? ` ${s.meetings[0].startTime}–${s.meetings[0].endTime}` : ''}</span>}
-                                      </div>
-                                    </div>
-                                  ))}
+                            <div key={c.ccKey}>
+                              {oi > 0 && <div style={{ textAlign: 'center', fontSize: 10, fontWeight: 700, color: '#5a4a10', padding: '3px 0' }}>OR</div>}
+                              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '8px 12px', borderTop: oi > 0 ? '1px dashed #3a3010' : 'none' }}>
+                                <div
+                                  onClick={() => toggleCourse(c.ccKey)}
+                                  style={{ width: 18, height: 18, borderRadius: 5, flexShrink: 0, marginTop: 2, cursor: 'pointer', border: `2px solid ${completedCourses.has(c.ccKey) ? '#fbbf24' : '#5a4a10'}`, background: completedCourses.has(c.ccKey) ? '#fbbf24' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                                >
+                                  {completedCourses.has(c.ccKey) && <span style={{ color: '#1a1505', fontSize: 10 }}>✓</span>}
                                 </div>
-                              )}
+                                <div style={{ flex: 1 }}>
+                                  <div style={{ fontSize: 12, fontWeight: 600, color: completedCourses.has(c.ccKey) ? '#5a4a10' : '#fbbf24', textDecoration: completedCourses.has(c.ccKey) ? 'line-through' : 'none', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                                    {c.allCourseLabels ? c.allCourseLabels.join(' + ') : `${c.prefix} ${c.number}`}
+                                    {c.isRec && <span style={{ fontSize: 9, padding: '1px 4px', borderRadius: 3, background: '#1a2a10', color: '#86efac', fontWeight: 600 }}>REC</span>}
+                                  </div>
+                                  {c.title && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>{c.title}</div>}
+                                  {liveBadge?.perCourse && (
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 3 }}>
+                                      {liveBadge.perCourse.map((pc, i) => (
+                                        <span key={i} style={{ fontSize: 9, fontWeight: 600, padding: '2px 5px', borderRadius: 4, background: 'rgba(52,211,153,0.1)', color: '#34d399', border: '1px solid rgba(52,211,153,0.2)' }}>
+                                          ✓ {pc.label}: {pc.count} section{pc.count !== 1 ? 's' : ''}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  )}
+                                  {liveBadge?.terms && (
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 3 }}>
+                                      {liveBadge.terms.map((t, i) => (
+                                        <span key={i} style={{ fontSize: 9, fontWeight: 600, padding: '2px 5px', borderRadius: 4, background: 'rgba(52,211,153,0.1)', color: '#34d399', border: '1px solid rgba(52,211,153,0.2)' }}>
+                                          ✓ {t.count} section{t.count !== 1 ? 's' : ''} · {t.label}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  )}
+                                  {isLive && !liveBadge && (
+                                    <span style={{ fontSize: 9, fontWeight: 600, padding: '2px 5px', borderRadius: 4, background: 'rgba(239,68,68,0.1)', color: '#f87171', border: '1px solid rgba(239,68,68,0.2)', marginTop: 3, display: 'inline-block' }}>⚠ Verify availability</span>
+                                  )}
+                                </div>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flexShrink: 0, alignItems: 'center' }}>
+                                  <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>{c.units}u</span>
+                                  <button
+                                    onClick={() => moveCourse(c.ccKey, -1, semIdxInAll)}
+                                    disabled={semIdxInAll === 0}
+                                    style={{ width: 20, height: 20, borderRadius: 4, border: '1px solid #5a4a10', background: '#221a05', color: semIdxInAll === 0 ? '#5a4a10' : '#fbbf24', cursor: semIdxInAll === 0 ? 'default' : 'pointer', fontSize: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}
+                                  >↑</button>
+                                </div>
+                              </div>
                             </div>
                           )
-                        })()}
+                        })}
                       </div>
-                      <span style={{ fontSize: 9, fontWeight: 600, padding: '2px 5px', borderRadius: 4, flexShrink: 0, background: c.badge === 'all' ? 'var(--bg-chip-selected)' : c.badge === 'multi' ? '#0d2a28' : '#0d1a2e', color: c.badge === 'all' ? '#a78bfa' : c.badge === 'multi' ? '#34d399' : '#60a5fa' }}>
-                        {c.badge === 'all' ? 'ALL' : c.badge === 'multi' ? 'MULTI' : 'SCHOOL'}
-                      </span>
-                      <span style={{ fontSize: 11, color: 'var(--text-muted)', flexShrink: 0 }}>{c.units}u</span>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flexShrink: 0 }}>
-                        <button
-                          onClick={() => moveCourse(c.ccKey, -1, semIdxInAll)}
-                          disabled={semIdxInAll === 0}
-                          style={{ width: 20, height: 20, borderRadius: 4, border: '1px solid #5a4a10', background: '#221a05', color: semIdxInAll === 0 ? '#5a4a10' : '#fbbf24', cursor: semIdxInAll === 0 ? 'default' : 'pointer', fontSize: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}
-                        >↑</button>
-                        <button
-                          onClick={() => moveCourse(c.ccKey, 1, semIdxInAll)}
-                          disabled={true}
-                          style={{ width: 20, height: 20, borderRadius: 4, border: '1px solid #5a4a10', background: '#221a05', color: '#5a4a10', cursor: 'default', fontSize: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}
-                        >↓</button>
+                    )
+                  }
+
+                  for (const c of standalone) {
+                    const semIdxInAll = allSems.indexOf(unscheduledSem)
+                    const liveBadge = getLiveBadge(c.ccKey, c.allCourseLabels)
+                    items.push(
+                      <div key={c.ccKey} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '8px 14px', borderBottom: '1px solid #2a1a05' }}>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontSize: 12, fontWeight: 600, color: '#fbbf24', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                            {c.allCourseLabels ? c.allCourseLabels.join(' + ') : `${c.prefix} ${c.number}`}
+                            {c.isRec && <span style={{ fontSize: 9, fontWeight: 600, padding: '2px 5px', borderRadius: 4, background: '#1a2a10', color: '#86efac' }}>REC</span>}
+                          </div>
+                          {c.title && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>{c.title}</div>}
+                          {liveBadge?.perCourse && (
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 3 }}>
+                              {liveBadge.perCourse.map((pc, i) => (
+                                <span key={i} style={{ fontSize: 9, fontWeight: 600, padding: '2px 5px', borderRadius: 4, background: 'rgba(52,211,153,0.1)', color: '#34d399', border: '1px solid rgba(52,211,153,0.2)' }}>
+                                  ✓ {pc.label}: {pc.count} section{pc.count !== 1 ? 's' : ''}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                          {liveBadge?.terms && (
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 3 }}>
+                              {liveBadge.terms.map((t, i) => (
+                                <span key={i} style={{ fontSize: 9, fontWeight: 600, padding: '2px 5px', borderRadius: 4, background: 'rgba(52,211,153,0.1)', color: '#34d399', border: '1px solid rgba(52,211,153,0.2)' }}>
+                                  ✓ {t.count} section{t.count !== 1 ? 's' : ''} · {t.label}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                          {isLive && !liveBadge && (
+                            <span style={{ fontSize: 9, fontWeight: 600, padding: '2px 5px', borderRadius: 4, background: 'rgba(239,68,68,0.1)', color: '#f87171', border: '1px solid rgba(239,68,68,0.2)', marginTop: 3, display: 'inline-block' }}>⚠ Verify availability</span>
+                          )}
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flexShrink: 0, alignItems: 'center' }}>
+                          <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>{c.units}u</span>
+                          <button
+                            onClick={() => moveCourse(c.ccKey, -1, semIdxInAll)}
+                            disabled={semIdxInAll === 0}
+                            style={{ width: 20, height: 20, borderRadius: 4, border: '1px solid #5a4a10', background: '#221a05', color: semIdxInAll === 0 ? '#5a4a10' : '#fbbf24', cursor: semIdxInAll === 0 ? 'default' : 'pointer', fontSize: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}
+                          >↑</button>
+                          <button
+                            onClick={() => moveCourse(c.ccKey, 1, semIdxInAll)}
+                            disabled={true}
+                            style={{ width: 20, height: 20, borderRadius: 4, border: '1px solid #5a4a10', background: '#221a05', color: '#5a4a10', cursor: 'default', fontSize: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}
+                          >↓</button>
+                        </div>
                       </div>
-                    </div>
-                  )
-                })}
+                    )
+                  }
+
+                  return items
+                })()}
                 {unscheduledSem.ge.map((g, gi) => {
                   const semIdxInAll = allSems.indexOf(unscheduledSem)
                   return (
