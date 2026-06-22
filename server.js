@@ -203,32 +203,35 @@ async function scrapeColleague(baseUrl, subject, courseNumber) {
 }
 
 async function fetchGeCoursesViaBrowser(institutionId, academicYearId) {
-  // Step 1: visit the page that actually loads the courses to get valid session
-  const pageUrl = `https://assist.org/transfer/results?year=${academicYearId}&institution=${institutionId}&type=CALGETC&view=transferability&viewBy=calgetcArea&viewByKey=all&viewSendingAgreements=false`
+  const url = `https://assist.org/api/transferability/courses?institutionId=${institutionId}&academicYearId=${academicYearId}&listType=CALGETC`
   
-  const pageRes = await axios.get(pageUrl, {
-    headers: browserHeaders,
-    maxRedirects: 5,
+  // Try with different referer/origin headers to pass the 400
+  const response = await axios.get(url, {
+    headers: {
+      ...browserHeaders,
+      accept: 'application/json, text/plain, */*',
+      referer: `https://assist.org/transfer/results?year=${academicYearId}&institution=${institutionId}&type=CALGETC&view=transferability&viewBy=calgetcArea&viewByKey=all&viewSendingAgreements=false`,
+      origin: 'https://assist.org',
+      'x-requested-with': 'XMLHttpRequest',
+    }
   })
   
-  // collect all cookies from the response
-  const rawCookies = pageRes.headers['set-cookie'] || []
-  const cookieStr = rawCookies.map(c => c.split(';')[0]).join('; ')
-
-  // Step 2: now hit the API with those cookies
-  const dataRes = await axios.get(
-    `https://assist.org/api/transferability/courses?institutionId=${institutionId}&academicYearId=${academicYearId}&listType=CALGETC`,
-    {
-      headers: {
-        ...browserHeaders,
-        accept: 'application/json',
-        referer: pageUrl,
-        origin: 'https://assist.org',
-        cookie: cookieStr,
-      }
+  // Parse into byCode map: { "1A": [...courses], "2": [...], ... }
+  const byCode = {}
+  for (const course of (response.data.courseInformationList || [])) {
+    for (const area of (course.transferAreas || [])) {
+      if (!byCode[area.code]) byCode[area.code] = []
+      byCode[area.code].push({
+        prefix: course.prefixCode,
+        courseNumber: course.courseNumber,
+        courseTitle: course.courseTitle,
+        minUnits: course.minUnits,
+        courseIdentifierParentId: course.courseIdentifierParentId,
+        isTerminated: false,
+      })
     }
-  )
-  return dataRes.data
+  }
+  return byCode
 }
 
 // ── School Platform Lists ──

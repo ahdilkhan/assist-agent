@@ -37,12 +37,9 @@ function initGeState() {
 }
 
 async function getCalGetcCourses(ccId, yearId = 76) {
-  const res = await fetch(
-    `https://assist.org/api/transferability/courses?institutionId=${ccId}&academicYearId=${yearId}&listType=CALGETC`,
-    { headers: { accept: 'application/json, text/plain, */*' } }
-  )
+  const res = await fetch(`${ASSIST_BASE}/api/ge-courses?institutionId=${ccId}&academicYearId=${yearId}`)
   if (!res.ok) throw new Error(`GE courses ${res.status}`)
-  return res.json()
+  return res.json() // already returns byCode map: { "1A": [...], "2": [...] }
 }
 
 async function assistGet(path) {
@@ -624,13 +621,9 @@ export default function Tab2() {
     if (!ccId) { setGeCoursesData(null); return }
     setGeCoursesLoading(true)
     getCalGetcCourses(ccId)
-      .then(data => {
-        const byCode = {}
-        for (const area of (Array.isArray(data) ? data : [])) {
-          byCode[area.code] = (area.courses || []).filter(c => !c.isTerminated)
-        }
-        setGeCoursesData(byCode)
-      })
+    .then(data => {
+      setGeCoursesData(data) // already a byCode map from the server
+    })
       .catch(() => setGeCoursesData(null))
       .finally(() => setGeCoursesLoading(false))
   }, [ccId])
