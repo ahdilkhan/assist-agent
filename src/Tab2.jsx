@@ -610,26 +610,33 @@ export default function Tab2() {
 
     const newLiveData = {}
     await Promise.all(rows.map(async row => {
-      const primaryCourse = row.primaryCourses[0]
-      if (!primaryCourse) return
+      if (!row.primaryCourses?.length) return
       try {
-        const res = await fetch(
-          `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/banner-sections`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY },
-            body: JSON.stringify({ baseUrl, subject: primaryCourse.prefix, courseNumber: primaryCourse.number, system, campus: sdccdCampus || vcccdCampus }),
-          }
-        )
-        const data = await res.json()
-        if (data.success) {
-          // Store per-term counts keyed by termCode
-          const termCounts = {}
+        const courseResults = await Promise.all(row.primaryCourses.map(course =>
+          fetch(
+            `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/banner-sections`,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY },
+              body: JSON.stringify({ baseUrl, subject: course.prefix, courseNumber: course.number, system, campus: sdccdCampus || vcccdCampus }),
+            }
+          ).then(r => r.json())
+        ))
+        const termCounts = {}
+        for (const data of courseResults) {
+          if (!data.success) continue
           for (const t of (data.terms || [])) {
-            termCounts[t.termCode] = { count: t.totalCount, termDesc: t.termDesc, sections: t.sections || [] }
+            if (!termCounts[t.termCode]) {
+              termCounts[t.termCode] = { count: t.totalCount, termDesc: t.termDesc, sections: t.sections || [] }
+            } else {
+              termCounts[t.termCode].sections = [
+                ...termCounts[t.termCode].sections,
+                ...(t.sections || []).map(s => ({ ...s, _courseLabel: `${data.subject || ''} ${data.courseNumber || ''}`.trim() }))
+              ]
+            }
           }
-          newLiveData[row.ccKey] = termCounts
         }
+        if (Object.keys(termCounts).length > 0) newLiveData[row.ccKey] = termCounts
       } catch {}
     }))
     setTab2LiveData(newLiveData)
@@ -902,9 +909,21 @@ export default function Tab2() {
   function getLiveBadge(ccKey) {
     const termData = tab2LiveData[ccKey]
     if (!termData) return null
+    const now = new Date()
+    const currentYear = now.getFullYear()
+    const currentMonth = now.getMonth()
     const entries = Object.entries(termData)
-      .filter(([, v]) => v.count > 0)
-      .sort(([a], [b]) => Number(a) - Number(b)) // ascending by termCode
+      .filter(([code, v]) => {
+        if (v.count === 0) return false
+        const year = parseInt(code.toString().slice(0, 4))
+        const term = code.toString().slice(4)
+        if (year < currentYear) return false
+        if (year > currentYear) return true
+        if (term >= '30') return currentMonth < 8
+        if (term >= '20') return currentMonth < 5
+        return true
+      })
+      .sort(([a], [b]) => Number(a) - Number(b))
     if (entries.length === 0) return null
     return entries.map(([, v]) => ({ count: v.count, label: v.termDesc }))
   }
