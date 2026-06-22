@@ -202,6 +202,23 @@ async function scrapeColleague(baseUrl, subject, courseNumber) {
   }
 }
 
+async function fetchGeCoursesViaBrowser(institutionId, academicYearId) {
+  const browser = await puppeteer.launch({
+    headless: "new",
+    args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
+  })
+  try {
+    const page = await browser.newPage()
+    await page.setUserAgent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36")
+    const url = `https://assist.org/api/transferability/courses?institutionId=${institutionId}&academicYearId=${academicYearId}&listType=CALGETC`
+    await page.goto(url, { waitUntil: "networkidle2", timeout: 20000 })
+    const text = await page.evaluate(() => document.body.innerText)
+    return JSON.parse(text)
+  } finally {
+    await browser.close()
+  }
+}
+
 // ── School Platform Lists ──
 const BANNER_SCHOOLS = [
   "Bakersfield", "Porterville", "Copper Mountain", "Cerro Coso", "Barstow",
@@ -244,6 +261,22 @@ app.get("/api/schedule", async (req, res) => {
   } catch (err) {
     console.error("Scrape error:", err.message)
     res.status(500).json({ error: "Scrape failed", details: err.message })
+  }
+})
+
+// ── GE Courses Endpoint ──
+app.get("/api/ge-courses", async (req, res) => {
+  const { institutionId, academicYearId } = req.query
+  if (!institutionId || !academicYearId) {
+    return res.status(400).json({ error: "Missing params: institutionId, academicYearId" })
+  }
+  try {
+    const data = await fetchGeCoursesViaBrowser(institutionId, academicYearId)
+    res.set("Cache-Control", "no-store")
+    res.json(data)
+  } catch (err) {
+    console.error("GE courses fetch error:", err.message)
+    res.status(500).json({ error: err.message })
   }
 })
 
