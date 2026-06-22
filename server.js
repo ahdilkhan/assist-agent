@@ -203,23 +203,31 @@ async function scrapeColleague(baseUrl, subject, courseNumber) {
 }
 
 async function fetchGeCoursesViaBrowser(institutionId, academicYearId) {
-  // Step 1: hit assist.org homepage to get session cookies
-  const sessionRes = await axios.get('https://assist.org', { headers: browserHeaders })
-  const rawCookies = sessionRes.headers['set-cookie'] || []
+  // Step 1: visit the page that actually loads the courses to get valid session
+  const pageUrl = `https://assist.org/transfer/results?year=${academicYearId}&institution=${institutionId}&type=CALGETC&view=transferability&viewBy=calgetcArea&viewByKey=all&viewSendingAgreements=false`
+  
+  const pageRes = await axios.get(pageUrl, {
+    headers: browserHeaders,
+    maxRedirects: 5,
+  })
+  
+  // collect all cookies from the response
+  const rawCookies = pageRes.headers['set-cookie'] || []
   const cookieStr = rawCookies.map(c => c.split(';')[0]).join('; ')
 
-  // Step 2: hit the transferability page to establish session
-  await axios.get(
-    `https://assist.org/transfer/results?year=${academicYearId}&institution=${institutionId}&type=CALGETC&view=transferability&viewBy=calgetcArea&viewByKey=all&viewSendingAgreements=false`,
-    { headers: { ...browserHeaders, cookie: cookieStr, referer: 'https://assist.org/' } }
-  )
-
-  // Step 3: fetch the actual data
+  // Step 2: now hit the API with those cookies
   const dataRes = await axios.get(
     `https://assist.org/api/transferability/courses?institutionId=${institutionId}&academicYearId=${academicYearId}&listType=CALGETC`,
-    { headers: { ...browserHeaders, cookie: cookieStr, referer: 'https://assist.org/', accept: 'application/json' } }
+    {
+      headers: {
+        ...browserHeaders,
+        accept: 'application/json',
+        referer: pageUrl,
+        origin: 'https://assist.org',
+        cookie: cookieStr,
+      }
+    }
   )
-
   return dataRes.data
 }
 
