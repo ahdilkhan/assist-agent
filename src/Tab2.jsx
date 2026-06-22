@@ -404,11 +404,8 @@ function topoSortCourses(courses) {
   return result
 }
 
-// hasLive: true  → auto-schedule into terms based on prerequisite order (live CC)
-// hasLive: false → put everything in "Unscheduled" bucket so user manually assigns terms
-function buildSemesterPlan({ rows, noArtCourses, completedCourses, geState, plannerStart, plannerEnd, includeSummer, maxUnitsPerSem = 15, hasLive = true }) {
+function buildSemesterPlan({ rows, noArtCourses, completedCourses, geState, plannerStart, plannerEnd, includeSummer, maxUnitsPerSem = 15 }) {
   const GE_UNIT = 3
-  const MAX_AREA4_PER_SEM = 1
 
   const termList = includeSummer ? TERMS : TERMS.filter(t => !t.startsWith('Summer'))
   const startIdx = termList.indexOf(plannerStart)
@@ -433,6 +430,7 @@ function buildSemesterPlan({ rows, noArtCourses, completedCourses, geState, plan
       coverage: row.coverage,
       isRec,
       isNoArt: false,
+      programs: [...new Set(row.programEntries.map(pe => pe.program))],
     })
   }
 
@@ -453,62 +451,9 @@ function buildSemesterPlan({ rows, noArtCourses, completedCourses, geState, plan
 
   const allPending = [...sorted, ...noArtPending]
 
-  // If no live data → put all scheduleable courses in "Unscheduled" bucket
-  // User will manually move them into terms using ↑↓ arrows
-  if (!hasLive) {
-    const scheduleable = allPending.filter(c => !c.isNoArt)
-    const noArtList = allPending.filter(c => c.isNoArt)
+  const scheduleable = allPending.filter(c => !c.isNoArt)
+  const noArtList = allPending.filter(c => c.isNoArt)
 
-    const geNeeded = []
-    for (const area of CAL_GETC_AREAS) {
-      for (let i = 0; i < area.slots; i++) {
-        const key = area.slots > 1 ? `${area.code}_${i}` : area.code
-        if (!geState[key]) {
-          geNeeded.push({
-            areaCode: area.code,
-            slotIdx: i,
-            geKey: key,
-            label: area.slots > 1
-              ? `Area ${area.code} – ${area.name} (${i + 1} of ${area.slots})`
-              : `Area ${area.code} – ${area.name}`,
-          })
-        }
-      }
-    }
-
-    // Build term slots (empty) so user can move things into them
-    const scheduleEndIdx = endIdx - 1
-    const semSlots = []
-    for (let ti = startIdx; ti <= scheduleEndIdx; ti++) {
-      semSlots.push({ term: termList[ti], courses: [], ge: [], units: 0 })
-    }
-
-    const result = [...semSlots]
-
-    if (scheduleable.length > 0 || geNeeded.length > 0) {
-      result.push({
-        term: 'Unscheduled',
-        courses: scheduleable,
-        ge: geNeeded,
-        units: scheduleable.reduce((s, c) => s + c.units, 0) + geNeeded.length * GE_UNIT,
-        isUnscheduled: true,
-      })
-    }
-
-    if (noArtList.length > 0) {
-      result.push({
-        term: 'No CC Equivalent',
-        courses: noArtList,
-        ge: [],
-        units: 0,
-        isNoArtSection: true,
-      })
-    }
-
-    return result
-  }
-
-  // hasLive === true: auto-schedule as before
   const geNeeded = []
   for (const area of CAL_GETC_AREAS) {
     for (let i = 0; i < area.slots; i++) {
@@ -526,96 +471,26 @@ function buildSemesterPlan({ rows, noArtCourses, completedCourses, geState, plan
     }
   }
 
-  const UNIT_CAP = maxUnitsPerSem
   const scheduleEndIdx = endIdx - 1
-  if (scheduleEndIdx < startIdx) return []
-
   const semSlots = []
   for (let ti = startIdx; ti <= scheduleEndIdx; ti++) {
     semSlots.push({ term: termList[ti], courses: [], ge: [], units: 0 })
   }
 
-  const ready = new Set(
-    rows.filter(r => completedCourses.has(r.ccKey))
-      .flatMap(r => r.primaryCourses.map(c => `${c.prefix} ${c.number}`))
-  )
-
-  const numSemSlots = semSlots.length
-  const GE_PER_SEM = Math.min(2, Math.ceil(geNeeded.length / Math.max(numSemSlots, 1)))
-
-  const scheduleable = allPending.filter(c => !c.isNoArt)
-  const noArtList = allPending.filter(c => c.isNoArt)
-
-  let anyPlaced = true
-  while (anyPlaced && (scheduleable.length > 0 || geNeeded.length > 0)) {
-    anyPlaced = false
-    for (let si = 0; si < semSlots.length; si++) {
-      const sem = semSlots[si]
-
-      // ── GE: spread evenly, treat last semester like any other ──
-      const area4ThisSem = sem.ge.filter(g => g.areaCode === '4').length
-      let area4Count = area4ThisSem
-      let gi = 0
-      let geThisSem = sem.ge.length
-      while (gi < geNeeded.length && geThisSem < GE_PER_SEM && sem.units + GE_UNIT <= UNIT_CAP) {
-        const g = geNeeded[gi]
-        if (g.areaCode === '4' && area4Count >= MAX_AREA4_PER_SEM) { gi++; continue }
-        if (g.areaCode === '4') area4Count++
-        sem.ge.push(geNeeded[gi])
-        sem.units += GE_UNIT
-        geNeeded.splice(gi, 1)
-        geThisSem++
-        anyPlaced = true
-      }
-
-      let changed = true
-      while (changed) {
-        changed = false
-        for (let i = 0; i < scheduleable.length; i++) {
-          const c = scheduleable[i]
-          const prereqKey = getPrereqKey(c)
-          const prereqOk = !prereqKey || ready.has(prereqKey)
-          if (!prereqOk) continue
-          if (sem.units + c.units > UNIT_CAP) continue
-          sem.courses.push(c)
-          sem.units += c.units
-          ready.add(`${c.prefix} ${c.number}`)
-          scheduleable.splice(i, 1)
-          changed = true
-          anyPlaced = true
-          break
-        }
-      }
-
-      // Fill any remaining unit space with GE (balanced, not a last-term dump)
-      area4Count = sem.ge.filter(g => g.areaCode === '4').length
-      gi = 0
-      while (gi < geNeeded.length && sem.units + GE_UNIT <= UNIT_CAP) {
-        const g = geNeeded[gi]
-        if (g.areaCode === '4' && area4Count >= MAX_AREA4_PER_SEM) { gi++; continue }
-        if (g.areaCode === '4') area4Count++
-        sem.ge.push(geNeeded[gi])
-        sem.units += GE_UNIT
-        geNeeded.splice(gi, 1)
-        anyPlaced = true
-      }
-    }
-  }
-
-  const semesters = semSlots.filter(s => s.courses.length > 0 || s.ge.length > 0)
+  const result = [...semSlots]
 
   if (scheduleable.length > 0 || geNeeded.length > 0) {
-    semesters.push({
-      term: 'Remaining',
+    result.push({
+      term: 'Unscheduled',
       courses: scheduleable,
       ge: geNeeded,
       units: scheduleable.reduce((s, c) => s + c.units, 0) + geNeeded.length * GE_UNIT,
-      overflow: true,
+      isUnscheduled: true,
     })
   }
 
   if (noArtList.length > 0) {
-    semesters.push({
+    result.push({
       term: 'No CC Equivalent',
       courses: noArtList,
       ge: [],
@@ -624,8 +499,10 @@ function buildSemesterPlan({ rows, noArtCourses, completedCourses, geState, plan
     })
   }
 
-  return semesters
+  return result
 }
+
+
 
 export default function Tab2() {
   const [ccId, setCcId] = useState('')
@@ -977,7 +854,6 @@ export default function Tab2() {
         rows: overlapData.rows,
         noArtCourses: noArtForPlanner,
         completedCourses, geState, plannerStart, plannerEnd, includeSummer, maxUnitsPerSem,
-        hasLive: isLive,
       })
     : []
 
@@ -1024,13 +900,13 @@ export default function Tab2() {
 
   // Helper: get section count badge for a course in the planner (live CCs only)
   function getLiveBadge(ccKey) {
-    if (!isLive || !tab2LiveData[ccKey]) return null
     const termData = tab2LiveData[ccKey]
-    // Find the best upcoming term with sections
-    const entries = Object.entries(termData).filter(([, v]) => v.count > 0)
-    if (entries.length === 0) return { count: 0, label: 'No upcoming sections' }
-    const best = entries.sort(([a], [b]) => a.localeCompare(b))[0]
-    return { count: best[1].count, label: best[1].termDesc }
+    if (!termData) return null
+    const entries = Object.entries(termData)
+      .filter(([, v]) => v.count > 0)
+      .sort(([a], [b]) => Number(a) - Number(b)) // ascending by termCode
+    if (entries.length === 0) return null
+    return entries.map(([, v]) => ({ count: v.count, label: v.termDesc }))
   }
 
   function renderStep1() {
@@ -1337,9 +1213,9 @@ export default function Tab2() {
         {/* Mode banner */}
         <div className="no-print" style={{ background: isLive ? 'rgba(52,211,153,0.07)' : 'rgba(251,191,36,0.07)', border: `1px solid ${isLive ? 'rgba(52,211,153,0.25)' : 'rgba(251,191,36,0.22)'}`, borderRadius: 8, padding: '10px 14px', marginBottom: 16, fontSize: 12, color: isLive ? '#34d399' : '#fbbf24' }}>
           {isLive ? (
-            <span>✓ <strong>Live schedule data available</strong> for {ccName} — courses are auto-scheduled by term. Use ↑ ↓ to adjust based on format, instructor, or personal preference.</span>
+            <span>✓ <strong>Live schedule data available</strong> for {ccName} — all courses start in "Unscheduled". Check sections below each course, then drag them into terms using ↑.</span>
           ) : (
-            <span>⚠️ <strong>No live schedule data</strong> for {ccName}. All courses start in "Unscheduled" — use ↑ ↓ to move them into terms after <a href={getScheduleUrl(ccName)} target="_blank" rel="noreferrer" style={{ color: '#fbbf24', fontWeight: 600 }}>checking availability ↗</a>. Moving a course into a full semester is blocked.</span>
+            <span>⚠️ <strong>No live schedule data</strong> for {ccName}. All courses start in "Unscheduled" — use ↑ to move them into terms after <a href={getScheduleUrl(ccName)} target="_blank" rel="noreferrer" style={{ color: '#fbbf24', fontWeight: 600 }}>checking availability ↗</a>. Moving a course into a full semester is blocked.</span>
           )}
         </div>
 
@@ -1423,6 +1299,9 @@ export default function Tab2() {
                         {!isLive && <span style={{ fontSize: 9, fontWeight: 600, padding: '2px 5px', borderRadius: 4, background: 'rgba(251,191,36,0.1)', color: '#fbbf24', border: '1px solid rgba(251,191,36,0.2)' }}>⚠ Verify availability</span>}
                       </div>
                       {c.title && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>{c.title}</div>}
+                      {c.programs && c.programs.length > 0 && (
+                        <div style={{ fontSize: 9, color: 'var(--text-muted)', marginTop: 2 }}>{c.programs.join(' · ')}</div>
+                      )}
                     </div>
                     <span style={{ fontSize: 9, fontWeight: 600, padding: '2px 5px', borderRadius: 4, flexShrink: 0, background: c.badge === 'all' ? 'var(--bg-chip-selected)' : c.badge === 'multi' ? '#0d2a28' : '#0d1a2e', color: c.badge === 'all' ? '#a78bfa' : c.badge === 'multi' ? '#34d399' : '#60a5fa' }}>
                       {c.badge === 'all' ? 'ALL' : c.badge === 'multi' ? 'MULTI' : 'SCHOOL'}
@@ -1490,6 +1369,7 @@ export default function Tab2() {
               <>
                 {unscheduledSem.courses.map((c, ci) => {
                   const semIdxInAll = allSems.indexOf(unscheduledSem)
+                  const liveBadges = getLiveBadge(c.ccKey)
                   return (
                     <div key={ci} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 14px', borderBottom: '1px solid #2a1a05' }}>
                       <div style={{ flex: 1 }}>
@@ -1498,6 +1378,18 @@ export default function Tab2() {
                           {c.isRec && <span style={{ fontSize: 9, fontWeight: 600, padding: '2px 5px', borderRadius: 4, background: '#1a2a10', color: '#86efac' }}>REC</span>}
                         </div>
                         {c.title && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>{c.title}</div>}
+                        {liveBadges && liveBadges.length > 0 && (
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 4 }}>
+                            {liveBadges.map((b, bi) => (
+                              <span key={bi} style={{ fontSize: 9, fontWeight: 600, padding: '2px 5px', borderRadius: 4, background: 'rgba(52,211,153,0.1)', color: '#34d399', border: '1px solid rgba(52,211,153,0.2)' }}>
+                                ✓ {b.count} section{b.count !== 1 ? 's' : ''} · {b.label}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                        {isLive && !liveBadges && (
+                          <span style={{ fontSize: 9, fontWeight: 600, padding: '2px 5px', borderRadius: 4, background: 'rgba(239,68,68,0.1)', color: '#f87171', border: '1px solid rgba(239,68,68,0.2)', marginTop: 4, display: 'inline-block' }}>⚠ No sections found</span>
+                        )}
                       </div>
                       <span style={{ fontSize: 9, fontWeight: 600, padding: '2px 5px', borderRadius: 4, flexShrink: 0, background: c.badge === 'all' ? 'var(--bg-chip-selected)' : c.badge === 'multi' ? '#0d2a28' : '#0d1a2e', color: c.badge === 'all' ? '#a78bfa' : c.badge === 'multi' ? '#34d399' : '#60a5fa' }}>
                         {c.badge === 'all' ? 'ALL' : c.badge === 'multi' ? 'MULTI' : 'SCHOOL'}
