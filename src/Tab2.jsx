@@ -36,11 +36,6 @@ function initGeState() {
   return s
 }
 
-async function getCalGetcCourses(ccId, yearId = 76) {
-  const res = await fetch(`${ASSIST_BASE}/api/ge-courses?institutionId=${ccId}&academicYearId=${yearId}`)
-  if (!res.ok) throw new Error(`GE courses ${res.status}`)
-  return res.json() // already returns byCode map: { "1A": [...], "2": [...] }
-}
 
 async function assistGet(path) {
   const res = await fetch(`${ASSIST_BASE}${path}`, { headers: { accept: 'application/json' } })
@@ -596,9 +591,8 @@ export default function Tab2() {
   const [completedCourses, setCompletedCourses] = useState(new Set())
   const [programFilter, setProgramFilter] = useState('all')
   const [overflowExpanded, setOverflowExpanded] = useState(false)
-  const [geCoursesData, setGeCoursesData] = useState(null)
-  const [geCoursesLoading, setGeCoursesLoading] = useState(false)
-  const [expandedGeAreas, setExpandedGeAreas] = useState(new Set())
+  const [courseOverrides, setCourseOverrides] = useState({})
+
 
   const [step, setStep] = useState(1)
   const [isWide, setIsWide] = useState(window.innerWidth > 768)
@@ -617,16 +611,7 @@ export default function Tab2() {
     return () => window.removeEventListener('resize', handler)
   }, [])
 
-  useEffect(() => {
-    if (!ccId) { setGeCoursesData(null); return }
-    setGeCoursesLoading(true)
-    getCalGetcCourses(ccId)
-    .then(data => {
-      setGeCoursesData(data) // already a byCode map from the server
-    })
-      .catch(() => setGeCoursesData(null))
-      .finally(() => setGeCoursesLoading(false))
-  }, [ccId])
+  
 
   useEffect(() => {
     supabase.auth.getUser().then(async ({ data: { user } }) => {
@@ -712,6 +697,12 @@ export default function Tab2() {
       return next
     })
   }
+
+  function moveCourse(ccKey, direction, currentSemIdx) {
+  const targetIdx = currentSemIdx + direction
+  if (targetIdx < 0 || targetIdx >= realSems.length) return
+  setCourseOverrides(prev => ({ ...prev, [ccKey]: targetIdx }))
+}
 
   function toggleGeSlot(key) {
     const next = { ...geState, [key]: !geState[key] }
@@ -857,7 +848,24 @@ export default function Tab2() {
       })
     : []
 
-  const realSems = semesterPlan.filter(s => !s.overflow && !s.isNoArtSection)
+ const rawRealSems = semesterPlan.filter(s => !s.overflow && !s.isNoArtSection)
+
+const realSems = (() => {
+  if (Object.keys(courseOverrides).length === 0) return rawRealSems
+  const sems = rawRealSems.map(s => ({ ...s, courses: [...s.courses] }))
+  for (const [ccKey, targetIdx] of Object.entries(courseOverrides)) {
+    if (targetIdx < 0 || targetIdx >= sems.length) continue
+    for (let si = 0; si < sems.length; si++) {
+      const idx = sems[si].courses.findIndex(c => c.ccKey === ccKey)
+      if (idx !== -1 && si !== targetIdx) {
+        const [course] = sems[si].courses.splice(idx, 1)
+        sems[targetIdx].courses.push(course)
+        break
+      }
+    }
+  }
+  return sems
+})()
   const overflowSem = semesterPlan.find(s => s.overflow)
   const noArtSem = semesterPlan.find(s => s.isNoArtSection)
 
@@ -1074,8 +1082,8 @@ export default function Tab2() {
             const slotsDone = slotKeys.filter(k => geState[k]).length
 
 return (
-              <div key={area.code} style={{ background: 'var(--bg-card)', border: `1px solid ${slotsDone === area.slots ? '#4a3a7a' : 'var(--border)'}`, borderRadius: 10, overflow: 'hidden', transition: 'border-color 0.2s' }}>
-                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, padding: '14px 16px' }}>
+              <div key={area.code} style={{ background: 'var(--bg-card)', border: `1px solid ${slotsDone === area.slots ? '#4a3a7a' : 'var(--border)'}`, borderRadius: 10, padding: '14px 16px', transition: 'border-color 0.2s' }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
                   <div style={{ flex: 1 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
                       <span style={{ fontSize: 12, fontWeight: 700, background: slotsDone === area.slots ? '#4a3a7a' : 'var(--bg-step)', color: slotsDone === area.slots ? '#a78bfa' : 'var(--text-muted)', borderRadius: 4, padding: '2px 7px' }}>
@@ -1090,48 +1098,22 @@ return (
                       <div key={k} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
                         <div
                           onClick={() => toggleGeSlot(k)}
-                          style={{ width: 22, height: 22, borderRadius: 6, flexShrink: 0, border: `2px solid ${geState[k] ? '#6C5CE7' : 'var(--border-input)'}`, background: geState[k] ? '#6C5CE7' : 'transparent', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.15s' }}
+                          style={{
+                            width: 22, height: 22, borderRadius: 6, flexShrink: 0,
+                            border: `2px solid ${geState[k] ? '#6C5CE7' : 'var(--border-input)'}`,
+                            background: geState[k] ? '#6C5CE7' : 'transparent',
+                            cursor: 'pointer',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            transition: 'all 0.15s',
+                          }}
                         >
                           {geState[k] && <span style={{ color: '#fff', fontSize: 12, lineHeight: 1 }}>✓</span>}
                         </div>
                         {isMulti && <span style={{ fontSize: 9, color: 'var(--text-muted)' }}>{i + 1}</span>}
                       </div>
                     ))}
-                    <div
-                      onClick={() => setExpandedGeAreas(prev => { const next = new Set(prev); next.has(area.code) ? next.delete(area.code) : next.add(area.code); return next })}
-                      style={{ cursor: 'pointer', fontSize: 11, color: 'var(--text-muted)', padding: '4px 6px', borderRadius: 6, background: 'var(--bg-step)', marginLeft: 4 }}
-                    >
-                      {expandedGeAreas.has(area.code) ? '▲' : '▼ courses'}
-                    </div>
                   </div>
                 </div>
-
-                {expandedGeAreas.has(area.code) && (
-                  <div style={{ borderTop: '1px solid var(--border)', background: 'var(--bg-step)', padding: '10px 14px' }}>
-                    {geCoursesLoading && <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Loading courses...</div>}
-                    {!geCoursesLoading && geCoursesData && (() => {
-                      const courses = geCoursesData[area.code] || []
-                      if (courses.length === 0) return <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>No courses found for this area at {ccName}.</div>
-                      return (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 6 }}>
-                            {courses.length} course{courses.length !== 1 ? 's' : ''} at {ccName} satisfy Area {area.code} — check the box above once you've completed one.
-                          </div>
-                          {courses.map(c => (
-                            <div key={c.courseIdentifierParentId} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', background: 'var(--bg-card)', borderRadius: 7, border: '1px solid var(--border)' }}>
-                              <div style={{ flex: 1 }}>
-                                <span style={{ fontFamily: 'monospace', fontWeight: 600, fontSize: 12, color: '#a78bfa' }}>{c.prefix} {c.courseNumber}</span>
-                                <span style={{ fontSize: 12, color: 'var(--text)', marginLeft: 8 }}>{c.courseTitle}</span>
-                              </div>
-                              <span style={{ fontSize: 11, color: 'var(--text-muted)', flexShrink: 0 }}>{c.minUnits}u</span>
-                            </div>
-                          ))}
-                        </div>
-                      )
-                    })()}
-                    {!geCoursesLoading && !geCoursesData && <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Could not load courses. Check your connection.</div>}
-                  </div>
-                )}
               </div>
             )
           })}
@@ -1241,27 +1223,39 @@ return (
                 </div>
               </div>
               {sem.courses.map((c, ci) => (
-                <div key={ci} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 14px', borderBottom: '1px solid var(--border)' }}>
-                  <div
-                    className="no-print"
-                    onClick={() => toggleCourse(c.ccKey)}
-                    style={{ width: 24, height: 24, borderRadius: 6, flexShrink: 0, cursor: 'pointer', border: `2px solid ${completedCourses.has(c.ccKey) ? '#6C5CE7' : 'var(--border-input)'}`, background: completedCourses.has(c.ccKey) ? '#6C5CE7' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                  >
-                    {completedCourses.has(c.ccKey) && <span style={{ color: '#fff', fontSize: 14 }}>✓</span>}
-                  </div>
-                  <div style={{ flex: 1, opacity: completedCourses.has(c.ccKey) ? 0.45 : 1 }}>
-                    <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)', textDecoration: completedCourses.has(c.ccKey) ? 'line-through' : 'none', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                      {c.prefix} {c.number}
-                      {c.isRec && <span style={{ fontSize: 9, fontWeight: 600, padding: '2px 5px', borderRadius: 4, background: '#1a2a10', color: '#86efac' }}>REC</span>}
-                    </div>
-                    {c.title && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>{c.title}</div>}
-                  </div>
-                  <span style={{ fontSize: 9, fontWeight: 600, padding: '2px 5px', borderRadius: 4, flexShrink: 0, background: c.badge === 'all' ? 'var(--bg-chip-selected)' : c.badge === 'multi' ? '#0d2a28' : '#0d1a2e', color: c.badge === 'all' ? '#a78bfa' : c.badge === 'multi' ? '#34d399' : '#60a5fa' }}>
-                    {c.badge === 'all' ? 'ALL' : c.badge === 'multi' ? 'MULTI' : 'SCHOOL'}
-                  </span>
-                  <span style={{ fontSize: 11, color: 'var(--text-muted)', flexShrink: 0 }}>{c.units}u</span>
-                </div>
-              ))}
+  <div key={ci} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 14px', borderBottom: '1px solid var(--border)' }}>
+    <div
+      className="no-print"
+      onClick={() => toggleCourse(c.ccKey)}
+      style={{ width: 24, height: 24, borderRadius: 6, flexShrink: 0, cursor: 'pointer', border: `2px solid ${completedCourses.has(c.ccKey) ? '#6C5CE7' : 'var(--border-input)'}`, background: completedCourses.has(c.ccKey) ? '#6C5CE7' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+    >
+      {completedCourses.has(c.ccKey) && <span style={{ color: '#fff', fontSize: 14 }}>✓</span>}
+    </div>
+    <div style={{ flex: 1, opacity: completedCourses.has(c.ccKey) ? 0.45 : 1 }}>
+      <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)', textDecoration: completedCourses.has(c.ccKey) ? 'line-through' : 'none', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+        {c.prefix} {c.number}
+        {c.isRec && <span style={{ fontSize: 9, fontWeight: 600, padding: '2px 5px', borderRadius: 4, background: '#1a2a10', color: '#86efac' }}>REC</span>}
+      </div>
+      {c.title && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>{c.title}</div>}
+    </div>
+    <span style={{ fontSize: 9, fontWeight: 600, padding: '2px 5px', borderRadius: 4, flexShrink: 0, background: c.badge === 'all' ? 'var(--bg-chip-selected)' : c.badge === 'multi' ? '#0d2a28' : '#0d1a2e', color: c.badge === 'all' ? '#a78bfa' : c.badge === 'multi' ? '#34d399' : '#60a5fa' }}>
+      {c.badge === 'all' ? 'ALL' : c.badge === 'multi' ? 'MULTI' : 'SCHOOL'}
+    </span>
+    <span style={{ fontSize: 11, color: 'var(--text-muted)', flexShrink: 0 }}>{c.units}u</span>
+    <div className="no-print" style={{ display: 'flex', gap: 2, flexShrink: 0 }}>
+      <button
+        onClick={() => moveCourse(c.ccKey, -1, si)}
+        disabled={si === 0}
+        style={{ width: 20, height: 20, borderRadius: 4, border: '1px solid var(--border-input)', background: 'var(--bg-step)', color: si === 0 ? 'var(--border-input)' : 'var(--text-muted)', cursor: si === 0 ? 'default' : 'pointer', fontSize: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}
+      >←</button>
+      <button
+        onClick={() => moveCourse(c.ccKey, 1, si)}
+        disabled={si === realSems.length - 1}
+        style={{ width: 20, height: 20, borderRadius: 4, border: '1px solid var(--border-input)', background: 'var(--bg-step)', color: si === realSems.length - 1 ? 'var(--border-input)' : 'var(--text-muted)', cursor: si === realSems.length - 1 ? 'default' : 'pointer', fontSize: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}
+      >→</button>
+    </div>
+  </div>
+))}
               {sem.ge.map((g, gi) => (
                 <div key={gi} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 14px', borderBottom: '1px dashed var(--border)', opacity: 0.6 }}>
                   <div className="no-print" style={{ width: 16, height: 16, borderRadius: 4, border: '1.5px dashed var(--border-input)', flexShrink: 0 }} />
