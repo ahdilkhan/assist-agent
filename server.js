@@ -49,9 +49,19 @@ app.use("/transferablecourselist", async (req, res) => {
 
 app.use("/api/transferability", async (req, res) => {
   try {
+    // First hit the assist.org homepage to pick up any session cookies
+    const sessionRes = await axios.get(ASSIST_ORG, { headers: browserHeaders })
+    const cookies = sessionRes.headers["set-cookie"]?.map(c => c.split(";")[0]).join("; ") || ""
+
     const url = `${ASSIST_ORG}/api/transferability${req.url}`
     const response = await axios.get(url, {
-      headers: { ...browserHeaders, accept: "application/json", referer: "https://assist.org/", origin: "https://assist.org" },
+      headers: {
+        ...browserHeaders,
+        accept: "application/json",
+        referer: "https://assist.org/",
+        origin: "https://assist.org",
+        cookie: cookies,
+      },
     })
     res.set("Cache-Control", "no-store")
     res.json(response.data)
