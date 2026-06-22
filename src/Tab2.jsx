@@ -712,9 +712,6 @@ export default function Tab2() {
     })
   }
 
-  // Move a course/GE up or down one semester slot
-  // For no-live CCs: courses start in "Unscheduled" (last real slot before no-art)
-  // and move into term slots. For live CCs: move between auto-scheduled term slots.
   function moveCourse(itemKey, direction, currentSemIdx, isGe = false) {
     const targetIdx = currentSemIdx + direction
     if (targetIdx < 0 || targetIdx >= allSems.length) return
@@ -896,8 +893,6 @@ export default function Tab2() {
       })
     : []
 
-  // For live CCs: allSems = real term slots only (no overflow/noart/unscheduled)
-  // For no-live CCs: allSems = term slots + Unscheduled bucket
   const rawAllSems = semesterPlan.filter(s => !s.overflow && !s.isNoArtSection)
 
   const allSems = (() => {
@@ -938,13 +933,11 @@ export default function Tab2() {
     return sems
   })()
 
-  // Separate views
   const realSems = allSems.filter(s => !s.isUnscheduled)
   const unscheduledSem = allSems.find(s => s.isUnscheduled)
   const overflowSem = semesterPlan.find(s => s.overflow)
   const noArtSem = semesterPlan.find(s => s.isNoArtSection)
 
-  // Helper: get section count badge for a course in the planner (live CCs only)
   function getLiveBadge(ccKey, allCourseLabels) {
     const now = new Date()
     const currentYear = now.getFullYear()
@@ -1426,18 +1419,18 @@ export default function Tab2() {
           )
         })}
 
-        {/* Unscheduled bucket (no-live CCs only) */}
+        {/* ─── UNSCHEDULED BUCKET — slate/blue palette (distinct from yellow pick-group cards) ─── */}
         {unscheduledSem && (unscheduledSem.courses.length > 0 || unscheduledSem.ge.length > 0) && (
-          <div className="no-print" style={{ border: '1.5px dashed #5a4a10', borderRadius: 10, marginBottom: 10, overflow: 'hidden', background: '#1a1505' }}>
+          <div className="no-print" style={{ border: '1.5px dashed #2a3a5a', borderRadius: 10, marginBottom: 10, overflow: 'hidden', background: '#0d1525' }}>
             <div
               onClick={() => setUnscheduledExpanded(v => !v)}
-              style={{ padding: '9px 14px', borderBottom: unscheduledExpanded ? '1px dashed #5a4a10' : 'none', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+              style={{ padding: '9px 14px', borderBottom: unscheduledExpanded ? '1px dashed #2a3a5a' : 'none', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
             >
               <div>
-                <div style={{ fontSize: 13, fontWeight: 600, color: '#fbbf24' }}>Unscheduled — move courses into terms above</div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: '#93c5fd' }}>Unscheduled — move courses into terms above</div>
                 <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>{unscheduledSem.courses.length} courses · {unscheduledSem.ge.length} GE · check availability first</div>
               </div>
-              <span style={{ fontSize: 11, color: '#fbbf24' }}>{unscheduledExpanded ? '▲ Hide' : '▼ Show'}</span>
+              <span style={{ fontSize: 11, color: '#93c5fd' }}>{unscheduledExpanded ? '▲ Hide' : '▼ Show'}</span>
             </div>
             {unscheduledExpanded && (
               <>
@@ -1508,7 +1501,7 @@ export default function Tab2() {
                                   <button
                                     onClick={() => moveCourse(c.ccKey, -1, semIdxInAll)}
                                     disabled={semIdxInAll === 0}
-                                    style={{ width: 20, height: 20, borderRadius: 4, border: '1px solid #4a3a7a', background: '#1a1535', color: semIdxInAll === 0 ? '#4a3a7a' : '#a78bfa', cursor: semIdxInAll === 0 ? 'default' : 'pointer', fontSize: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}
+                                    style={{ width: 20, height: 20, borderRadius: 4, border: '1px solid #2a3a5a', background: '#0d1a2e', color: semIdxInAll === 0 ? '#2a3a5a' : '#93c5fd', cursor: semIdxInAll === 0 ? 'default' : 'pointer', fontSize: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}
                                   >↑</button>
                                 </div>
                               </div>
@@ -1523,9 +1516,9 @@ export default function Tab2() {
                     const semIdxInAll = allSems.indexOf(unscheduledSem)
                     const liveBadge = getLiveBadge(c.ccKey, c.allCourseLabels)
                     items.push(
-                      <div key={c.ccKey} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '8px 14px', borderBottom: '1px solid #2a1a05' }}>
+                      <div key={c.ccKey} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '8px 14px', borderBottom: '1px solid #1a2535' }}>
                         <div style={{ flex: 1 }}>
-                          <div style={{ fontSize: 12, fontWeight: 600, color: '#fbbf24', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                          <div style={{ fontSize: 12, fontWeight: 600, color: '#93c5fd', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                             {c.allCourseLabels ? c.allCourseLabels.join(' + ') : `${c.prefix} ${c.number}`}
                             {c.isRec && <span style={{ fontSize: 9, fontWeight: 600, padding: '2px 5px', borderRadius: 4, background: '#1a2a10', color: '#86efac' }}>REC</span>}
                           </div>
@@ -1557,12 +1550,12 @@ export default function Tab2() {
                           <button
                             onClick={() => moveCourse(c.ccKey, -1, semIdxInAll)}
                             disabled={semIdxInAll === 0}
-                            style={{ width: 20, height: 20, borderRadius: 4, border: '1px solid #5a4a10', background: '#221a05', color: semIdxInAll === 0 ? '#5a4a10' : '#fbbf24', cursor: semIdxInAll === 0 ? 'default' : 'pointer', fontSize: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}
+                            style={{ width: 20, height: 20, borderRadius: 4, border: '1px solid #2a3a5a', background: '#0d1a2e', color: semIdxInAll === 0 ? '#2a3a5a' : '#93c5fd', cursor: semIdxInAll === 0 ? 'default' : 'pointer', fontSize: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}
                           >↑</button>
                           <button
                             onClick={() => moveCourse(c.ccKey, 1, semIdxInAll)}
                             disabled={true}
-                            style={{ width: 20, height: 20, borderRadius: 4, border: '1px solid #5a4a10', background: '#221a05', color: '#5a4a10', cursor: 'default', fontSize: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}
+                            style={{ width: 20, height: 20, borderRadius: 4, border: '1px solid #2a3a5a', background: '#0d1a2e', color: '#2a3a5a', cursor: 'default', fontSize: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}
                           >↓</button>
                         </div>
                       </div>
@@ -1574,20 +1567,20 @@ export default function Tab2() {
                 {unscheduledSem.ge.map((g, gi) => {
                   const semIdxInAll = allSems.indexOf(unscheduledSem)
                   return (
-                    <div key={gi} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 14px', borderBottom: '1px dashed #2a1a05' }}>
-                      <div style={{ flex: 1, fontSize: 12, color: '#fbbf24' }}>{g.label}</div>
-                      <span style={{ fontSize: 9, fontWeight: 600, padding: '2px 5px', borderRadius: 4, background: '#221a05', color: '#fbbf24' }}>Cal-GETC</span>
+                    <div key={gi} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 14px', borderBottom: '1px dashed #1a2535' }}>
+                      <div style={{ flex: 1, fontSize: 12, color: '#93c5fd' }}>{g.label}</div>
+                      <span style={{ fontSize: 9, fontWeight: 600, padding: '2px 5px', borderRadius: 4, background: '#0d1a2e', color: '#93c5fd' }}>Cal-GETC</span>
                       <span style={{ fontSize: 11, color: 'var(--text-muted)', flexShrink: 0 }}>3u</span>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flexShrink: 0 }}>
                         <button
                           onClick={() => moveCourse(g.geKey, -1, semIdxInAll, true)}
                           disabled={semIdxInAll === 0}
-                          style={{ width: 20, height: 20, borderRadius: 4, border: '1px solid #5a4a10', background: '#221a05', color: semIdxInAll === 0 ? '#5a4a10' : '#fbbf24', cursor: semIdxInAll === 0 ? 'default' : 'pointer', fontSize: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}
+                          style={{ width: 20, height: 20, borderRadius: 4, border: '1px solid #2a3a5a', background: '#0d1a2e', color: semIdxInAll === 0 ? '#2a3a5a' : '#93c5fd', cursor: semIdxInAll === 0 ? 'default' : 'pointer', fontSize: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}
                         >↑</button>
                         <button
                           onClick={() => moveCourse(g.geKey, 1, semIdxInAll, true)}
                           disabled={true}
-                          style={{ width: 20, height: 20, borderRadius: 4, border: '1px solid #5a4a10', background: '#221a05', color: '#5a4a10', cursor: 'default', fontSize: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}
+                          style={{ width: 20, height: 20, borderRadius: 4, border: '1px solid #2a3a5a', background: '#0d1a2e', color: '#2a3a5a', cursor: 'default', fontSize: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}
                         >↓</button>
                       </div>
                     </div>
