@@ -1458,25 +1458,25 @@ export default function Tab2() {
                   for (const [gid, options] of Object.entries(pickGroups)) {
                     if (options.length === 1) { standalone.push(options[0]); continue }
                     items.push(
-                      <div key={`pickgroup-${gid}`} style={{ border: '1.5px solid #5a4a10', borderRadius: 8, marginBottom: 8, overflow: 'hidden', background: '#1a1505' }}>
-                        <div style={{ padding: '6px 12px', background: '#221a05', borderBottom: '1px solid #5a4a10' }}>
-                          <span style={{ fontSize: 11, fontWeight: 600, color: '#fbbf24' }}>✓ Choose 1 of these {options.length} options</span>
+                      <div key={`pickgroup-${gid}`} style={{ border: '1.5px solid #4a3a7a', borderRadius: 8, marginBottom: 8, overflow: 'hidden', background: '#12101f' }}>
+                        <div style={{ padding: '6px 12px', background: '#1a1535', borderBottom: '1px solid #4a3a7a' }}>
+                          <span style={{ fontSize: 11, fontWeight: 600, color: '#a78bfa' }}>✓ Choose 1 of these {options.length} options</span>
                         </div>
                         {options.map((c, oi) => {
                           const semIdxInAll = allSems.indexOf(unscheduledSem)
                           const liveBadge = getLiveBadge(c.ccKey, c.allCourseLabels)
                           return (
                             <div key={c.ccKey}>
-                              {oi > 0 && <div style={{ textAlign: 'center', fontSize: 10, fontWeight: 700, color: '#5a4a10', padding: '3px 0' }}>OR</div>}
-                              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '8px 12px', borderTop: oi > 0 ? '1px dashed #3a3010' : 'none' }}>
+                              {oi > 0 && <div style={{ textAlign: 'center', fontSize: 10, fontWeight: 700, color: '#4a3a7a', padding: '3px 0' }}>OR</div>}
+                              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '8px 12px', borderTop: oi > 0 ? '1px dashed #2a1f4a' : 'none' }}>
                                 <div
                                   onClick={() => toggleCourse(c.ccKey)}
-                                  style={{ width: 18, height: 18, borderRadius: 5, flexShrink: 0, marginTop: 2, cursor: 'pointer', border: `2px solid ${completedCourses.has(c.ccKey) ? '#fbbf24' : '#5a4a10'}`, background: completedCourses.has(c.ccKey) ? '#fbbf24' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                                  style={{ width: 18, height: 18, borderRadius: 5, flexShrink: 0, marginTop: 2, cursor: 'pointer', border: `2px solid ${completedCourses.has(c.ccKey) ? '#a78bfa' : '#4a3a7a'}`, background: completedCourses.has(c.ccKey) ? '#a78bfa' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                                 >
                                   {completedCourses.has(c.ccKey) && <span style={{ color: '#1a1505', fontSize: 10 }}>✓</span>}
                                 </div>
                                 <div style={{ flex: 1 }}>
-                                  <div style={{ fontSize: 12, fontWeight: 600, color: completedCourses.has(c.ccKey) ? '#5a4a10' : '#fbbf24', textDecoration: completedCourses.has(c.ccKey) ? 'line-through' : 'none', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                                  <div style={{ fontSize: 12, fontWeight: 600, color: completedCourses.has(c.ccKey) ? '#4a3a7a' : '#a78bfa', textDecoration: completedCourses.has(c.ccKey) ? 'line-through' : 'none', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                                     {c.allCourseLabels ? c.allCourseLabels.join(' + ') : `${c.prefix} ${c.number}`}
                                     {c.isRec && <span style={{ fontSize: 9, padding: '1px 4px', borderRadius: 3, background: '#1a2a10', color: '#86efac', fontWeight: 600 }}>REC</span>}
                                   </div>
@@ -1508,7 +1508,7 @@ export default function Tab2() {
                                   <button
                                     onClick={() => moveCourse(c.ccKey, -1, semIdxInAll)}
                                     disabled={semIdxInAll === 0}
-                                    style={{ width: 20, height: 20, borderRadius: 4, border: '1px solid #5a4a10', background: '#221a05', color: semIdxInAll === 0 ? '#5a4a10' : '#fbbf24', cursor: semIdxInAll === 0 ? 'default' : 'pointer', fontSize: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}
+                                    style={{ width: 20, height: 20, borderRadius: 4, border: '1px solid #4a3a7a', background: '#1a1535', color: semIdxInAll === 0 ? '#4a3a7a' : '#a78bfa', cursor: semIdxInAll === 0 ? 'default' : 'pointer', fontSize: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}
                                   >↑</button>
                                 </div>
                               </div>
