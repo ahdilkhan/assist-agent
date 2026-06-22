@@ -203,36 +203,24 @@ async function scrapeColleague(baseUrl, subject, courseNumber) {
 }
 
 async function fetchGeCoursesViaBrowser(institutionId, academicYearId) {
-  const browser = await puppeteer.launch({
-    headless: "new",
-    args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
-  })
-  try {
-    const page = await browser.newPage()
-    await page.setUserAgent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36")
+  // Step 1: hit assist.org homepage to get session cookies
+  const sessionRes = await axios.get('https://assist.org', { headers: browserHeaders })
+  const rawCookies = sessionRes.headers['set-cookie'] || []
+  const cookieStr = rawCookies.map(c => c.split(';')[0]).join('; ')
 
-    // Visit assist.org first to get session cookies
-    await page.goto("https://assist.org", { waitUntil: "networkidle2", timeout: 20000 })
+  // Step 2: hit the transferability page to establish session
+  await axios.get(
+    `https://assist.org/transfer/results?year=${academicYearId}&institution=${institutionId}&type=CALGETC&view=transferability&viewBy=calgetcArea&viewByKey=all&viewSendingAgreements=false`,
+    { headers: { ...browserHeaders, cookie: cookieStr, referer: 'https://assist.org/' } }
+  )
 
-    // Now hit the transferability page which fires the real API calls
-    const transferUrl = `https://assist.org/transfer/results?year=${academicYearId}&institution=${institutionId}&type=CALGETC&view=transferability&viewBy=calgetcArea&viewByKey=all&viewSendingAgreements=false`
-    await page.goto(transferUrl, { waitUntil: "networkidle2", timeout: 30000 })
+  // Step 3: fetch the actual data
+  const dataRes = await axios.get(
+    `https://assist.org/api/transferability/courses?institutionId=${institutionId}&academicYearId=${academicYearId}&listType=CALGETC`,
+    { headers: { ...browserHeaders, cookie: cookieStr, referer: 'https://assist.org/', accept: 'application/json' } }
+  )
 
-    // Intercept the API response by re-fetching it with the session cookies
-    const cookies = await page.cookies()
-    const cookieStr = cookies.map(c => `${c.name}=${c.value}`).join('; ')
-
-    const result = await page.evaluate(async (institutionId, academicYearId, cookieStr) => {
-      const res = await fetch(`/api/transferability/courses?institutionId=${institutionId}&academicYearId=${academicYearId}&listType=CALGETC`, {
-        headers: { accept: 'application/json' }
-      })
-      return res.json()
-    }, institutionId, academicYearId, cookieStr)
-
-    return result
-  } finally {
-    await browser.close()
-  }
+  return dataRes.data
 }
 
 // ── School Platform Lists ──
