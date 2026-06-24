@@ -1003,14 +1003,14 @@ export default function App() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 32, paddingTop: 16 }}>
         {user ? (
           <div onClick={goHome} title="Go home" style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', flexShrink: 0 }}>
-            <img src={kourzoLogo} alt="Kourzo icon" style={{ height: 40, width: 40, display: 'block' }} />
+            <img src={kourzoLogo} alt="Kourzo icon" style={{ height: 56, width: 56, display: 'block' }} />
             <span style={{ fontSize: 24, fontWeight: 700, letterSpacing: '-0.5px', lineHeight: 1 }}>
               <span style={gradientText}>K</span><span style={{ color: 'var(--text)' }}>ourzo</span>
             </span>
           </div>
         ) : (
           <div style={{ textAlign: 'center', width: '100%' }}>
-            <img src={kourzoLogo} alt="Kourzo icon" style={{ height: 64, width: 64, display: 'block', margin: '0 auto 18px' }} />
+<img src={kourzoLogo} alt="Kourzo icon" style={{ height: 120, width: 120, display: 'block', margin: '0 auto 18px' }} />
             <div style={{ fontSize: 32, fontWeight: 700, letterSpacing: '-0.5px', marginBottom: 16 }}>
               <span style={gradientText}>K</span><span style={{ color: 'var(--text)' }}>ourzo</span>
             </div>
