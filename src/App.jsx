@@ -409,6 +409,7 @@ export function getBannerBaseUrl(ccName) {
 const COLLEAGUE_URLS = {
   'Cabrillo College': 'https://cabrillo-ss.colleague.elluciancloud.com',
   'Chaffey College': 'https://colss-prod.ec.chaffey.edu',
+  'Butte College': 'https://selfservice.butte.edu',
   'Napa Valley College': 'https://colss-prod.ec.napavalley.edu',
   'Victor Valley College': 'https://vvc-ss.colleague.elluciancloud.com',
   'Mendocino College': 'https://service.mendocino.edu',
@@ -479,6 +480,22 @@ export function getVcccdCampus(ccName) {
   return null
 }
 
+const LOSRIOS_CAMPUSES = {
+  'American River College': 'arc',
+  'Cosumnes River College': 'crc',
+  'Folsom Lake College': 'flc',
+  'Sacramento City College': 'scc',
+}
+
+export function getLosRiosCampus(ccName) {
+  if (!ccName) return null
+  for (const [key, campus] of Object.entries(LOSRIOS_CAMPUSES)) {
+    if (ccName.toLowerCase().includes(key.toLowerCase()) ||
+        key.toLowerCase().includes(ccName.toLowerCase())) return campus
+  }
+  return null
+}
+
 const LACCD_COLLEGES = [
   'East Los Angeles', 'Los Angeles City', 'Los Angeles Valley', 'Los Angeles Pierce',
   'Los Angeles Harbor', 'Los Angeles Mission', 'Los Angeles Trade', 'Los Angeles Southwest',
@@ -492,7 +509,7 @@ export function isLaccdCollege(ccName) {
 
 // Export so Tab2 can use it to decide live vs manual mode
 export function hasLiveSchedule(ccName) {
-  return !!(getBannerBaseUrl(ccName) || getColleagueBaseUrl(ccName) || getSdccdCampus(ccName) || getVcccdCampus(ccName) || isLaccdCollege(ccName))
+  return !!(getBannerBaseUrl(ccName) || getColleagueBaseUrl(ccName) || getSdccdCampus(ccName) || getVcccdCampus(ccName) || isLaccdCollege(ccName) || getLosRiosCampus(ccName))
 }
 
 function buildShareUrl(uniId, uniName, pfx, course) {
@@ -647,8 +664,9 @@ export default function App() {
     const sdccdCampus = getSdccdCampus(ccName)
     const vcccdCampus = getVcccdCampus(ccName)
     const isLaccd = isLaccdCollege(ccName)
-    const baseUrl = bannerUrl || colleagueUrl || (sdccdCampus ? 'https://mws-api.sdccd.edu' : null) || (vcccdCampus ? 'https://schedule.vcccd.edu' : null) || (isLaccd ? 'https://mycollege-guest.laccd.edu' : null)
-    const system = sdccdCampus ? 'sdccd' : vcccdCampus ? 'vcccd' : isLaccd ? 'laccd' : colleagueUrl && !bannerUrl ? 'colleague' : 'banner'
+    const losRiosCampus = getLosRiosCampus(ccName)
+    const baseUrl = bannerUrl || colleagueUrl || (sdccdCampus ? 'https://mws-api.sdccd.edu' : null) || (vcccdCampus ? 'https://schedule.vcccd.edu' : null) || (isLaccd ? 'https://mycollege-guest.laccd.edu' : null) || (losRiosCampus ? 'https://hub.losrios.edu' : null)
+    const system = sdccdCampus ? 'sdccd' : vcccdCampus ? 'vcccd' : isLaccd ? 'laccd' : losRiosCampus ? 'losrios' : colleagueUrl && !bannerUrl ? 'colleague' : 'banner'
     if (!baseUrl) return
 
     setScheduleLoading(true)
@@ -665,7 +683,7 @@ export default function App() {
               'Content-Type': 'application/json',
               'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
             },
-            body: JSON.stringify({ baseUrl, subject: c.prefix, courseNumber: c.number, system, campus: sdccdCampus || vcccdCampus }),
+            body: JSON.stringify({ baseUrl, subject: c.prefix, courseNumber: c.number, system, campus: sdccdCampus || vcccdCampus || losRiosCampus }),
           }
         )
         const data = await res.json()
@@ -848,8 +866,9 @@ export default function App() {
         const sdccdCampus = getSdccdCampus(eq.ccName)
         const vcccdCampus = getVcccdCampus(eq.ccName)
         const isLaccd = isLaccdCollege(eq.ccName)
-        const baseUrl = bannerUrl || colleagueUrl || (sdccdCampus ? 'https://mws-api.sdccd.edu' : null) || (vcccdCampus ? 'https://schedule.vcccd.edu' : null) || (isLaccd ? 'https://mycollege-guest.laccd.edu' : null)
-        const system = sdccdCampus ? 'sdccd' : vcccdCampus ? 'vcccd' : isLaccd ? 'laccd' : colleagueUrl && !bannerUrl ? 'colleague' : 'banner'
+        const losRiosCampus = getLosRiosCampus(eq.ccName)
+        const baseUrl = bannerUrl || colleagueUrl || (sdccdCampus ? 'https://mws-api.sdccd.edu' : null) || (vcccdCampus ? 'https://schedule.vcccd.edu' : null) || (isLaccd ? 'https://mycollege-guest.laccd.edu' : null) || (losRiosCampus ? 'https://hub.losrios.edu' : null)
+        const system = sdccdCampus ? 'sdccd' : vcccdCampus ? 'vcccd' : isLaccd ? 'laccd' : losRiosCampus ? 'losrios' : colleagueUrl && !bannerUrl ? 'colleague' : 'banner'
         try {
           const courseResults = await Promise.all(firstOption.courses.map(async c => {
             const res = await fetch(
@@ -857,7 +876,7 @@ export default function App() {
               {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY },
-                body: JSON.stringify({ baseUrl, subject: c.prefix, courseNumber: c.number, system, campus: sdccdCampus || vcccdCampus }),
+                body: JSON.stringify({ baseUrl, subject: c.prefix, courseNumber: c.number, system, campus: sdccdCampus || vcccdCampus || losRiosCampus }),
               }
             )
             const data = await res.json()

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from './lib/supabase'
-import { KNOWN_UNIVERSITIES, KNOWN_CCS, hasLiveSchedule, getBannerBaseUrl, getColleagueBaseUrl, getSdccdCampus, getVcccdCampus, isLaccdCollege, getScheduleUrl } from './App'
+import { KNOWN_UNIVERSITIES, KNOWN_CCS, hasLiveSchedule, getBannerBaseUrl, getColleagueBaseUrl, getSdccdCampus, getVcccdCampus, isLaccdCollege, getLosRiosCampus, getScheduleUrl } from './App'
 
 const ASSIST_BASE = import.meta.env.VITE_ASSIST_BASE
 // YEAR_ID 77 is used for Tab2 (newer articulation cycle). Tab1 uses 76.
@@ -616,12 +616,14 @@ export default function Tab2() {
     const sdccdCampus = getSdccdCampus(ccNameVal)
     const vcccdCampus = getVcccdCampus(ccNameVal)
     const isLaccd = isLaccdCollege(ccNameVal)
+    const losRiosCampus = getLosRiosCampus(ccNameVal)
     const baseUrl = bannerUrl || colleagueUrl
       || (sdccdCampus ? 'https://mws-api.sdccd.edu' : null)
       || (vcccdCampus ? 'https://schedule.vcccd.edu' : null)
       || (isLaccd ? 'https://mycollege-guest.laccd.edu' : null)
+      || (losRiosCampus ? 'https://hub.losrios.edu' : null)
     const system = sdccdCampus ? 'sdccd' : vcccdCampus ? 'vcccd' : isLaccd ? 'laccd'
-      : colleagueUrl && !bannerUrl ? 'colleague' : 'banner'
+      : losRiosCampus ? 'losrios' : colleagueUrl && !bannerUrl ? 'colleague' : 'banner'
 
     const newLiveData = {}
     await Promise.all(rows.map(async row => {

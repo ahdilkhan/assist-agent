@@ -664,6 +664,133 @@ async function getLaccdSections(subject: string, courseNumber: string) {
   return results
 }
 
+// ─── LOS RIOS (ARC / CRC / FLC / SCC) ───────────────────────────
+
+const LOSRIOS_CAMPUS_FILTER: Record<string, string> = {
+  arc: "arcFilter", crc: "crcFilter", flc: "flcFilter", scc: "sccFilter",
+}
+
+function cleanText(s: string | undefined) {
+  return (s || "")
+    .replace(/<!--[\s\S]*?-->/g, "")
+    .replace(/<!--[\s\S]*$/g, "")   // ← add this line: strip unterminated trailing comments
+    .replace(/&nbsp;/g, " ")
+    .replace(/&#8211;/g, "–")
+    .replace(/&#8217;/g, "'")
+    .replace(/&amp;/g, "&")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+async function fetchLosRiosCourses(campus: string, subject: string, courseNumber: string, strm: string, strmLabel: string) {
+  const params = new URLSearchParams({
+    arcFilter: "false", crcFilter: "false", flcFilter: "false", sccFilter: "false",
+    openFilter: "false", waitlistFilter: "false", closedFilter: "false",
+    onlineFilter: "false", AsynchronousFilter: "false", SynchronousFilter: "false",
+    hybridFilter: "false", f2fFilter: "false",
+    subjectFilters: "", collegeLocationFilters: "", sessionFilters: "", dayFilters: "",
+    unitSpan: "", timeSpan: "", zeroTextbook: "false", lowTextbook: "false", greenClean: "false",
+    searchBar: `${subject} ${courseNumber}`,
+    clearAll: "false", instructorSearchName: "",
+    strm: `${strm},${strmLabel}`,
+    href: campus,
+    losRiosGEFilters: "", localGEFilters: "", calgetcFilters: "", csuGEFilters: "",
+    igetcGEFilters: "", transferFilters: "",
+    offset: "0", first: "1",
+  });
+  if (LOSRIOS_CAMPUS_FILTER[campus]) {
+    params.set(LOSRIOS_CAMPUS_FILTER[campus], "true");
+  }
+  const res = await fetch(`https://hub.losrios.edu/classSearch/getCourses.php?${params}`, {
+    headers: { "User-Agent": "Mozilla/5.0", "X-Requested-With": "XMLHttpRequest" },
+  });
+  return await res.text();
+}
+
+function parseLosRiosResults(html: string) {
+  const out: any[] = [];
+  const cardRegex = /<article class="class-card"[\s\S]*?<\/article>/g;
+  let cm;
+  while ((cm = cardRegex.exec(html)) !== null) {
+    const card = cm[0];
+
+    const subjNum = cleanText(card.match(/class-card-subj-num">([\s\S]*?)<\/span>/)?.[1]);
+    const titleMatch = card.match(/class-card-subj-num">[\s\S]*?<\/span>\s*([\s\S]*?)<\/div>/);
+    const title = cleanText(titleMatch?.[1]);
+    const units = cleanText(card.match(/class="units">\s*<span>([\s\S]*?)<\/span>/)?.[1]);
+    const collegeName = cleanText(card.match(/class="college">\s*([\s\S]*?)<\/span>/)?.[1]);
+    const subCampus = cleanText(card.match(/class='campus'>([\s\S]*?)<\/span>/)?.[1]);
+    const session = cleanText(card.match(/class="session">\s*([\s\S]*?)(?:<br|<\/div>)/)?.[1]);
+
+    // Each card can contain one or more <ul>...</ul> section blocks
+    const ulRegex = /<ul>[\s\S]*?<\/ul>/g;
+    let um;
+    while ((um = ulRegex.exec(card)) !== null) {
+      const block = um[0];
+      const classLine = cleanText(block.match(/class="section">[\s\S]*?<\/span>([\s\S]*?)<\/li>/)?.[1]);
+      const mode = cleanText(block.match(/<span class="label">Mode<\/span>([\s\S]*?)<\/li>/)?.[1]);
+      const dayTime = cleanText(block.match(/<span class='label'>Day\/Time<\/span>([\s\S]*?)<\/li>/)?.[1]);
+      const building = cleanText(block.match(/<span class='label'>Building[\s\S]*?<\/span>([\s\S]*?)<\/li>/)?.[1]);
+      const instructor = cleanText(block.match(/<span class='label'>Instructor<\/span>(?:<a[^>]*>)?([\s\S]*?)(?:<\/a>)?<\/li>/)?.[1]);
+      const status = cleanText(block.match(/class="status">([\s\S]*?)<\/li>/)?.[1]).replace(/^.*?seats/i, (m) => m); // keep as-is
+
+      const statusLower = status.toLowerCase();
+      const seatsMatch = status.match(/(\d+)\s*open seats/i);
+      const isOpen = statusLower.includes("open");
+      const isWaitlist = statusLower.includes("wait");
+
+      const [days, ...timeParts] = dayTime.split(",").map(s => s.trim());
+      const timeStr = timeParts.join(",").trim();
+
+      out.push({
+        crn: classLine || null,
+        section: classLine || null,
+        campus: collegeName ? `${collegeName}${subCampus ? " – " + subCampus : ""}` : null,
+        title: `${subjNum} — ${title}`,
+        units: units ? parseFloat(units) : null,
+        scheduleType: mode || null,
+        enrollment: null,
+        maxEnrollment: null,
+        seatsAvailable: isOpen && seatsMatch ? parseInt(seatsMatch[1]) : 0,
+        waitCount: 0,
+        waitAvailable: isWaitlist ? 1 : 0,
+        openSection: isOpen,
+        instructor: instructor || null,
+        meetings: dayTime ? [{
+          days: days || null,
+          startTime: timeStr || null,
+          endTime: null,
+          building: building || null,
+          room: null,
+          startDate: null,
+          endDate: null,
+        }] : [],
+        sessionLabel: session || null,
+      });
+    }
+  }
+  return out;
+}
+
+async function getLosRiosSections(campus: string, subject: string, courseNumber: string) {
+  // STRM codes confirmed so far: 1269 = Fall 2026. Add more as they're confirmed.
+  const termsToTry = [
+  { code: "1269", label: "Fall 2026" },
+  { code: "1266", label: "Summer 2026" },
+];
+  const results = [];
+  for (const term of termsToTry) {
+    try {
+      const html = await fetchLosRiosCourses(campus, subject, courseNumber, term.code, term.label);
+      const sections = parseLosRiosResults(html);
+      results.push({ termCode: term.code, termDesc: term.label, totalCount: sections.length, sections });
+    } catch (e) {
+      console.warn(`Los Rios term ${term.code} failed:`, e.message);
+    }
+  }
+  return results;
+}
+
 // ─── MAIN HANDLER ─────────────────────────────────────────────
 
 export default {
@@ -683,8 +810,10 @@ export default {
         data = await getSdccdSections(campus || "", subject, courseNumber);
       } else if (system === "vcccd") {
         data = await getVcccdSections(campus || "", subject, courseNumber);
-      } else if (system === "laccd") {              // ← ADD THIS
-        data = await getLaccdSections(subject, courseNumber);   // ← ADD THIS
+      } else if (system === "laccd") {
+        data = await getLaccdSections(subject, courseNumber);
+      } else if (system === "losrios") {
+        data = await getLosRiosSections(campus || "arc", subject, courseNumber);
       } else {
         data = await getBannerSections(baseUrl, subject, courseNumber);
       }
